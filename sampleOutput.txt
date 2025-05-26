@@ -1,0 +1,18 @@
+TxPackage: activity
+  Tx: Tx_M_to_YoYo
+    Inputs:
+      - Lisa: 1547.80
+      - Oreo: 270.40
+    Output:
+      - YoYo: 1818.20
+  Tx: Tx_M_to_Alan
+    Inputs:
+      - Jay: 990.00
+      - Oreo: 526.20
+    Output:
+      - Alan: 1516.20
+  Tx: Tx_M_to_Luis
+    Inputs:
+      - Oreo: 258.20
+    Output:
+      - Luis: 258.20

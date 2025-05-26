@@ -178,7 +178,7 @@ func TxListGenerateWithMixMap(txList *[]Tx, cashList *[]Cash) (float64, error) {
 			// The remaining part of the last input goes back to the input queue
 			remainingAmount := lastInputPayment.Amount - amountNeededFromLastInput
 			if remainingAmount > epsilon { // Only push back if there's a significant remainder
-				inputQueue.PushFront(Cash{
+				inputQueue.PushBack(Cash{
 					Address:      lastInputPayment.Address,
 					InputAmount:  remainingAmount, // This cash represents an available input
 					OutputAmount: 0.0,

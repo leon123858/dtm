@@ -2,7 +2,7 @@ all:
 	make start
 
 start:
-	go run main.go
+	go run dtm.go
 
 test:
 	go test ./... -v
@@ -10,3 +10,6 @@ test:
 format:
 	go mod tidy
 	go fmt ./...
+
+cli:
+	go run dtm.go share -i "sampleInput.csv" -o "sampleOutput.txt"

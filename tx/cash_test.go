@@ -341,15 +341,15 @@ func TestTxListGenerateWithMixMap(t *testing.T) {
 				{ // R1 (70) is next largest output
 					Name: "Tx_M_to_R1", // S1 (80 left) covers R1 (70), S1 has 10 left
 					Input: []Payment{
-						{Address: "S1", Amount: 70},
+						{Address: "S2", Amount: 50},
+						{Address: "S1", Amount: 20},
 					},
 					Output: Payment{Address: "R1", Amount: 70},
 				},
 				{ // R3 (30) is smallest output
 					Name: "Tx_M_to_R3", // S1 (10 left) + S2 (50) = 60. R3 (30) covered by S1 (10) + S2 (20). S2 has 30 left.
 					Input: []Payment{
-						{Address: "S1", Amount: 10},
-						{Address: "S2", Amount: 20},
+						{Address: "S1", Amount: 30},
 					},
 					Output: Payment{Address: "R3", Amount: 30},
 				},

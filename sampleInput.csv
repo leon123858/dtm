@@ -1,0 +1,9 @@
+Name,Amount,PrePayAddress,ShouldPayAddress
+KTV,2334,"Alan","Alan,Lisa,YoYo,Oreo,Luis"
+alcohol,750,"Alan","Alan,YoYo,Luis"
+cookie,139,"Alan","Lisa"
+milk,117,"Oreo","Lisa"
+Game,3500,"YoYo","Alan,Lisa,YoYo,Oreo,Luis,Jay"
+Dinner,1900,"Luis","Alan,Lisa,YoYo,Oreo,Luis,Jay"
+Taxi100,100,"Lisa","Alan,Lisa,Luis,Jay"
+Taxi260,260,"Oreo","Alan,YoYo,Oreo,Jay"
