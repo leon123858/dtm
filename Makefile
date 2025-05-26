@@ -11,5 +11,12 @@ format:
 	go mod tidy
 	go fmt ./...
 
+gql:
+	echo "init have run [go run github.com/99designs/gqlgen init --server web/server.go]"
+	go run github.com/99designs/gqlgen generate
+
+serve:
+	go run dtm.go serve
+
 cli:
 	go run dtm.go share -i "sampleInput.csv" -o "sampleOutput.txt"
