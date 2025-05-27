@@ -22,6 +22,10 @@ type Trip {
 	moneyShare: [Tx!]!
 }
 
+type Subscription {
+	tripRecordsChanged(id: ID!): [Record!]!
+}
+
 type Query {
 	trip(id: ID!): Trip
 }

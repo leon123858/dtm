@@ -1,4 +1,6 @@
 all:
+	make format
+	make test
 	make start
 
 start:

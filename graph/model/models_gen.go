@@ -12,6 +12,9 @@ type NewTrip struct {
 type Query struct {
 }
 
+type Subscription struct {
+}
+
 type Tx struct {
 	Input  []string `json:"input"`
 	Output string   `json:"output"`

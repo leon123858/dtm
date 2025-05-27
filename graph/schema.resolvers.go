@@ -45,6 +45,11 @@ func (r *recordResolver) ShouldPayAddress(ctx context.Context, obj *model.Record
 	panic(fmt.Errorf("not implemented: ShouldPayAddress - shouldPayAddress"))
 }
 
+// TripRecordsChanged is the resolver for the tripRecordsChanged field.
+func (r *subscriptionResolver) TripRecordsChanged(ctx context.Context, id string) (<-chan []*model.Record, error) {
+	panic(fmt.Errorf("not implemented: TripRecordsChanged - tripRecordsChanged"))
+}
+
 // Records is the resolver for the records field.
 func (r *tripResolver) Records(ctx context.Context, obj *model.Trip) ([]*model.Record, error) {
 	panic(fmt.Errorf("not implemented: Records - records"))
@@ -69,6 +74,9 @@ func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
 // Record returns RecordResolver implementation.
 func (r *Resolver) Record() RecordResolver { return &recordResolver{r} }
 
+// Subscription returns SubscriptionResolver implementation.
+func (r *Resolver) Subscription() SubscriptionResolver { return &subscriptionResolver{r} }
+
 // Trip returns TripResolver implementation.
 func (r *Resolver) Trip() TripResolver { return &tripResolver{r} }
 
@@ -78,5 +86,6 @@ func (r *Resolver) NewRecord() NewRecordResolver { return &newRecordResolver{r} 
 type mutationResolver struct{ *Resolver }
 type queryResolver struct{ *Resolver }
 type recordResolver struct{ *Resolver }
+type subscriptionResolver struct{ *Resolver }
 type tripResolver struct{ *Resolver }
 type newRecordResolver struct{ *Resolver }
