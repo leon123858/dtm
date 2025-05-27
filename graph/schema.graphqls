@@ -2,27 +2,45 @@
 #
 # https://gqlgen.com/getting-started/
 
-type Todo {
-  id: ID!
-  text: String!
-  done: Boolean!
-  user: User!
+type Record {
+	id: ID!
+	name: String!
+	amount: Int!
+	prePayAddress: String!
+	shouldPayAddress: [String!]!
 }
 
-type User {
-  id: ID!
-  name: String!
+type Tx {
+	input: [String!]!
+	output: String!
+}
+
+type Trip {
+	id: ID!
+	name: String!
+	records: [Record!]!
+	moneyShare: [Tx!]!
 }
 
 type Query {
-  todos: [Todo!]!
+	trip(id: ID!): Trip
 }
 
-input NewTodo {
-  text: String!
-  userId: String!
+input NewRecord {
+	name: String!
+	amount: Int!
+	prePayAddress: String!
+	shouldPayAddress: [String!]!
+}
+
+input NewTrip {
+	name: String!
 }
 
 type Mutation {
-  createTodo(input: NewTodo!): Todo!
+	createTrip(input: NewTrip!): Trip!
+	updateTrip(id: ID!, input: NewTrip!): Trip!
+	createRecord(input: NewRecord!): Record!
+	updateRecord(id: ID!, input: NewRecord!): Record!
+	removeRecord(id: ID!): ID!
 }

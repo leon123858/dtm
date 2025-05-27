@@ -10,14 +10,54 @@ import (
 	"fmt"
 )
 
-// CreateTodo is the resolver for the createTodo field.
-func (r *mutationResolver) CreateTodo(ctx context.Context, input model.NewTodo) (*model.Todo, error) {
-	panic(fmt.Errorf("not implemented: CreateTodo - createTodo"))
+// CreateTrip is the resolver for the createTrip field.
+func (r *mutationResolver) CreateTrip(ctx context.Context, input model.NewTrip) (*model.Trip, error) {
+	panic(fmt.Errorf("not implemented: CreateTrip - createTrip"))
 }
 
-// Todos is the resolver for the todos field.
-func (r *queryResolver) Todos(ctx context.Context) ([]*model.Todo, error) {
-	panic(fmt.Errorf("not implemented: Todos - todos"))
+// UpdateTrip is the resolver for the updateTrip field.
+func (r *mutationResolver) UpdateTrip(ctx context.Context, id string, input model.NewTrip) (*model.Trip, error) {
+	panic(fmt.Errorf("not implemented: UpdateTrip - updateTrip"))
+}
+
+// CreateRecord is the resolver for the createRecord field.
+func (r *mutationResolver) CreateRecord(ctx context.Context, input model.NewRecord) (*model.Record, error) {
+	panic(fmt.Errorf("not implemented: CreateRecord - createRecord"))
+}
+
+// UpdateRecord is the resolver for the updateRecord field.
+func (r *mutationResolver) UpdateRecord(ctx context.Context, id string, input model.NewRecord) (*model.Record, error) {
+	panic(fmt.Errorf("not implemented: UpdateRecord - updateRecord"))
+}
+
+// RemoveRecord is the resolver for the removeRecord field.
+func (r *mutationResolver) RemoveRecord(ctx context.Context, id string) (string, error) {
+	panic(fmt.Errorf("not implemented: RemoveRecord - removeRecord"))
+}
+
+// Trip is the resolver for the trip field.
+func (r *queryResolver) Trip(ctx context.Context, id string) (*model.Trip, error) {
+	panic(fmt.Errorf("not implemented: Trip - trip"))
+}
+
+// ShouldPayAddress is the resolver for the shouldPayAddress field.
+func (r *recordResolver) ShouldPayAddress(ctx context.Context, obj *model.Record) ([]string, error) {
+	panic(fmt.Errorf("not implemented: ShouldPayAddress - shouldPayAddress"))
+}
+
+// Records is the resolver for the records field.
+func (r *tripResolver) Records(ctx context.Context, obj *model.Trip) ([]*model.Record, error) {
+	panic(fmt.Errorf("not implemented: Records - records"))
+}
+
+// MoneyShare is the resolver for the moneyShare field.
+func (r *tripResolver) MoneyShare(ctx context.Context, obj *model.Trip) ([]*model.Tx, error) {
+	panic(fmt.Errorf("not implemented: MoneyShare - moneyShare"))
+}
+
+// ShouldPayAddress is the resolver for the shouldPayAddress field.
+func (r *newRecordResolver) ShouldPayAddress(ctx context.Context, obj *model.NewRecord, data []string) error {
+	panic(fmt.Errorf("not implemented: ShouldPayAddress - shouldPayAddress"))
 }
 
 // Mutation returns MutationResolver implementation.
@@ -26,5 +66,17 @@ func (r *Resolver) Mutation() MutationResolver { return &mutationResolver{r} }
 // Query returns QueryResolver implementation.
 func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
 
+// Record returns RecordResolver implementation.
+func (r *Resolver) Record() RecordResolver { return &recordResolver{r} }
+
+// Trip returns TripResolver implementation.
+func (r *Resolver) Trip() TripResolver { return &tripResolver{r} }
+
+// NewRecord returns NewRecordResolver implementation.
+func (r *Resolver) NewRecord() NewRecordResolver { return &newRecordResolver{r} }
+
 type mutationResolver struct{ *Resolver }
 type queryResolver struct{ *Resolver }
+type recordResolver struct{ *Resolver }
+type tripResolver struct{ *Resolver }
+type newRecordResolver struct{ *Resolver }
