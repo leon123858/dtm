@@ -278,7 +278,7 @@ func (r *tripResolver) MoneyShare(ctx context.Context, obj *model.Trip) ([]*mode
 		}
 		payments = append(payments, payment)
 	}
-	txPackage, totalRemaining, err := tx.ShareMoneyEasy(payments)
+	txPackage, totalRemaining, err := tx.ShareMoneyEasyNoLog(payments)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create TxPackage: %w", err)
 	}

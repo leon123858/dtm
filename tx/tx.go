@@ -69,6 +69,33 @@ func (tp *TxPackage) String() string {
 	}
 	return result
 }
+func ShareMoneyEasyNoLog(uiList []UserPayment) (TxPackage, float64, error) {
+	// Convert UserPayment to Tx using the AverageSplitStrategy
+	txList := make([]Tx, 0, len(uiList))
+	for _, up := range uiList {
+		tx, err := up.ToTx(AverageSplitStrategy)
+		if err != nil {
+			return TxPackage{}, 0, fmt.Errorf("failed to convert UserPayment to Tx: %w", err)
+		}
+		txList = append(txList, tx)
+	}
+	// Create a TxPackage from the generated transactions
+	txPackage := TxPackage{
+		Name:   "UserPaymentsPackage",
+		TxList: txList,
+	}
+	// Process the transactions to get the cash flow for each address
+	cashList := txPackage.ProcessTransactions()
+	// Normalize the cash
+	cashList = NormalizeCash(cashList)
+	// Convert the cash list to a TxPackage
+	txPackageFromCash, diff, err := CashListToTxPackage(cashList, "activity", TxListGenerateWithMixMap)
+	if err != nil {
+		return TxPackage{}, 0, fmt.Errorf("failed to convert cash list to TxPackage: %w", err)
+	}
+	// println(txPackageFromCash.String())
+	return txPackageFromCash, diff, nil
+}
 
 func ShareMoneyEasy(uiList []UserPayment) (TxPackage, float64, error) {
 	// Convert UserPayment to Tx using the AverageSplitStrategy
