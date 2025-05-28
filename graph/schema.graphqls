@@ -5,12 +5,13 @@
 type Record {
 	id: ID!
 	name: String!
-	amount: Int!
+	amount: Float!
 	prePayAddress: String!
 	shouldPayAddress: [String!]!
 }
 
 type Tx {
+	amount: Float!
 	input: [String!]!
 	output: String!
 }
@@ -37,7 +38,7 @@ type Query {
 
 input NewRecord {
 	name: String!
-	amount: Int!
+	amount: Float!
 	prePayAddress: String!
 	shouldPayAddress: [String!]!
 }

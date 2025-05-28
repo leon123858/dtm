@@ -16,6 +16,7 @@ type Subscription struct {
 }
 
 type Tx struct {
+	Amount float64  `json:"amount"`
 	Input  []string `json:"input"`
 	Output string   `json:"output"`
 }

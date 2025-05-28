@@ -10,14 +10,14 @@ type Trip struct {
 }
 
 type Record struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Amount        int32  `json:"amount"`
-	PrePayAddress string `json:"prePayAddress"`
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	Amount        float64 `json:"amount"`
+	PrePayAddress string  `json:"prePayAddress"`
 }
 
 type NewRecord struct {
-	Name          string `json:"name"`
-	Amount        int32  `json:"amount"`
-	PrePayAddress string `json:"prePayAddress"`
+	Name          string  `json:"name"`
+	Amount        float64 `json:"amount"`
+	PrePayAddress string  `json:"prePayAddress"`
 }

@@ -50,6 +50,11 @@ func (r *queryResolver) Trip(ctx context.Context, id string) (*model.Trip, error
 	panic(fmt.Errorf("not implemented: Trip - trip"))
 }
 
+// Amount is the resolver for the amount field.
+func (r *recordResolver) Amount(ctx context.Context, obj *model.Record) (float64, error) {
+	panic(fmt.Errorf("not implemented: Amount - amount"))
+}
+
 // ShouldPayAddress is the resolver for the shouldPayAddress field.
 func (r *recordResolver) ShouldPayAddress(ctx context.Context, obj *model.Record) ([]string, error) {
 	panic(fmt.Errorf("not implemented: ShouldPayAddress - shouldPayAddress"))
@@ -95,6 +100,11 @@ func (r *tripResolver) AddressList(ctx context.Context, obj *model.Trip) ([]stri
 	panic(fmt.Errorf("not implemented: AddressList - addressList"))
 }
 
+// Amount is the resolver for the amount field.
+func (r *newRecordResolver) Amount(ctx context.Context, obj *model.NewRecord, data float64) error {
+	panic(fmt.Errorf("not implemented: Amount - amount"))
+}
+
 // ShouldPayAddress is the resolver for the shouldPayAddress field.
 func (r *newRecordResolver) ShouldPayAddress(ctx context.Context, obj *model.NewRecord, data []string) error {
 	panic(fmt.Errorf("not implemented: ShouldPayAddress - shouldPayAddress"))
@@ -124,15 +134,3 @@ type recordResolver struct{ *Resolver }
 type subscriptionResolver struct{ *Resolver }
 type tripResolver struct{ *Resolver }
 type newRecordResolver struct{ *Resolver }
-
-// !!! WARNING !!!
-// The code below was going to be deleted when updating resolvers. It has been copied here so you have
-// one last chance to move it out of harms way if you want. There are two reasons this happens:
-//  - When renaming or deleting a resolver the old code will be put in here. You can safely delete
-//    it when you're done.
-//  - You have helper methods in this file. Move them out to keep these resolver files clean.
-/*
-	func (r *subscriptionResolver) TripRecordsChanged(ctx context.Context, id string) (<-chan []*model.Record, error) {
-	panic(fmt.Errorf("not implemented: TripRecordsChanged - tripRecordsChanged"))
-}
-*/
