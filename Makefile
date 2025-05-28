@@ -13,6 +13,10 @@ format:
 	go mod tidy
 	go fmt ./...
 
+testE2E:
+	echo "should run `# (make serve)` first"
+	cd e2e && npm run test
+
 gql:
 	echo "init have run [go run github.com/99designs/gqlgen init --server web/server.go]"
 	go run github.com/99designs/gqlgen generate
