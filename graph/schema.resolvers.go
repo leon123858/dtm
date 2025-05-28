@@ -35,6 +35,16 @@ func (r *mutationResolver) RemoveRecord(ctx context.Context, id string) (string,
 	panic(fmt.Errorf("not implemented: RemoveRecord - removeRecord"))
 }
 
+// CreateAddress is the resolver for the createAddress field.
+func (r *mutationResolver) CreateAddress(ctx context.Context, tripID string) (string, error) {
+	panic(fmt.Errorf("not implemented: CreateAddress - createAddress"))
+}
+
+// DeleteAddress is the resolver for the deleteAddress field.
+func (r *mutationResolver) DeleteAddress(ctx context.Context, tripID string) (string, error) {
+	panic(fmt.Errorf("not implemented: DeleteAddress - deleteAddress"))
+}
+
 // Trip is the resolver for the trip field.
 func (r *queryResolver) Trip(ctx context.Context, id string) (*model.Trip, error) {
 	panic(fmt.Errorf("not implemented: Trip - trip"))
@@ -45,9 +55,29 @@ func (r *recordResolver) ShouldPayAddress(ctx context.Context, obj *model.Record
 	panic(fmt.Errorf("not implemented: ShouldPayAddress - shouldPayAddress"))
 }
 
-// TripRecordsChanged is the resolver for the tripRecordsChanged field.
-func (r *subscriptionResolver) TripRecordsChanged(ctx context.Context, id string) (<-chan []*model.Record, error) {
-	panic(fmt.Errorf("not implemented: TripRecordsChanged - tripRecordsChanged"))
+// SubRecordCreate is the resolver for the subRecordCreate field.
+func (r *subscriptionResolver) SubRecordCreate(ctx context.Context, tripID string) (<-chan *model.Record, error) {
+	panic(fmt.Errorf("not implemented: SubRecordCreate - subRecordCreate"))
+}
+
+// SubRecordDelete is the resolver for the subRecordDelete field.
+func (r *subscriptionResolver) SubRecordDelete(ctx context.Context, tripID string) (<-chan *model.Record, error) {
+	panic(fmt.Errorf("not implemented: SubRecordDelete - subRecordDelete"))
+}
+
+// SubRecordUpdate is the resolver for the subRecordUpdate field.
+func (r *subscriptionResolver) SubRecordUpdate(ctx context.Context, tripID string) (<-chan *model.Record, error) {
+	panic(fmt.Errorf("not implemented: SubRecordUpdate - subRecordUpdate"))
+}
+
+// SubAddressCreate is the resolver for the subAddressCreate field.
+func (r *subscriptionResolver) SubAddressCreate(ctx context.Context, tripID string) (<-chan string, error) {
+	panic(fmt.Errorf("not implemented: SubAddressCreate - subAddressCreate"))
+}
+
+// SubAddressDelete is the resolver for the subAddressDelete field.
+func (r *subscriptionResolver) SubAddressDelete(ctx context.Context, tripID string) (<-chan string, error) {
+	panic(fmt.Errorf("not implemented: SubAddressDelete - subAddressDelete"))
 }
 
 // Records is the resolver for the records field.
@@ -58,6 +88,11 @@ func (r *tripResolver) Records(ctx context.Context, obj *model.Trip) ([]*model.R
 // MoneyShare is the resolver for the moneyShare field.
 func (r *tripResolver) MoneyShare(ctx context.Context, obj *model.Trip) ([]*model.Tx, error) {
 	panic(fmt.Errorf("not implemented: MoneyShare - moneyShare"))
+}
+
+// AddressList is the resolver for the addressList field.
+func (r *tripResolver) AddressList(ctx context.Context, obj *model.Trip) ([]string, error) {
+	panic(fmt.Errorf("not implemented: AddressList - addressList"))
 }
 
 // ShouldPayAddress is the resolver for the shouldPayAddress field.
@@ -89,3 +124,15 @@ type recordResolver struct{ *Resolver }
 type subscriptionResolver struct{ *Resolver }
 type tripResolver struct{ *Resolver }
 type newRecordResolver struct{ *Resolver }
+
+// !!! WARNING !!!
+// The code below was going to be deleted when updating resolvers. It has been copied here so you have
+// one last chance to move it out of harms way if you want. There are two reasons this happens:
+//  - When renaming or deleting a resolver the old code will be put in here. You can safely delete
+//    it when you're done.
+//  - You have helper methods in this file. Move them out to keep these resolver files clean.
+/*
+	func (r *subscriptionResolver) TripRecordsChanged(ctx context.Context, id string) (<-chan []*model.Record, error) {
+	panic(fmt.Errorf("not implemented: TripRecordsChanged - tripRecordsChanged"))
+}
+*/

@@ -53,11 +53,13 @@ type DirectiveRoot struct {
 
 type ComplexityRoot struct {
 	Mutation struct {
-		CreateRecord func(childComplexity int, input model.NewRecord) int
-		CreateTrip   func(childComplexity int, input model.NewTrip) int
-		RemoveRecord func(childComplexity int, id string) int
-		UpdateRecord func(childComplexity int, id string, input model.NewRecord) int
-		UpdateTrip   func(childComplexity int, id string, input model.NewTrip) int
+		CreateAddress func(childComplexity int, tripID string) int
+		CreateRecord  func(childComplexity int, input model.NewRecord) int
+		CreateTrip    func(childComplexity int, input model.NewTrip) int
+		DeleteAddress func(childComplexity int, tripID string) int
+		RemoveRecord  func(childComplexity int, id string) int
+		UpdateRecord  func(childComplexity int, id string, input model.NewRecord) int
+		UpdateTrip    func(childComplexity int, id string, input model.NewTrip) int
 	}
 
 	Query struct {
@@ -73,14 +75,19 @@ type ComplexityRoot struct {
 	}
 
 	Subscription struct {
-		TripRecordsChanged func(childComplexity int, id string) int
+		SubAddressCreate func(childComplexity int, tripID string) int
+		SubAddressDelete func(childComplexity int, tripID string) int
+		SubRecordCreate  func(childComplexity int, tripID string) int
+		SubRecordDelete  func(childComplexity int, tripID string) int
+		SubRecordUpdate  func(childComplexity int, tripID string) int
 	}
 
 	Trip struct {
-		ID         func(childComplexity int) int
-		MoneyShare func(childComplexity int) int
-		Name       func(childComplexity int) int
-		Records    func(childComplexity int) int
+		AddressList func(childComplexity int) int
+		ID          func(childComplexity int) int
+		MoneyShare  func(childComplexity int) int
+		Name        func(childComplexity int) int
+		Records     func(childComplexity int) int
 	}
 
 	Tx struct {
@@ -95,6 +102,8 @@ type MutationResolver interface {
 	CreateRecord(ctx context.Context, input model.NewRecord) (*model.Record, error)
 	UpdateRecord(ctx context.Context, id string, input model.NewRecord) (*model.Record, error)
 	RemoveRecord(ctx context.Context, id string) (string, error)
+	CreateAddress(ctx context.Context, tripID string) (string, error)
+	DeleteAddress(ctx context.Context, tripID string) (string, error)
 }
 type QueryResolver interface {
 	Trip(ctx context.Context, id string) (*model.Trip, error)
@@ -103,11 +112,16 @@ type RecordResolver interface {
 	ShouldPayAddress(ctx context.Context, obj *model.Record) ([]string, error)
 }
 type SubscriptionResolver interface {
-	TripRecordsChanged(ctx context.Context, id string) (<-chan []*model.Record, error)
+	SubRecordCreate(ctx context.Context, tripID string) (<-chan *model.Record, error)
+	SubRecordDelete(ctx context.Context, tripID string) (<-chan *model.Record, error)
+	SubRecordUpdate(ctx context.Context, tripID string) (<-chan *model.Record, error)
+	SubAddressCreate(ctx context.Context, tripID string) (<-chan string, error)
+	SubAddressDelete(ctx context.Context, tripID string) (<-chan string, error)
 }
 type TripResolver interface {
 	Records(ctx context.Context, obj *model.Trip) ([]*model.Record, error)
 	MoneyShare(ctx context.Context, obj *model.Trip) ([]*model.Tx, error)
+	AddressList(ctx context.Context, obj *model.Trip) ([]string, error)
 }
 
 type NewRecordResolver interface {
@@ -133,6 +147,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 	_ = ec
 	switch typeName + "." + field {
 
+	case "Mutation.createAddress":
+		if e.complexity.Mutation.CreateAddress == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_createAddress_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.CreateAddress(childComplexity, args["tripId"].(string)), true
+
 	case "Mutation.createRecord":
 		if e.complexity.Mutation.CreateRecord == nil {
 			break
@@ -156,6 +182,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.CreateTrip(childComplexity, args["input"].(model.NewTrip)), true
+
+	case "Mutation.deleteAddress":
+		if e.complexity.Mutation.DeleteAddress == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_deleteAddress_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.DeleteAddress(childComplexity, args["tripId"].(string)), true
 
 	case "Mutation.removeRecord":
 		if e.complexity.Mutation.RemoveRecord == nil {
@@ -240,17 +278,72 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Record.ShouldPayAddress(childComplexity), true
 
-	case "Subscription.tripRecordsChanged":
-		if e.complexity.Subscription.TripRecordsChanged == nil {
+	case "Subscription.subAddressCreate":
+		if e.complexity.Subscription.SubAddressCreate == nil {
 			break
 		}
 
-		args, err := ec.field_Subscription_tripRecordsChanged_args(ctx, rawArgs)
+		args, err := ec.field_Subscription_subAddressCreate_args(ctx, rawArgs)
 		if err != nil {
 			return 0, false
 		}
 
-		return e.complexity.Subscription.TripRecordsChanged(childComplexity, args["id"].(string)), true
+		return e.complexity.Subscription.SubAddressCreate(childComplexity, args["tripId"].(string)), true
+
+	case "Subscription.subAddressDelete":
+		if e.complexity.Subscription.SubAddressDelete == nil {
+			break
+		}
+
+		args, err := ec.field_Subscription_subAddressDelete_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Subscription.SubAddressDelete(childComplexity, args["tripId"].(string)), true
+
+	case "Subscription.subRecordCreate":
+		if e.complexity.Subscription.SubRecordCreate == nil {
+			break
+		}
+
+		args, err := ec.field_Subscription_subRecordCreate_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Subscription.SubRecordCreate(childComplexity, args["tripId"].(string)), true
+
+	case "Subscription.subRecordDelete":
+		if e.complexity.Subscription.SubRecordDelete == nil {
+			break
+		}
+
+		args, err := ec.field_Subscription_subRecordDelete_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Subscription.SubRecordDelete(childComplexity, args["tripId"].(string)), true
+
+	case "Subscription.subRecordUpdate":
+		if e.complexity.Subscription.SubRecordUpdate == nil {
+			break
+		}
+
+		args, err := ec.field_Subscription_subRecordUpdate_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Subscription.SubRecordUpdate(childComplexity, args["tripId"].(string)), true
+
+	case "Trip.addressList":
+		if e.complexity.Trip.AddressList == nil {
+			break
+		}
+
+		return e.complexity.Trip.AddressList(childComplexity), true
 
 	case "Trip.id":
 		if e.complexity.Trip.ID == nil {
@@ -437,6 +530,29 @@ var parsedSchema = gqlparser.MustLoadSchema(sources...)
 
 // region    ***************************** args.gotpl *****************************
 
+func (ec *executionContext) field_Mutation_createAddress_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := ec.field_Mutation_createAddress_argsTripID(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["tripId"] = arg0
+	return args, nil
+}
+func (ec *executionContext) field_Mutation_createAddress_argsTripID(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (string, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tripId"))
+	if tmp, ok := rawArgs["tripId"]; ok {
+		return ec.unmarshalNID2string(ctx, tmp)
+	}
+
+	var zeroVal string
+	return zeroVal, nil
+}
+
 func (ec *executionContext) field_Mutation_createRecord_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -480,6 +596,29 @@ func (ec *executionContext) field_Mutation_createTrip_argsInput(
 	}
 
 	var zeroVal model.NewTrip
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Mutation_deleteAddress_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := ec.field_Mutation_deleteAddress_argsTripID(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["tripId"] = arg0
+	return args, nil
+}
+func (ec *executionContext) field_Mutation_deleteAddress_argsTripID(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (string, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tripId"))
+	if tmp, ok := rawArgs["tripId"]; ok {
+		return ec.unmarshalNID2string(ctx, tmp)
+	}
+
+	var zeroVal string
 	return zeroVal, nil
 }
 
@@ -634,22 +773,114 @@ func (ec *executionContext) field_Query_trip_argsID(
 	return zeroVal, nil
 }
 
-func (ec *executionContext) field_Subscription_tripRecordsChanged_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+func (ec *executionContext) field_Subscription_subAddressCreate_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Subscription_tripRecordsChanged_argsID(ctx, rawArgs)
+	arg0, err := ec.field_Subscription_subAddressCreate_argsTripID(ctx, rawArgs)
 	if err != nil {
 		return nil, err
 	}
-	args["id"] = arg0
+	args["tripId"] = arg0
 	return args, nil
 }
-func (ec *executionContext) field_Subscription_tripRecordsChanged_argsID(
+func (ec *executionContext) field_Subscription_subAddressCreate_argsTripID(
 	ctx context.Context,
 	rawArgs map[string]any,
 ) (string, error) {
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("id"))
-	if tmp, ok := rawArgs["id"]; ok {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tripId"))
+	if tmp, ok := rawArgs["tripId"]; ok {
+		return ec.unmarshalNID2string(ctx, tmp)
+	}
+
+	var zeroVal string
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Subscription_subAddressDelete_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := ec.field_Subscription_subAddressDelete_argsTripID(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["tripId"] = arg0
+	return args, nil
+}
+func (ec *executionContext) field_Subscription_subAddressDelete_argsTripID(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (string, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tripId"))
+	if tmp, ok := rawArgs["tripId"]; ok {
+		return ec.unmarshalNID2string(ctx, tmp)
+	}
+
+	var zeroVal string
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Subscription_subRecordCreate_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := ec.field_Subscription_subRecordCreate_argsTripID(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["tripId"] = arg0
+	return args, nil
+}
+func (ec *executionContext) field_Subscription_subRecordCreate_argsTripID(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (string, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tripId"))
+	if tmp, ok := rawArgs["tripId"]; ok {
+		return ec.unmarshalNID2string(ctx, tmp)
+	}
+
+	var zeroVal string
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Subscription_subRecordDelete_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := ec.field_Subscription_subRecordDelete_argsTripID(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["tripId"] = arg0
+	return args, nil
+}
+func (ec *executionContext) field_Subscription_subRecordDelete_argsTripID(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (string, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tripId"))
+	if tmp, ok := rawArgs["tripId"]; ok {
+		return ec.unmarshalNID2string(ctx, tmp)
+	}
+
+	var zeroVal string
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Subscription_subRecordUpdate_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := ec.field_Subscription_subRecordUpdate_argsTripID(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["tripId"] = arg0
+	return args, nil
+}
+func (ec *executionContext) field_Subscription_subRecordUpdate_argsTripID(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (string, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tripId"))
+	if tmp, ok := rawArgs["tripId"]; ok {
 		return ec.unmarshalNID2string(ctx, tmp)
 	}
 
@@ -804,6 +1035,8 @@ func (ec *executionContext) fieldContext_Mutation_createTrip(ctx context.Context
 				return ec.fieldContext_Trip_records(ctx, field)
 			case "moneyShare":
 				return ec.fieldContext_Trip_moneyShare(ctx, field)
+			case "addressList":
+				return ec.fieldContext_Trip_addressList(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Trip", field.Name)
 		},
@@ -869,6 +1102,8 @@ func (ec *executionContext) fieldContext_Mutation_updateTrip(ctx context.Context
 				return ec.fieldContext_Trip_records(ctx, field)
 			case "moneyShare":
 				return ec.fieldContext_Trip_moneyShare(ctx, field)
+			case "addressList":
+				return ec.fieldContext_Trip_addressList(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Trip", field.Name)
 		},
@@ -1076,6 +1311,116 @@ func (ec *executionContext) fieldContext_Mutation_removeRecord(ctx context.Conte
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_createAddress(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_createAddress(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().CreateAddress(rctx, fc.Args["tripId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_createAddress(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_createAddress_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_deleteAddress(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_deleteAddress(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().DeleteAddress(rctx, fc.Args["tripId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_deleteAddress(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_deleteAddress_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_trip(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Query_trip(ctx, field)
 	if err != nil {
@@ -1120,6 +1465,8 @@ func (ec *executionContext) fieldContext_Query_trip(ctx context.Context, field g
 				return ec.fieldContext_Trip_records(ctx, field)
 			case "moneyShare":
 				return ec.fieldContext_Trip_moneyShare(ctx, field)
+			case "addressList":
+				return ec.fieldContext_Trip_addressList(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Trip", field.Name)
 		},
@@ -1489,8 +1836,8 @@ func (ec *executionContext) fieldContext_Record_shouldPayAddress(_ context.Conte
 	return fc, nil
 }
 
-func (ec *executionContext) _Subscription_tripRecordsChanged(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	fc, err := ec.fieldContext_Subscription_tripRecordsChanged(ctx, field)
+func (ec *executionContext) _Subscription_subRecordCreate(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
+	fc, err := ec.fieldContext_Subscription_subRecordCreate(ctx, field)
 	if err != nil {
 		return nil
 	}
@@ -1503,7 +1850,7 @@ func (ec *executionContext) _Subscription_tripRecordsChanged(ctx context.Context
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Subscription().TripRecordsChanged(rctx, fc.Args["id"].(string))
+		return ec.resolvers.Subscription().SubRecordCreate(rctx, fc.Args["tripId"].(string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -1517,7 +1864,7 @@ func (ec *executionContext) _Subscription_tripRecordsChanged(ctx context.Context
 	}
 	return func(ctx context.Context) graphql.Marshaler {
 		select {
-		case res, ok := <-resTmp.(<-chan []*model.Record):
+		case res, ok := <-resTmp.(<-chan *model.Record):
 			if !ok {
 				return nil
 			}
@@ -1525,7 +1872,7 @@ func (ec *executionContext) _Subscription_tripRecordsChanged(ctx context.Context
 				w.Write([]byte{'{'})
 				graphql.MarshalString(field.Alias).MarshalGQL(w)
 				w.Write([]byte{':'})
-				ec.marshalNRecord2ᚕᚖdtmᚋgraphᚋmodelᚐRecordᚄ(ctx, field.Selections, res).MarshalGQL(w)
+				ec.marshalNRecord2ᚖdtmᚋgraphᚋmodelᚐRecord(ctx, field.Selections, res).MarshalGQL(w)
 				w.Write([]byte{'}'})
 			})
 		case <-ctx.Done():
@@ -1534,7 +1881,7 @@ func (ec *executionContext) _Subscription_tripRecordsChanged(ctx context.Context
 	}
 }
 
-func (ec *executionContext) fieldContext_Subscription_tripRecordsChanged(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+func (ec *executionContext) fieldContext_Subscription_subRecordCreate(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Subscription",
 		Field:      field,
@@ -1563,7 +1910,307 @@ func (ec *executionContext) fieldContext_Subscription_tripRecordsChanged(ctx con
 		}
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
-	if fc.Args, err = ec.field_Subscription_tripRecordsChanged_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+	if fc.Args, err = ec.field_Subscription_subRecordCreate_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Subscription_subRecordDelete(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
+	fc, err := ec.fieldContext_Subscription_subRecordDelete(ctx, field)
+	if err != nil {
+		return nil
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = nil
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Subscription().SubRecordDelete(rctx, fc.Args["tripId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return nil
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return nil
+	}
+	return func(ctx context.Context) graphql.Marshaler {
+		select {
+		case res, ok := <-resTmp.(<-chan *model.Record):
+			if !ok {
+				return nil
+			}
+			return graphql.WriterFunc(func(w io.Writer) {
+				w.Write([]byte{'{'})
+				graphql.MarshalString(field.Alias).MarshalGQL(w)
+				w.Write([]byte{':'})
+				ec.marshalNRecord2ᚖdtmᚋgraphᚋmodelᚐRecord(ctx, field.Selections, res).MarshalGQL(w)
+				w.Write([]byte{'}'})
+			})
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
+
+func (ec *executionContext) fieldContext_Subscription_subRecordDelete(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Subscription",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Record_id(ctx, field)
+			case "name":
+				return ec.fieldContext_Record_name(ctx, field)
+			case "amount":
+				return ec.fieldContext_Record_amount(ctx, field)
+			case "prePayAddress":
+				return ec.fieldContext_Record_prePayAddress(ctx, field)
+			case "shouldPayAddress":
+				return ec.fieldContext_Record_shouldPayAddress(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Record", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Subscription_subRecordDelete_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Subscription_subRecordUpdate(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
+	fc, err := ec.fieldContext_Subscription_subRecordUpdate(ctx, field)
+	if err != nil {
+		return nil
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = nil
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Subscription().SubRecordUpdate(rctx, fc.Args["tripId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return nil
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return nil
+	}
+	return func(ctx context.Context) graphql.Marshaler {
+		select {
+		case res, ok := <-resTmp.(<-chan *model.Record):
+			if !ok {
+				return nil
+			}
+			return graphql.WriterFunc(func(w io.Writer) {
+				w.Write([]byte{'{'})
+				graphql.MarshalString(field.Alias).MarshalGQL(w)
+				w.Write([]byte{':'})
+				ec.marshalNRecord2ᚖdtmᚋgraphᚋmodelᚐRecord(ctx, field.Selections, res).MarshalGQL(w)
+				w.Write([]byte{'}'})
+			})
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
+
+func (ec *executionContext) fieldContext_Subscription_subRecordUpdate(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Subscription",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Record_id(ctx, field)
+			case "name":
+				return ec.fieldContext_Record_name(ctx, field)
+			case "amount":
+				return ec.fieldContext_Record_amount(ctx, field)
+			case "prePayAddress":
+				return ec.fieldContext_Record_prePayAddress(ctx, field)
+			case "shouldPayAddress":
+				return ec.fieldContext_Record_shouldPayAddress(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Record", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Subscription_subRecordUpdate_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Subscription_subAddressCreate(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
+	fc, err := ec.fieldContext_Subscription_subAddressCreate(ctx, field)
+	if err != nil {
+		return nil
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = nil
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Subscription().SubAddressCreate(rctx, fc.Args["tripId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return nil
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return nil
+	}
+	return func(ctx context.Context) graphql.Marshaler {
+		select {
+		case res, ok := <-resTmp.(<-chan string):
+			if !ok {
+				return nil
+			}
+			return graphql.WriterFunc(func(w io.Writer) {
+				w.Write([]byte{'{'})
+				graphql.MarshalString(field.Alias).MarshalGQL(w)
+				w.Write([]byte{':'})
+				ec.marshalNString2string(ctx, field.Selections, res).MarshalGQL(w)
+				w.Write([]byte{'}'})
+			})
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
+
+func (ec *executionContext) fieldContext_Subscription_subAddressCreate(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Subscription",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Subscription_subAddressCreate_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Subscription_subAddressDelete(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
+	fc, err := ec.fieldContext_Subscription_subAddressDelete(ctx, field)
+	if err != nil {
+		return nil
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = nil
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Subscription().SubAddressDelete(rctx, fc.Args["tripId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return nil
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return nil
+	}
+	return func(ctx context.Context) graphql.Marshaler {
+		select {
+		case res, ok := <-resTmp.(<-chan string):
+			if !ok {
+				return nil
+			}
+			return graphql.WriterFunc(func(w io.Writer) {
+				w.Write([]byte{'{'})
+				graphql.MarshalString(field.Alias).MarshalGQL(w)
+				w.Write([]byte{':'})
+				ec.marshalNString2string(ctx, field.Selections, res).MarshalGQL(w)
+				w.Write([]byte{'}'})
+			})
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
+
+func (ec *executionContext) fieldContext_Subscription_subAddressDelete(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Subscription",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Subscription_subAddressDelete_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -1759,6 +2406,50 @@ func (ec *executionContext) fieldContext_Trip_moneyShare(_ context.Context, fiel
 				return ec.fieldContext_Tx_output(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Tx", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Trip_addressList(ctx context.Context, field graphql.CollectedField, obj *model.Trip) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Trip_addressList(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Trip().AddressList(rctx, obj)
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Trip_addressList(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Trip",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
 		},
 	}
 	return fc, nil
@@ -3942,6 +4633,20 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "createAddress":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_createAddress(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "deleteAddress":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_deleteAddress(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -4137,8 +4842,16 @@ func (ec *executionContext) _Subscription(ctx context.Context, sel ast.Selection
 	}
 
 	switch fields[0].Name {
-	case "tripRecordsChanged":
-		return ec._Subscription_tripRecordsChanged(ctx, fields[0])
+	case "subRecordCreate":
+		return ec._Subscription_subRecordCreate(ctx, fields[0])
+	case "subRecordDelete":
+		return ec._Subscription_subRecordDelete(ctx, fields[0])
+	case "subRecordUpdate":
+		return ec._Subscription_subRecordUpdate(ctx, fields[0])
+	case "subAddressCreate":
+		return ec._Subscription_subAddressCreate(ctx, fields[0])
+	case "subAddressDelete":
+		return ec._Subscription_subAddressDelete(ctx, fields[0])
 	default:
 		panic("unknown field " + strconv.Quote(fields[0].Name))
 	}
@@ -4211,6 +4924,42 @@ func (ec *executionContext) _Trip(ctx context.Context, sel ast.SelectionSet, obj
 					}
 				}()
 				res = ec._Trip_moneyShare(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "addressList":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Trip_addressList(ctx, field, obj)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}

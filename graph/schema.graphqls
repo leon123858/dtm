@@ -20,10 +20,15 @@ type Trip {
 	name: String!
 	records: [Record!]!
 	moneyShare: [Tx!]!
+	addressList: [String!]!
 }
 
 type Subscription {
-	tripRecordsChanged(id: ID!): [Record!]!
+	subRecordCreate(tripId: ID!): Record!
+	subRecordDelete(tripId: ID!): Record!
+	subRecordUpdate(tripId: ID!): Record!
+	subAddressCreate(tripId: ID!): String!
+	subAddressDelete(tripId: ID!): String!
 }
 
 type Query {
@@ -47,4 +52,6 @@ type Mutation {
 	createRecord(input: NewRecord!): Record!
 	updateRecord(id: ID!, input: NewRecord!): Record!
 	removeRecord(id: ID!): ID!
+	createAddress(tripId: ID!): String!
+	deleteAddress(tripId: ID!): String!
 }
