@@ -6,58 +6,196 @@ package graph
 
 import (
 	"context"
+	"dtm/db/db"
 	"dtm/graph/model"
+	"dtm/tx"
 	"fmt"
+
+	"github.com/google/uuid"
 )
 
 // CreateTrip is the resolver for the createTrip field.
 func (r *mutationResolver) CreateTrip(ctx context.Context, input model.NewTrip) (*model.Trip, error) {
-	panic(fmt.Errorf("not implemented: CreateTrip - createTrip"))
+	dbTripInfo := r.TripDB
+	id := uuid.New()
+	tripInfo := &db.TripInfo{
+		ID:   id,
+		Name: input.Name,
+	}
+	if err := dbTripInfo.CreateTrip(tripInfo); err != nil {
+		return nil, fmt.Errorf("failed to create trip: %w", err)
+	}
+	trip := &model.Trip{
+		ID:   id.String(),
+		Name: input.Name,
+	}
+	return trip, nil
 }
 
 // UpdateTrip is the resolver for the updateTrip field.
 func (r *mutationResolver) UpdateTrip(ctx context.Context, id string, input model.NewTrip) (*model.Trip, error) {
-	panic(fmt.Errorf("not implemented: UpdateTrip - updateTrip"))
+	dbTripInfo := r.TripDB
+	tripID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid trip ID: %w", err)
+	}
+
+	tripInfo := &db.TripInfo{
+		ID:   tripID,
+		Name: input.Name,
+	}
+	if err := dbTripInfo.UpdateTripInfo(tripInfo); err != nil {
+		return nil, fmt.Errorf("failed to update trip: %w", err)
+	}
+
+	trip := &model.Trip{
+		ID:   id,
+		Name: input.Name,
+	}
+	return trip, nil
 }
 
 // CreateRecord is the resolver for the createRecord field.
-func (r *mutationResolver) CreateRecord(ctx context.Context, input model.NewRecord) (*model.Record, error) {
-	panic(fmt.Errorf("not implemented: CreateRecord - createRecord"))
+func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, input model.NewRecord) (*model.Record, error) {
+	dbTripInfo := r.TripDB
+	tripUUID, err := uuid.Parse(tripID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid trip ID: %w", err)
+	}
+
+	record := &db.Record{
+		ID:               uuid.New(),
+		Name:             input.Name,
+		Amount:           input.Amount,
+		PrePayAddress:    db.Address(input.PrePayAddress),
+		ShouldPayAddress: make([]db.Address, len(input.ShouldPayAddress)),
+	}
+	for i, addr := range input.ShouldPayAddress {
+		record.ShouldPayAddress[i] = db.Address(addr)
+	}
+	if err := dbTripInfo.CreateTripRecords(tripUUID, []db.Record{*record}); err != nil {
+		return nil, fmt.Errorf("failed to create record: %w", err)
+	}
+
+	return &model.Record{
+		ID:            record.ID.String(),
+		Name:          record.Name,
+		Amount:        record.Amount,
+		PrePayAddress: string(record.PrePayAddress),
+	}, nil
 }
 
 // UpdateRecord is the resolver for the updateRecord field.
 func (r *mutationResolver) UpdateRecord(ctx context.Context, id string, input model.NewRecord) (*model.Record, error) {
-	panic(fmt.Errorf("not implemented: UpdateRecord - updateRecord"))
+	dbTripInfo := r.TripDB
+	recordID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid record ID: %w", err)
+	}
+
+	record := &db.Record{
+		ID:               recordID,
+		Name:             input.Name,
+		Amount:           input.Amount,
+		PrePayAddress:    db.Address(input.PrePayAddress),
+		ShouldPayAddress: make([]db.Address, len(input.ShouldPayAddress)),
+	}
+	for i, addr := range input.ShouldPayAddress {
+		record.ShouldPayAddress[i] = db.Address(addr)
+	}
+	if err := dbTripInfo.UpdateTripRecord(*record); err != nil {
+		return nil, fmt.Errorf("failed to update record: %w", err)
+	}
+
+	return &model.Record{
+		ID:            record.ID.String(),
+		Name:          record.Name,
+		Amount:        record.Amount,
+		PrePayAddress: string(record.PrePayAddress),
+	}, nil
 }
 
 // RemoveRecord is the resolver for the removeRecord field.
 func (r *mutationResolver) RemoveRecord(ctx context.Context, id string) (string, error) {
-	panic(fmt.Errorf("not implemented: RemoveRecord - removeRecord"))
+	dbTripInfo := r.TripDB
+	recordID, err := uuid.Parse(id)
+	if err != nil {
+		return "", fmt.Errorf("invalid record ID: %w", err)
+	}
+
+	if err := dbTripInfo.DeleteTripRecord(recordID); err != nil {
+		return "", fmt.Errorf("failed to delete record: %w", err)
+	}
+
+	return id, nil
 }
 
 // CreateAddress is the resolver for the createAddress field.
-func (r *mutationResolver) CreateAddress(ctx context.Context, tripID string) (string, error) {
-	panic(fmt.Errorf("not implemented: CreateAddress - createAddress"))
+func (r *mutationResolver) CreateAddress(ctx context.Context, tripID string, address string) (string, error) {
+	dbTripInfo := r.TripDB
+	tripUUID, err := uuid.Parse(tripID)
+	if err != nil {
+		return "", fmt.Errorf("invalid trip ID: %w", err)
+	}
+
+	if err := dbTripInfo.TripAddressListAdd(tripUUID, db.Address(address)); err != nil {
+		return "", fmt.Errorf("failed to create address: %w", err)
+	}
+
+	return address, nil
 }
 
 // DeleteAddress is the resolver for the deleteAddress field.
-func (r *mutationResolver) DeleteAddress(ctx context.Context, tripID string) (string, error) {
-	panic(fmt.Errorf("not implemented: DeleteAddress - deleteAddress"))
+func (r *mutationResolver) DeleteAddress(ctx context.Context, tripID string, address string) (string, error) {
+	dbTripInfo := r.TripDB
+	tripUUID, err := uuid.Parse(tripID)
+	if err != nil {
+		return "", fmt.Errorf("invalid trip ID: %w", err)
+	}
+
+	if err := dbTripInfo.TripAddressListRemove(tripUUID, db.Address(address)); err != nil {
+		return "", fmt.Errorf("failed to delete address: %w", err)
+	}
+
+	return address, nil
 }
 
 // Trip is the resolver for the trip field.
 func (r *queryResolver) Trip(ctx context.Context, id string) (*model.Trip, error) {
-	panic(fmt.Errorf("not implemented: Trip - trip"))
-}
+	dbTripInfo := r.TripDB
+	tripID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid trip ID: %w", err)
+	}
 
-// Amount is the resolver for the amount field.
-func (r *recordResolver) Amount(ctx context.Context, obj *model.Record) (float64, error) {
-	panic(fmt.Errorf("not implemented: Amount - amount"))
+	tripInfo, err := dbTripInfo.GetTripInfo(tripID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get trip info: %w", err)
+	}
+
+	return &model.Trip{
+		ID:   tripInfo.ID.String(),
+		Name: tripInfo.Name,
+	}, nil
 }
 
 // ShouldPayAddress is the resolver for the shouldPayAddress field.
 func (r *recordResolver) ShouldPayAddress(ctx context.Context, obj *model.Record) ([]string, error) {
-	panic(fmt.Errorf("not implemented: ShouldPayAddress - shouldPayAddress"))
+	dbTripInfo := r.TripDB
+	recordID, err := uuid.Parse(obj.ID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid record ID: %w", err)
+	}
+
+	addresses, err := dbTripInfo.GetRecordAddressList(recordID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get record: %w", err)
+	}
+	addressList := make([]string, len(addresses))
+	for i, addr := range addresses {
+		addressList[i] = string(addr)
+	}
+	return addressList, nil
 }
 
 // SubRecordCreate is the resolver for the subRecordCreate field.
@@ -87,27 +225,105 @@ func (r *subscriptionResolver) SubAddressDelete(ctx context.Context, tripID stri
 
 // Records is the resolver for the records field.
 func (r *tripResolver) Records(ctx context.Context, obj *model.Trip) ([]*model.Record, error) {
-	panic(fmt.Errorf("not implemented: Records - records"))
+	dbTripInfo := r.TripDB
+	tripID, err := uuid.Parse(obj.ID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid trip ID: %w", err)
+	}
+
+	records, err := dbTripInfo.GetTripRecords(tripID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get trip records: %w", err)
+	}
+
+	recordModels := make([]*model.Record, len(records))
+	for i, record := range records {
+		recordModels[i] = &model.Record{
+			ID:            record.ID.String(),
+			Name:          record.Name,
+			Amount:        record.Amount,
+			PrePayAddress: string(record.PrePayAddress),
+		}
+	}
+	return recordModels, nil
 }
 
 // MoneyShare is the resolver for the moneyShare field.
 func (r *tripResolver) MoneyShare(ctx context.Context, obj *model.Trip) ([]*model.Tx, error) {
-	panic(fmt.Errorf("not implemented: MoneyShare - moneyShare"))
+	dbTripInfo := r.TripDB
+	tripID, err := uuid.Parse(obj.ID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid trip ID: %w", err)
+	}
+
+	records, err := dbTripInfo.GetTripRecords(tripID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get trip records: %w", err)
+	}
+
+	// Process records to create money share transactions
+	payments := make([]tx.UserPayment, 0, len(records))
+	for _, record := range records {
+		if record.Amount <= 0 {
+			continue // Skip records with non-positive amounts
+		}
+		payment := tx.UserPayment{
+			Name:             record.Name,
+			Amount:           record.Amount,
+			PrePayAddress:    string(record.PrePayAddress),
+			ShouldPayAddress: make([]string, len(record.ShouldPayAddress)),
+		}
+		for i, addr := range record.ShouldPayAddress {
+			payment.ShouldPayAddress[i] = string(addr)
+		}
+		payments = append(payments, payment)
+	}
+	txPackage, totalRemaining, err := tx.ShareMoneyEasy(payments)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create TxPackage: %w", err)
+	}
+	if totalRemaining > 0.1 {
+		return nil, fmt.Errorf("there are remaining unspent inputs totaling %.2f, please check your records", totalRemaining)
+	}
+
+	txList := make([]*model.Tx, len(txPackage.TxList))
+	for i, tx := range txPackage.TxList {
+		txList[i] = &model.Tx{
+			Input: make([]*model.Payment, len(tx.Input)),
+			Output: &model.Payment{
+				Address: tx.Output.Address,
+				Amount:  tx.Output.Amount,
+			},
+		}
+		for j, input := range tx.Input {
+			txList[i].Input[j] = &model.Payment{
+				Address: input.Address,
+				Amount:  input.Amount,
+			}
+		}
+	}
+
+	return txList, nil
 }
 
 // AddressList is the resolver for the addressList field.
 func (r *tripResolver) AddressList(ctx context.Context, obj *model.Trip) ([]string, error) {
-	panic(fmt.Errorf("not implemented: AddressList - addressList"))
-}
+	dbTripInfo := r.TripDB
+	tripID, err := uuid.Parse(obj.ID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid trip ID: %w", err)
+	}
 
-// Amount is the resolver for the amount field.
-func (r *newRecordResolver) Amount(ctx context.Context, obj *model.NewRecord, data float64) error {
-	panic(fmt.Errorf("not implemented: Amount - amount"))
-}
+	addresses, err := dbTripInfo.GetTripAddressList(tripID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get trip addresses: %w", err)
+	}
 
-// ShouldPayAddress is the resolver for the shouldPayAddress field.
-func (r *newRecordResolver) ShouldPayAddress(ctx context.Context, obj *model.NewRecord, data []string) error {
-	panic(fmt.Errorf("not implemented: ShouldPayAddress - shouldPayAddress"))
+	addressList := make([]string, len(addresses))
+	for i, addr := range addresses {
+		addressList[i] = string(addr)
+	}
+	return addressList, nil
 }
 
 // Mutation returns MutationResolver implementation.
@@ -125,12 +341,8 @@ func (r *Resolver) Subscription() SubscriptionResolver { return &subscriptionRes
 // Trip returns TripResolver implementation.
 func (r *Resolver) Trip() TripResolver { return &tripResolver{r} }
 
-// NewRecord returns NewRecordResolver implementation.
-func (r *Resolver) NewRecord() NewRecordResolver { return &newRecordResolver{r} }
-
 type mutationResolver struct{ *Resolver }
 type queryResolver struct{ *Resolver }
 type recordResolver struct{ *Resolver }
 type subscriptionResolver struct{ *Resolver }
 type tripResolver struct{ *Resolver }
-type newRecordResolver struct{ *Resolver }

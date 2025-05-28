@@ -10,6 +10,7 @@ type TripDBWrapper interface {
 	GetTripInfo(id uuid.UUID) (*TripInfo, error)
 	GetTripRecords(id uuid.UUID) ([]Record, error)
 	GetTripAddressList(id uuid.UUID) ([]Address, error)
+	GetRecordAddressList(recordID uuid.UUID) ([]Address, error)
 	// Update
 	UpdateTripInfo(info *TripInfo) error
 	UpdateTripRecord(record Record) error
@@ -17,6 +18,5 @@ type TripDBWrapper interface {
 	TripAddressListRemove(id uuid.UUID, address Address) error
 	// Delete
 	DeleteTrip(id uuid.UUID) error
-	DeleteTripRecord(id uuid.UUID, recordID uuid.UUID) error
+	DeleteTripRecord(recordID uuid.UUID) error
 }
-

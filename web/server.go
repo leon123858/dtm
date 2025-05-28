@@ -1,6 +1,7 @@
 package web
 
 import (
+	"dtm/db/mem"
 	"dtm/graph"
 
 	"github.com/gin-contrib/cors"
@@ -34,7 +35,9 @@ func Serve() {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 	// GraphQL endpoint
-	executableSchema := graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{}})
+	executableSchema := graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{
+		TripDB: mem.NewInMemoryTripDBWrapper(), // Use in-memory DB for simplicity
+	}})
 	r.POST("/query", GraphQLHandler(executableSchema))
 	r.GET("/query", GraphQLHandler(executableSchema))
 	r.GET("/", GraphQLPlaygroundHandler("DTM", "/query"))

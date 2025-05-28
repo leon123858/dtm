@@ -111,6 +111,24 @@ func (db *inMemoryTripDBWrapper) GetTripAddressList(id uuid.UUID) ([]dbt.Address
 	return addressListCopy, nil
 }
 
+func (db *inMemoryTripDBWrapper) GetRecordAddressList(recordID uuid.UUID) ([]dbt.Address, error) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	// Search through all trips for the record
+	for _, tripData := range db.tripsData {
+		for _, record := range tripData.Records {
+			if record.ID == recordID {
+				// Return a copy of the ShouldPayAddress list to prevent external modification
+				addressListCopy := make([]dbt.Address, len(record.ShouldPayAddress))
+				copy(addressListCopy, record.ShouldPayAddress)
+				return addressListCopy, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("record with ID %s not found in any trip", recordID)
+}
+
 // UpdateTripInfo updates the information of an existing trip.
 func (db *inMemoryTripDBWrapper) UpdateTripInfo(info *dbt.TripInfo) error {
 	db.mu.Lock()
@@ -215,28 +233,25 @@ func (db *inMemoryTripDBWrapper) DeleteTrip(id uuid.UUID) error {
 }
 
 // DeleteTripRecord deletes a specific record from a trip.
-func (db *inMemoryTripDBWrapper) DeleteTripRecord(tripID uuid.UUID, recordID uuid.UUID) error {
+func (db *inMemoryTripDBWrapper) DeleteTripRecord(recordID uuid.UUID) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
-	tripData, exists := db.tripsData[tripID]
-	if !exists {
-		return fmt.Errorf("trip with ID %s not found", tripID)
-	}
+	for _, tripData := range db.tripsData {
+		foundIdx := -1
+		for i, record := range tripData.Records {
+			if record.ID == recordID {
+				foundIdx = i
+				break
+			}
+		}
 
-	foundIdx := -1
-	for i, record := range tripData.Records {
-		if record.ID == recordID {
-			foundIdx = i
-			break
+		if foundIdx != -1 {
+			// Remove the record by slicing
+			tripData.Records = append(tripData.Records[:foundIdx], tripData.Records[foundIdx+1:]...)
+			return nil
 		}
 	}
 
-	if foundIdx == -1 {
-		return fmt.Errorf("record with ID %s not found in trip %s", recordID, tripID)
-	}
-
-	// Remove the record by slicing
-	tripData.Records = append(tripData.Records[:foundIdx], tripData.Records[foundIdx+1:]...)
-	return nil
+	return fmt.Errorf("record with ID %s not found in any trip", recordID)
 }

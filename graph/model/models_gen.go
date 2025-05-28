@@ -5,8 +5,20 @@ package model
 type Mutation struct {
 }
 
+type NewRecord struct {
+	Name             string   `json:"name"`
+	Amount           float64  `json:"amount"`
+	PrePayAddress    string   `json:"prePayAddress"`
+	ShouldPayAddress []string `json:"shouldPayAddress"`
+}
+
 type NewTrip struct {
 	Name string `json:"name"`
+}
+
+type Payment struct {
+	Amount  float64 `json:"amount"`
+	Address string  `json:"address"`
 }
 
 type Query struct {
@@ -16,7 +28,6 @@ type Subscription struct {
 }
 
 type Tx struct {
-	Amount float64  `json:"amount"`
-	Input  []string `json:"input"`
-	Output string   `json:"output"`
+	Input  []*Payment `json:"input"`
+	Output *Payment   `json:"output"`
 }

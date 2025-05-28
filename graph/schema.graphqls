@@ -10,10 +10,14 @@ type Record {
 	shouldPayAddress: [String!]!
 }
 
-type Tx {
+type Payment {
 	amount: Float!
-	input: [String!]!
-	output: String!
+	address: String!
+}
+
+type Tx {
+	input: [Payment!]!
+	output: Payment!
 }
 
 type Trip {
@@ -50,9 +54,9 @@ input NewTrip {
 type Mutation {
 	createTrip(input: NewTrip!): Trip!
 	updateTrip(id: ID!, input: NewTrip!): Trip!
-	createRecord(input: NewRecord!): Record!
+	createRecord(tripId: ID!, input: NewRecord!): Record!
 	updateRecord(id: ID!, input: NewRecord!): Record!
 	removeRecord(id: ID!): ID!
-	createAddress(tripId: ID!): String!
-	deleteAddress(tripId: ID!): String!
+	createAddress(tripId: ID!, address: String!): String!
+	deleteAddress(tripId: ID!, address: String!): String!
 }

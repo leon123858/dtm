@@ -45,7 +45,6 @@ type ResolverRoot interface {
 	Record() RecordResolver
 	Subscription() SubscriptionResolver
 	Trip() TripResolver
-	NewRecord() NewRecordResolver
 }
 
 type DirectiveRoot struct {
@@ -53,13 +52,18 @@ type DirectiveRoot struct {
 
 type ComplexityRoot struct {
 	Mutation struct {
-		CreateAddress func(childComplexity int, tripID string) int
-		CreateRecord  func(childComplexity int, input model.NewRecord) int
+		CreateAddress func(childComplexity int, tripID string, address string) int
+		CreateRecord  func(childComplexity int, tripID string, input model.NewRecord) int
 		CreateTrip    func(childComplexity int, input model.NewTrip) int
-		DeleteAddress func(childComplexity int, tripID string) int
+		DeleteAddress func(childComplexity int, tripID string, address string) int
 		RemoveRecord  func(childComplexity int, id string) int
 		UpdateRecord  func(childComplexity int, id string, input model.NewRecord) int
 		UpdateTrip    func(childComplexity int, id string, input model.NewTrip) int
+	}
+
+	Payment struct {
+		Address func(childComplexity int) int
+		Amount  func(childComplexity int) int
 	}
 
 	Query struct {
@@ -91,7 +95,6 @@ type ComplexityRoot struct {
 	}
 
 	Tx struct {
-		Amount func(childComplexity int) int
 		Input  func(childComplexity int) int
 		Output func(childComplexity int) int
 	}
@@ -100,18 +103,16 @@ type ComplexityRoot struct {
 type MutationResolver interface {
 	CreateTrip(ctx context.Context, input model.NewTrip) (*model.Trip, error)
 	UpdateTrip(ctx context.Context, id string, input model.NewTrip) (*model.Trip, error)
-	CreateRecord(ctx context.Context, input model.NewRecord) (*model.Record, error)
+	CreateRecord(ctx context.Context, tripID string, input model.NewRecord) (*model.Record, error)
 	UpdateRecord(ctx context.Context, id string, input model.NewRecord) (*model.Record, error)
 	RemoveRecord(ctx context.Context, id string) (string, error)
-	CreateAddress(ctx context.Context, tripID string) (string, error)
-	DeleteAddress(ctx context.Context, tripID string) (string, error)
+	CreateAddress(ctx context.Context, tripID string, address string) (string, error)
+	DeleteAddress(ctx context.Context, tripID string, address string) (string, error)
 }
 type QueryResolver interface {
 	Trip(ctx context.Context, id string) (*model.Trip, error)
 }
 type RecordResolver interface {
-	Amount(ctx context.Context, obj *model.Record) (float64, error)
-
 	ShouldPayAddress(ctx context.Context, obj *model.Record) ([]string, error)
 }
 type SubscriptionResolver interface {
@@ -125,12 +126,6 @@ type TripResolver interface {
 	Records(ctx context.Context, obj *model.Trip) ([]*model.Record, error)
 	MoneyShare(ctx context.Context, obj *model.Trip) ([]*model.Tx, error)
 	AddressList(ctx context.Context, obj *model.Trip) ([]string, error)
-}
-
-type NewRecordResolver interface {
-	Amount(ctx context.Context, obj *model.NewRecord, data float64) error
-
-	ShouldPayAddress(ctx context.Context, obj *model.NewRecord, data []string) error
 }
 
 type executableSchema struct {
@@ -162,7 +157,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.CreateAddress(childComplexity, args["tripId"].(string)), true
+		return e.complexity.Mutation.CreateAddress(childComplexity, args["tripId"].(string), args["address"].(string)), true
 
 	case "Mutation.createRecord":
 		if e.complexity.Mutation.CreateRecord == nil {
@@ -174,7 +169,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.CreateRecord(childComplexity, args["input"].(model.NewRecord)), true
+		return e.complexity.Mutation.CreateRecord(childComplexity, args["tripId"].(string), args["input"].(model.NewRecord)), true
 
 	case "Mutation.createTrip":
 		if e.complexity.Mutation.CreateTrip == nil {
@@ -198,7 +193,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.DeleteAddress(childComplexity, args["tripId"].(string)), true
+		return e.complexity.Mutation.DeleteAddress(childComplexity, args["tripId"].(string), args["address"].(string)), true
 
 	case "Mutation.removeRecord":
 		if e.complexity.Mutation.RemoveRecord == nil {
@@ -235,6 +230,20 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.UpdateTrip(childComplexity, args["id"].(string), args["input"].(model.NewTrip)), true
+
+	case "Payment.address":
+		if e.complexity.Payment.Address == nil {
+			break
+		}
+
+		return e.complexity.Payment.Address(childComplexity), true
+
+	case "Payment.amount":
+		if e.complexity.Payment.Amount == nil {
+			break
+		}
+
+		return e.complexity.Payment.Amount(childComplexity), true
 
 	case "Query.trip":
 		if e.complexity.Query.Trip == nil {
@@ -377,13 +386,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Trip.Records(childComplexity), true
-
-	case "Tx.amount":
-		if e.complexity.Tx.Amount == nil {
-			break
-		}
-
-		return e.complexity.Tx.Amount(childComplexity), true
 
 	case "Tx.input":
 		if e.complexity.Tx.Input == nil {
@@ -550,6 +552,11 @@ func (ec *executionContext) field_Mutation_createAddress_args(ctx context.Contex
 		return nil, err
 	}
 	args["tripId"] = arg0
+	arg1, err := ec.field_Mutation_createAddress_argsAddress(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["address"] = arg1
 	return args, nil
 }
 func (ec *executionContext) field_Mutation_createAddress_argsTripID(
@@ -565,16 +572,47 @@ func (ec *executionContext) field_Mutation_createAddress_argsTripID(
 	return zeroVal, nil
 }
 
+func (ec *executionContext) field_Mutation_createAddress_argsAddress(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (string, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("address"))
+	if tmp, ok := rawArgs["address"]; ok {
+		return ec.unmarshalNString2string(ctx, tmp)
+	}
+
+	var zeroVal string
+	return zeroVal, nil
+}
+
 func (ec *executionContext) field_Mutation_createRecord_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Mutation_createRecord_argsInput(ctx, rawArgs)
+	arg0, err := ec.field_Mutation_createRecord_argsTripID(ctx, rawArgs)
 	if err != nil {
 		return nil, err
 	}
-	args["input"] = arg0
+	args["tripId"] = arg0
+	arg1, err := ec.field_Mutation_createRecord_argsInput(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg1
 	return args, nil
 }
+func (ec *executionContext) field_Mutation_createRecord_argsTripID(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (string, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tripId"))
+	if tmp, ok := rawArgs["tripId"]; ok {
+		return ec.unmarshalNID2string(ctx, tmp)
+	}
+
+	var zeroVal string
+	return zeroVal, nil
+}
+
 func (ec *executionContext) field_Mutation_createRecord_argsInput(
 	ctx context.Context,
 	rawArgs map[string]any,
@@ -619,6 +657,11 @@ func (ec *executionContext) field_Mutation_deleteAddress_args(ctx context.Contex
 		return nil, err
 	}
 	args["tripId"] = arg0
+	arg1, err := ec.field_Mutation_deleteAddress_argsAddress(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["address"] = arg1
 	return args, nil
 }
 func (ec *executionContext) field_Mutation_deleteAddress_argsTripID(
@@ -628,6 +671,19 @@ func (ec *executionContext) field_Mutation_deleteAddress_argsTripID(
 	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tripId"))
 	if tmp, ok := rawArgs["tripId"]; ok {
 		return ec.unmarshalNID2string(ctx, tmp)
+	}
+
+	var zeroVal string
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Mutation_deleteAddress_argsAddress(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (string, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("address"))
+	if tmp, ok := rawArgs["address"]; ok {
+		return ec.unmarshalNString2string(ctx, tmp)
 	}
 
 	var zeroVal string
@@ -1148,7 +1204,7 @@ func (ec *executionContext) _Mutation_createRecord(ctx context.Context, field gr
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().CreateRecord(rctx, fc.Args["input"].(model.NewRecord))
+		return ec.resolvers.Mutation().CreateRecord(rctx, fc.Args["tripId"].(string), fc.Args["input"].(model.NewRecord))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -1337,7 +1393,7 @@ func (ec *executionContext) _Mutation_createAddress(ctx context.Context, field g
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().CreateAddress(rctx, fc.Args["tripId"].(string))
+		return ec.resolvers.Mutation().CreateAddress(rctx, fc.Args["tripId"].(string), fc.Args["address"].(string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -1392,7 +1448,7 @@ func (ec *executionContext) _Mutation_deleteAddress(ctx context.Context, field g
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().DeleteAddress(rctx, fc.Args["tripId"].(string))
+		return ec.resolvers.Mutation().DeleteAddress(rctx, fc.Args["tripId"].(string), fc.Args["address"].(string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -1429,6 +1485,94 @@ func (ec *executionContext) fieldContext_Mutation_deleteAddress(ctx context.Cont
 	if fc.Args, err = ec.field_Mutation_deleteAddress_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Payment_amount(ctx context.Context, field graphql.CollectedField, obj *model.Payment) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Payment_amount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Amount, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(float64)
+	fc.Result = res
+	return ec.marshalNFloat2float64(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Payment_amount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Payment",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Payment_address(ctx context.Context, field graphql.CollectedField, obj *model.Payment) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Payment_address(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Address, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Payment_address(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Payment",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
 	}
 	return fc, nil
 }
@@ -1730,7 +1874,7 @@ func (ec *executionContext) _Record_amount(ctx context.Context, field graphql.Co
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Record().Amount(rctx, obj)
+		return obj.Amount, nil
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -1751,8 +1895,8 @@ func (ec *executionContext) fieldContext_Record_amount(_ context.Context, field 
 	fc = &graphql.FieldContext{
 		Object:     "Record",
 		Field:      field,
-		IsMethod:   true,
-		IsResolver: true,
+		IsMethod:   false,
+		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Float does not have child fields")
 		},
@@ -2412,8 +2556,6 @@ func (ec *executionContext) fieldContext_Trip_moneyShare(_ context.Context, fiel
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
-			case "amount":
-				return ec.fieldContext_Tx_amount(ctx, field)
 			case "input":
 				return ec.fieldContext_Tx_input(ctx, field)
 			case "output":
@@ -2469,50 +2611,6 @@ func (ec *executionContext) fieldContext_Trip_addressList(_ context.Context, fie
 	return fc, nil
 }
 
-func (ec *executionContext) _Tx_amount(ctx context.Context, field graphql.CollectedField, obj *model.Tx) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Tx_amount(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Amount, nil
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		if !graphql.HasFieldError(ctx, fc) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(float64)
-	fc.Result = res
-	return ec.marshalNFloat2float64(ctx, field.Selections, res)
-}
-
-func (ec *executionContext) fieldContext_Tx_amount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	fc = &graphql.FieldContext{
-		Object:     "Tx",
-		Field:      field,
-		IsMethod:   false,
-		IsResolver: false,
-		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return nil, errors.New("field of type Float does not have child fields")
-		},
-	}
-	return fc, nil
-}
-
 func (ec *executionContext) _Tx_input(ctx context.Context, field graphql.CollectedField, obj *model.Tx) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Tx_input(ctx, field)
 	if err != nil {
@@ -2539,9 +2637,9 @@ func (ec *executionContext) _Tx_input(ctx context.Context, field graphql.Collect
 		}
 		return graphql.Null
 	}
-	res := resTmp.([]string)
+	res := resTmp.([]*model.Payment)
 	fc.Result = res
-	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+	return ec.marshalNPayment2ᚕᚖdtmᚋgraphᚋmodelᚐPaymentᚄ(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) fieldContext_Tx_input(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -2551,7 +2649,13 @@ func (ec *executionContext) fieldContext_Tx_input(_ context.Context, field graph
 		IsMethod:   false,
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return nil, errors.New("field of type String does not have child fields")
+			switch field.Name {
+			case "amount":
+				return ec.fieldContext_Payment_amount(ctx, field)
+			case "address":
+				return ec.fieldContext_Payment_address(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Payment", field.Name)
 		},
 	}
 	return fc, nil
@@ -2583,9 +2687,9 @@ func (ec *executionContext) _Tx_output(ctx context.Context, field graphql.Collec
 		}
 		return graphql.Null
 	}
-	res := resTmp.(string)
+	res := resTmp.(*model.Payment)
 	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return ec.marshalNPayment2ᚖdtmᚋgraphᚋmodelᚐPayment(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) fieldContext_Tx_output(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -2595,7 +2699,13 @@ func (ec *executionContext) fieldContext_Tx_output(_ context.Context, field grap
 		IsMethod:   false,
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return nil, errors.New("field of type String does not have child fields")
+			switch field.Name {
+			case "amount":
+				return ec.fieldContext_Payment_amount(ctx, field)
+			case "address":
+				return ec.fieldContext_Payment_address(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Payment", field.Name)
 		},
 	}
 	return fc, nil
@@ -4579,9 +4689,7 @@ func (ec *executionContext) unmarshalInputNewRecord(ctx context.Context, obj any
 			if err != nil {
 				return it, err
 			}
-			if err = ec.resolvers.NewRecord().Amount(ctx, &it, data); err != nil {
-				return it, err
-			}
+			it.Amount = data
 		case "prePayAddress":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("prePayAddress"))
 			data, err := ec.unmarshalNString2string(ctx, v)
@@ -4595,9 +4703,7 @@ func (ec *executionContext) unmarshalInputNewRecord(ctx context.Context, obj any
 			if err != nil {
 				return it, err
 			}
-			if err = ec.resolvers.NewRecord().ShouldPayAddress(ctx, &it, data); err != nil {
-				return it, err
-			}
+			it.ShouldPayAddress = data
 		}
 	}
 
@@ -4730,6 +4836,50 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 	return out
 }
 
+var paymentImplementors = []string{"Payment"}
+
+func (ec *executionContext) _Payment(ctx context.Context, sel ast.SelectionSet, obj *model.Payment) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, paymentImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Payment")
+		case "amount":
+			out.Values[i] = ec._Payment_amount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "address":
+			out.Values[i] = ec._Payment_address(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var queryImplementors = []string{"Query"}
 
 func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) graphql.Marshaler {
@@ -4821,41 +4971,10 @@ func (ec *executionContext) _Record(ctx context.Context, sel ast.SelectionSet, o
 				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "amount":
-			field := field
-
-			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
-				defer func() {
-					if r := recover(); r != nil {
-						ec.Error(ctx, ec.Recover(ctx, r))
-					}
-				}()
-				res = ec._Record_amount(ctx, field, obj)
-				if res == graphql.Null {
-					atomic.AddUint32(&fs.Invalids, 1)
-				}
-				return res
+			out.Values[i] = ec._Record_amount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
 			}
-
-			if field.Deferrable != nil {
-				dfs, ok := deferred[field.Deferrable.Label]
-				di := 0
-				if ok {
-					dfs.AddField(field)
-					di = len(dfs.Values) - 1
-				} else {
-					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
-					deferred[field.Deferrable.Label] = dfs
-				}
-				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
-					return innerFunc(ctx, dfs)
-				})
-
-				// don't run the out.Concurrently() call below
-				out.Values[i] = graphql.Null
-				continue
-			}
-
-			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		case "prePayAddress":
 			out.Values[i] = ec._Record_prePayAddress(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -5111,11 +5230,6 @@ func (ec *executionContext) _Tx(ctx context.Context, sel ast.SelectionSet, obj *
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Tx")
-		case "amount":
-			out.Values[i] = ec._Tx_amount(ctx, field, obj)
-			if out.Values[i] == graphql.Null {
-				out.Invalids++
-			}
 		case "input":
 			out.Values[i] = ec._Tx_input(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -5540,6 +5654,60 @@ func (ec *executionContext) unmarshalNNewRecord2dtmᚋgraphᚋmodelᚐNewRecord(
 func (ec *executionContext) unmarshalNNewTrip2dtmᚋgraphᚋmodelᚐNewTrip(ctx context.Context, v any) (model.NewTrip, error) {
 	res, err := ec.unmarshalInputNewTrip(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNPayment2ᚕᚖdtmᚋgraphᚋmodelᚐPaymentᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Payment) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNPayment2ᚖdtmᚋgraphᚋmodelᚐPayment(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNPayment2ᚖdtmᚋgraphᚋmodelᚐPayment(ctx context.Context, sel ast.SelectionSet, v *model.Payment) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._Payment(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNRecord2dtmᚋgraphᚋmodelᚐRecord(ctx context.Context, sel ast.SelectionSet, v model.Record) graphql.Marshaler {
