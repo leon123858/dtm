@@ -8,6 +8,7 @@ import (
 	"context"
 	"dtm/db/db"
 	"dtm/graph/model"
+	"dtm/mq/mq"
 	"dtm/tx"
 	"fmt"
 
@@ -200,7 +201,31 @@ func (r *recordResolver) ShouldPayAddress(ctx context.Context, obj *model.Record
 
 // SubRecordCreate is the resolver for the subRecordCreate field.
 func (r *subscriptionResolver) SubRecordCreate(ctx context.Context, tripID string) (<-chan *model.Record, error) {
-	panic(fmt.Errorf("not implemented: SubRecordCreate - subRecordCreate"))
+	mqTripRecordMQ := r.TripMessageQueueWrapper.GetTripRecordMessageQueue(mq.ActionCreate)
+	if mqTripRecordMQ == nil {
+		return nil, fmt.Errorf("failed to get trip record message queue for action create")
+	}
+	recordChannel, err := mqTripRecordMQ.Subscribe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to subscribe to trip record create messages: %w", err)
+	}
+	recordStream := make(chan *model.Record)
+	go func() {
+		defer close(recordStream)
+		for msg := range recordChannel {
+			if msg.ID == uuid.Nil {
+				continue // Skip messages with invalid IDs
+			}
+			record := &model.Record{
+				ID:            msg.ID.String(),
+				Name:          msg.Name,
+				Amount:        msg.Amount,
+				PrePayAddress: string(msg.PrePayAddress),
+			}
+			recordStream <- record
+		}
+	}()
+	return recordStream, nil
 }
 
 // SubRecordDelete is the resolver for the subRecordDelete field.

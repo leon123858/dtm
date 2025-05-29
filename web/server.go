@@ -3,6 +3,7 @@ package web
 import (
 	"dtm/db/mem"
 	"dtm/graph"
+	"dtm/mq/goch"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/gzip"
@@ -36,7 +37,8 @@ func Serve() {
 	})
 	// GraphQL endpoint
 	executableSchema := graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{
-		TripDB: mem.NewInMemoryTripDBWrapper(), // Use in-memory DB for simplicity
+		TripDB:                  mem.NewInMemoryTripDBWrapper(),          // Use in-memory DB for simplicity
+		TripMessageQueueWrapper: goch.NewGoChanTripMessageQueueWrapper(), // Use in-memory message queue
 	}})
 	r.POST("/query", GraphQLHandler(executableSchema))
 	r.GET("/query", GraphQLHandler(executableSchema))

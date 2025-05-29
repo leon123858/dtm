@@ -2,6 +2,7 @@ package graph
 
 import (
 	"dtm/db/db"
+	"dtm/mq/mq"
 )
 
 // This file will not be regenerated automatically.
@@ -10,5 +11,6 @@ import (
 // ex: put your database connection or HTTP client in here.
 
 type Resolver struct {
-	TripDB db.TripDBWrapper
+	TripDB                  db.TripDBWrapper
+	TripMessageQueueWrapper mq.TripMessageQueueWrapper
 }
