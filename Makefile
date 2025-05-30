@@ -7,7 +7,7 @@ start:
 	go run dtm.go
 
 test:
-	go test ./... -cover
+	go test ./... -cover -count=1
 
 format:
 	go mod tidy
