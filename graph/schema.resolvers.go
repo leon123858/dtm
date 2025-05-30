@@ -149,7 +149,7 @@ func (r *mutationResolver) RemoveRecord(ctx context.Context, id string) (string,
 		return "", fmt.Errorf("failed to delete record: %w", err)
 	}
 
-	tripMQ := r.TripMessageQueueWrapper.GetTripRecordMessageQueue(mq.ActionCreate)
+	tripMQ := r.TripMessageQueueWrapper.GetTripRecordMessageQueue(mq.ActionDelete)
 	if tripMQ.Publish(mq.TripRecordMessage{
 		ID: recordID,
 	}) != nil {
@@ -262,18 +262,18 @@ func (r *subscriptionResolver) SubRecordCreate(ctx context.Context, tripID strin
 }
 
 // SubRecordDelete is the resolver for the subRecordDelete field.
-func (r *subscriptionResolver) SubRecordDelete(ctx context.Context, tripID string) (<-chan *model.Record, error) {
+func (r *subscriptionResolver) SubRecordDelete(ctx context.Context, tripID string) (<-chan string, error) {
 	tripMQ := r.TripMessageQueueWrapper.GetTripRecordMessageQueue(mq.ActionDelete)
 	if tripMQ == nil {
 		return nil, fmt.Errorf("can not get target message MQ")
 	}
 
-	recordStream := make(chan *model.Record)
+	recordStream := make(chan string)
 
 	mq.SubscribeProcessor(
 		ctx,
 		tripMQ,
-		utils.TripRecordMQ2GQL,
+		utils.TripRecordIdMQ2GQL,
 		recordStream,
 	)
 	return recordStream, nil

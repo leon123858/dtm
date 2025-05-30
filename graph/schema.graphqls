@@ -30,7 +30,7 @@ type Trip {
 
 type Subscription {
 	subRecordCreate(tripId: ID!): Record!
-	subRecordDelete(tripId: ID!): Record!
+	subRecordDelete(tripId: ID!): ID!
 	subRecordUpdate(tripId: ID!): Record!
 	subAddressCreate(tripId: ID!): String!
 	subAddressDelete(tripId: ID!): String!

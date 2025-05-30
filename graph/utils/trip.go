@@ -26,6 +26,16 @@ func TripRecordMQ2GQL(msg mq.TripRecordMessage) (*model.Record, bool, error) {
 	return record, false, nil
 }
 
+func TripRecordIdMQ2GQL(msg mq.TripRecordMessage) (string, bool, error){
+	if msg.ID == uuid.Nil {
+		// 返回 nil, true, nil 表示沒有 Record 對象，但應該跳過這個訊息，且沒有錯誤。
+		return "", true, nil
+	}
+	
+	// 成功轉換，返回 record, false (不跳過), nil (無錯誤)
+	return msg.ID.String(), false, nil
+}
+
 func TripAddressMQ2GQL(msg mq.TripAddressMessage) (string, bool, error) {
 	if len(msg.Address) == 0 {
 		fmt.Println("TripAddressMQ2GQL: Empty address in message, skipping.")

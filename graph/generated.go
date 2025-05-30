@@ -117,7 +117,7 @@ type RecordResolver interface {
 }
 type SubscriptionResolver interface {
 	SubRecordCreate(ctx context.Context, tripID string) (<-chan *model.Record, error)
-	SubRecordDelete(ctx context.Context, tripID string) (<-chan *model.Record, error)
+	SubRecordDelete(ctx context.Context, tripID string) (<-chan string, error)
 	SubRecordUpdate(ctx context.Context, tripID string) (<-chan *model.Record, error)
 	SubAddressCreate(ctx context.Context, tripID string) (<-chan string, error)
 	SubAddressDelete(ctx context.Context, tripID string) (<-chan string, error)
@@ -2101,7 +2101,7 @@ func (ec *executionContext) _Subscription_subRecordDelete(ctx context.Context, f
 	}
 	return func(ctx context.Context) graphql.Marshaler {
 		select {
-		case res, ok := <-resTmp.(<-chan *model.Record):
+		case res, ok := <-resTmp.(<-chan string):
 			if !ok {
 				return nil
 			}
@@ -2109,7 +2109,7 @@ func (ec *executionContext) _Subscription_subRecordDelete(ctx context.Context, f
 				w.Write([]byte{'{'})
 				graphql.MarshalString(field.Alias).MarshalGQL(w)
 				w.Write([]byte{':'})
-				ec.marshalNRecord2ᚖdtmᚋgraphᚋmodelᚐRecord(ctx, field.Selections, res).MarshalGQL(w)
+				ec.marshalNID2string(ctx, field.Selections, res).MarshalGQL(w)
 				w.Write([]byte{'}'})
 			})
 		case <-ctx.Done():
@@ -2125,19 +2125,7 @@ func (ec *executionContext) fieldContext_Subscription_subRecordDelete(ctx contex
 		IsMethod:   true,
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			switch field.Name {
-			case "id":
-				return ec.fieldContext_Record_id(ctx, field)
-			case "name":
-				return ec.fieldContext_Record_name(ctx, field)
-			case "amount":
-				return ec.fieldContext_Record_amount(ctx, field)
-			case "prePayAddress":
-				return ec.fieldContext_Record_prePayAddress(ctx, field)
-			case "shouldPayAddress":
-				return ec.fieldContext_Record_shouldPayAddress(ctx, field)
-			}
-			return nil, fmt.Errorf("no field named %q was found under type Record", field.Name)
+			return nil, errors.New("field of type ID does not have child fields")
 		},
 	}
 	defer func() {
