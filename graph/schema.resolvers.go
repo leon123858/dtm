@@ -224,26 +224,6 @@ func (r *queryResolver) Trip(ctx context.Context, tripID string) (*model.Trip, e
 	}, nil
 }
 
-// ShouldPayAddress is the resolver for the shouldPayAddress field.
-func (r *recordResolver) ShouldPayAddress(ctx context.Context, obj *model.Record) ([]string, error) {
-	dbTripDataLoader := r.TripDataLoader.RecordLoader
-	recordID, err := uuid.Parse(obj.ID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid record ID: %w", err)
-	}
-
-	record, err := dbTripDataLoader.Load(ctx, recordID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get record: %w", err)
-	}
-
-	addressList := make([]string, len(record.ShouldPayAddress))
-	for i, addr := range record.ShouldPayAddress {
-		addressList[i] = string(addr)
-	}
-	return addressList, nil
-}
-
 // SubRecordCreate is the resolver for the subRecordCreate field.
 func (r *subscriptionResolver) SubRecordCreate(ctx context.Context, tripID string) (<-chan *model.Record, error) {
 	tripMQ := r.TripMessageQueueWrapper.GetTripRecordMessageQueue(mq.ActionCreate)
@@ -443,9 +423,6 @@ func (r *Resolver) Mutation() MutationResolver { return &mutationResolver{r} }
 // Query returns QueryResolver implementation.
 func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
 
-// Record returns RecordResolver implementation.
-func (r *Resolver) Record() RecordResolver { return &recordResolver{r} }
-
 // Subscription returns SubscriptionResolver implementation.
 func (r *Resolver) Subscription() SubscriptionResolver { return &subscriptionResolver{r} }
 
@@ -454,6 +431,5 @@ func (r *Resolver) Trip() TripResolver { return &tripResolver{r} }
 
 type mutationResolver struct{ *Resolver }
 type queryResolver struct{ *Resolver }
-type recordResolver struct{ *Resolver }
 type subscriptionResolver struct{ *Resolver }
 type tripResolver struct{ *Resolver }

@@ -258,28 +258,23 @@ func (db *inMemoryTripDBWrapper) DeleteTripRecord(recordID uuid.UUID) error {
 	return fmt.Errorf("record with ID %s not found in any trip", recordID)
 }
 
-// DataLoaderGetRecordList retrieves a list of records by their IDs.
-func (db *inMemoryTripDBWrapper) DataLoaderGetRecordList(ctx context.Context, keys []uuid.UUID) (map[uuid.UUID]dbt.Record, error) {
+// DataLoaderGetTripRecordList retrieves a list of records by their trip IDs.
+func (db *inMemoryTripDBWrapper) DataLoaderGetTripRecordList(ctx context.Context, keys []uuid.UUID) (map[uuid.UUID][]dbt.Record, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
-	records := make(map[uuid.UUID]dbt.Record, len(keys))
+	records := make(map[uuid.UUID][]dbt.Record, len(keys))
 	errors := make(map[uuid.UUID]error, len(keys))
 
-	// Create a temporary map for quick lookup of records by ID
-	recordMap := make(map[uuid.UUID]dbt.Record)
-	for _, tripData := range db.tripsData {
-		for _, record := range tripData.Records {
-			recordMap[record.ID] = record
-		}
-	}
+	// i only want to cache same tripID, so do not need to care multi trip performance
 
+	recordMap := make(map[uuid.UUID][]dbt.Record)
 	for _, key := range keys {
-		if record, found := recordMap[key]; found {
-			records[key] = record
-			errors[key] = nil // No error for this key
+		if v, err := db.GetTripRecords(key); err != nil {
+			recordMap[key] = v
+			errors[key] = nil
 		} else {
-			records[key] = dbt.Record{} // Return zero value for Record
+			recordMap[key] = nil
 			errors[key] = fmt.Errorf("record with ID %s not found", key)
 		}
 	}

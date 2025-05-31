@@ -3,11 +3,9 @@ package web
 import (
 	"dtm/db/pg"
 	"dtm/graph"
-	"dtm/graph/loader"
 	"dtm/mq/goch"
 
 	"github.com/gin-gonic/gin"
-	"github.com/vikstrous/dataloadgen"
 )
 
 func Serve() {
@@ -30,9 +28,9 @@ func Serve() {
 	executableSchema := graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{
 		TripDB:                  dbDep,
 		TripMessageQueueWrapper: goch.NewGoChanTripMessageQueueWrapper(), // Use in-memory message queue
-		TripDataLoader: loader.TripDataLoader{
-			RecordLoader: dataloadgen.NewMappedLoader(dbDep.DataLoaderGetRecordList),
-		},
+		// TripDataLoader: loader.TripDataLoader{
+		// 	RecordLoader: dataloadgen.NewMappedLoader(dbDep.DataLoaderGetTripRecordList),
+		// },
 	}})
 	r.POST("/query", GraphQLHandler(executableSchema))
 	r.GET("/query", GraphQLHandler(executableSchema))

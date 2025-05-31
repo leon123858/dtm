@@ -24,5 +24,5 @@ type TripDBWrapper interface {
 	DeleteTrip(id uuid.UUID) error
 	DeleteTripRecord(recordID uuid.UUID) error
 	// Data Loader
-	DataLoaderGetRecordList(ctx context.Context, keys []uuid.UUID) (map[uuid.UUID]Record, error)
+	DataLoaderGetTripRecordList(ctx context.Context, keys []uuid.UUID) (map[uuid.UUID][]Record, error)
 }
