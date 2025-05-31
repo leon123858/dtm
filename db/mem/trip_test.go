@@ -1,6 +1,7 @@
 package mem_test // Use _test suffix for test package
 
 import (
+	"context"
 	"testing"
 
 	"github.com/google/uuid"
@@ -345,4 +346,72 @@ func TestTripAddressListRemove(t *testing.T) {
 	err = db.TripAddressListRemove(nonExistentID, addr1)
 	assert.Error(t, err, "TripAddressListRemove should return an error for non-existent trip")
 	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestDataLoaderGetRecordList(t *testing.T) {
+	db := setupTest()
+	ctx := context.Background()
+
+	// Prepare data
+	tripID := uuid.New()
+	db.CreateTrip(&dbt.TripInfo{ID: tripID, Name: "Trip for DataLoader Records"})
+
+	record1 := dbt.Record{ID: uuid.New(), Name: "DataLoader Record 1", Amount: 111.1}
+	record2 := dbt.Record{ID: uuid.New(), Name: "DataLoader Record 2", Amount: 222.2}
+	record3 := dbt.Record{ID: uuid.New(), Name: "DataLoader Record 3", Amount: 333.3}
+	db.CreateTripRecords(tripID, []dbt.Record{record1, record2, record3})
+
+	// Test 1: Get a list of existing records
+	keys1 := []uuid.UUID{record1.ID, record3.ID}
+	records, errors := db.DataLoaderGetRecordList(ctx, keys1)
+
+	assert.Len(t, records, 2)
+	assert.Len(t, errors, 2)
+
+	assert.NoError(t, errors[record1.ID])
+	assert.Equal(t, record1.ID, records[record1.ID].ID)
+	assert.Equal(t, record1.Name, records[record1.ID].Name)
+
+	assert.NoError(t, errors[record3.ID])
+	assert.Equal(t, record3.ID, records[record3.ID].ID)
+	assert.Equal(t, record3.Name, records[record3.ID].Name)
+
+	// Test 2: Get a mix of existing and non-existent records
+	nonExistentRecordID := uuid.New()
+	keys2 := []uuid.UUID{record2.ID, nonExistentRecordID, record1.ID}
+	records, errors = db.DataLoaderGetRecordList(ctx, keys2)
+
+	assert.Len(t, records, 3)
+	assert.Len(t, errors, 3)
+
+	assert.NoError(t, errors[record2.ID])
+	assert.Equal(t, record2.ID, records[record2.ID].ID)
+
+	assert.Error(t, errors[nonExistentRecordID])
+	assert.Contains(t, errors[nonExistentRecordID].Error(), nonExistentRecordID.String())
+	assert.Contains(t, errors[nonExistentRecordID].Error(), "not found")
+	assert.Equal(t, dbt.Record{}, records[nonExistentRecordID]) // Should be zero value
+
+	assert.NoError(t, errors[record1.ID])
+	assert.Equal(t, record1.ID, records[record1.ID].ID)
+
+	// Test 3: Get only non-existent records
+	keys3 := []uuid.UUID{uuid.New(), uuid.New()}
+	records, errors = db.DataLoaderGetRecordList(ctx, keys3)
+
+	assert.Len(t, records, 2)
+	assert.Len(t, errors, 2)
+
+	assert.Error(t, errors[keys3[0]])
+	assert.Contains(t, errors[keys3[0]].Error(), "not found")
+	assert.Equal(t, dbt.Record{}, records[keys3[0]])
+
+	assert.Error(t, errors[keys3[1]])
+	assert.Contains(t, errors[keys3[1]].Error(), "not found")
+	assert.Equal(t, dbt.Record{}, records[keys3[1]])
+
+	// Test 4: Empty keys list
+	records, errors = db.DataLoaderGetRecordList(ctx, []uuid.UUID{})
+	assert.Len(t, records, 0)
+	assert.Len(t, errors, 0)
 }

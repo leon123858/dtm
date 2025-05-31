@@ -1,6 +1,10 @@
 package db
 
-import "github.com/google/uuid"
+import (
+	"context"
+
+	"github.com/google/uuid"
+)
 
 type TripDBWrapper interface {
 	// Create
@@ -19,4 +23,6 @@ type TripDBWrapper interface {
 	// Delete
 	DeleteTrip(id uuid.UUID) error
 	DeleteTripRecord(recordID uuid.UUID) error
+	// Data Loader
+	DataLoaderGetRecordList(ctx context.Context, keys []uuid.UUID) (map[uuid.UUID]Record, map[uuid.UUID]error)
 }

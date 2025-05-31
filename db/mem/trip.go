@@ -1,6 +1,7 @@
 package mem
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -254,4 +255,33 @@ func (db *inMemoryTripDBWrapper) DeleteTripRecord(recordID uuid.UUID) error {
 	}
 
 	return fmt.Errorf("record with ID %s not found in any trip", recordID)
+}
+
+// DataLoaderGetRecordList retrieves a list of records by their IDs.
+func (db *inMemoryTripDBWrapper) DataLoaderGetRecordList(ctx context.Context, keys []uuid.UUID) (map[uuid.UUID]dbt.Record, map[uuid.UUID]error) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	records := make(map[uuid.UUID]dbt.Record, len(keys))
+	errors := make(map[uuid.UUID]error, len(keys))
+
+	// Create a temporary map for quick lookup of records by ID
+	recordMap := make(map[uuid.UUID]dbt.Record)
+	for _, tripData := range db.tripsData {
+		for _, record := range tripData.Records {
+			recordMap[record.ID] = record
+		}
+	}
+
+	for _, key := range keys {
+		if record, found := recordMap[key]; found {
+			records[key] = record
+			errors[key] = nil // No error for this key
+		} else {
+			records[key] = dbt.Record{} // Return zero value for Record
+			errors[key] = fmt.Errorf("record with ID %s not found", key)
+		}
+	}
+
+	return records, errors
 }

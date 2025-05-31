@@ -3,11 +3,14 @@ package pg
 import (
 	// 為了確保可以在 TestMain 中關閉 *sql.DB
 
+	"context"
 	"log"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -529,4 +532,122 @@ func TestDeleteTripRecord(t *testing.T) {
 	err = tripDB.DeleteTripRecord(nonExistentRecordID)
 	assert.Error(t, err, "DeleteTripRecord should return an error for non-existent ID")
 	assert.True(t, strings.Contains(err.Error(), "not found for deletion"), "Error message should indicate not found for deletion")
+}
+
+func TestDataLoaderGetRecordList(t *testing.T) {
+	initTest()
+	defer cleanupTest()
+
+	// 2. Prepare test data
+	tripID1 := uuid.New()
+	tripID2 := uuid.New()
+
+	// Insert TripInfoModels first since RecordModel has a foreign key to it
+	testDB.Create(&TripInfoModel{ID: tripID1, Name: "Trip A"})
+	testDB.Create(&TripInfoModel{ID: tripID2, Name: "Trip B"})
+
+	record1ID := uuid.New()
+	record2ID := uuid.New()
+	record3ID := uuid.New() // This record will not be requested
+
+	record1 := RecordModel{
+		ID:               record1ID,
+		TripID:           tripID1,
+		Name:             "Expense A",
+		Amount:           100.50,
+		PrePayAddress:    "Addr A1",
+		ShouldPayAddress: pq.StringArray{"Addr A2", "Addr A3"},
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
+	}
+	record2 := RecordModel{
+		ID:               record2ID,
+		TripID:           tripID2,
+		Name:             "Expense B",
+		Amount:           250.75,
+		PrePayAddress:    "Addr B1",
+		ShouldPayAddress: pq.StringArray{"Addr B2"},
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
+	}
+	record3 := RecordModel{
+		ID:               record3ID,
+		TripID:           tripID1,
+		Name:             "Expense C",
+		Amount:           50.00,
+		PrePayAddress:    "Addr C1",
+		ShouldPayAddress: pq.StringArray{},
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
+	}
+
+	testDB.Create(&record1)
+	testDB.Create(&record2)
+	testDB.Create(&record3)
+
+	t.Run("Successfully retrieves multiple records", func(t *testing.T) {
+		keys := []uuid.UUID{record1ID, record2ID}
+		recordsMap, errorsMap := tripDB.DataLoaderGetRecordList(context.Background(), keys)
+
+		assert.Empty(t, errorsMap, "Expected no errors for successful retrieval")
+		assert.Len(t, recordsMap, 2, "Expected 2 records to be returned")
+
+		// Verify record1
+		rec1, ok := recordsMap[record1ID]
+		assert.True(t, ok, "Record 1 should be in the map")
+		assert.Equal(t, record1.ID, rec1.ID)
+		assert.Equal(t, record1.Name, rec1.Name)
+		assert.InDelta(t, record1.Amount, rec1.Amount, 0.001) // Use InDelta for float comparison
+		assert.Equal(t, dbt.Address(record1.PrePayAddress), rec1.PrePayAddress)
+		assert.ElementsMatch(t, []dbt.Address{dbt.Address("Addr A2"), dbt.Address("Addr A3")}, rec1.ShouldPayAddress)
+
+		// Verify record2
+		rec2, ok := recordsMap[record2ID]
+		assert.True(t, ok, "Record 2 should be in the map")
+		assert.Equal(t, record2.ID, rec2.ID)
+		assert.Equal(t, record2.Name, rec2.Name)
+		assert.InDelta(t, record2.Amount, rec2.Amount, 0.001)
+		assert.Equal(t, dbt.Address(record2.PrePayAddress), rec2.PrePayAddress)
+		assert.ElementsMatch(t, []dbt.Address{dbt.Address("Addr B2")}, rec2.ShouldPayAddress)
+	})
+
+	t.Run("Handles missing keys", func(t *testing.T) {
+		missingID := uuid.New() // A non-existent ID
+		keys := []uuid.UUID{record1ID, missingID}
+		recordsMap, errorsMap := tripDB.DataLoaderGetRecordList(context.Background(), keys)
+
+		assert.Len(t, recordsMap, 1, "Expected only 1 record to be found")
+		assert.Len(t, errorsMap, 1, "Expected 1 error for the missing key")
+
+		// Verify the found record
+		_, ok := recordsMap[record1ID]
+		assert.True(t, ok, "Record 1 should be in the map")
+
+		// Verify the error for the missing key
+		errVal, ok := errorsMap[missingID]
+		assert.True(t, ok, "Error for missing ID should be in the map")
+		assert.Contains(t, errVal.Error(), missingID.String(), "Error message should contain the missing ID")
+	})
+
+	t.Run("Handles all keys missing", func(t *testing.T) {
+		keys := []uuid.UUID{uuid.New(), uuid.New()} // Two non-existent IDs
+		recordsMap, errorsMap := tripDB.DataLoaderGetRecordList(context.Background(), keys)
+
+		assert.Empty(t, recordsMap, "Expected no records to be found")
+		assert.Len(t, errorsMap, 2, "Expected 2 errors for missing keys")
+
+		for _, key := range keys {
+			errVal, ok := errorsMap[key]
+			assert.True(t, ok, "Error should exist for all missing keys")
+			assert.Contains(t, errVal.Error(), key.String(), "Error message should contain the missing ID")
+		}
+	})
+
+	t.Run("Handles empty keys slice", func(t *testing.T) {
+		keys := []uuid.UUID{}
+		recordsMap, errorsMap := tripDB.DataLoaderGetRecordList(context.Background(), keys)
+
+		assert.Empty(t, recordsMap, "Expected no records for empty keys slice")
+		assert.Empty(t, errorsMap, "Expected no errors for empty keys slice")
+	})
 }
