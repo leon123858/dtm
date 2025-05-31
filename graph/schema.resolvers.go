@@ -226,18 +226,19 @@ func (r *queryResolver) Trip(ctx context.Context, tripID string) (*model.Trip, e
 
 // ShouldPayAddress is the resolver for the shouldPayAddress field.
 func (r *recordResolver) ShouldPayAddress(ctx context.Context, obj *model.Record) ([]string, error) {
-	dbTripInfo := r.TripDB
+	dbTripDataLoader := r.TripDataLoader.RecordLoader
 	recordID, err := uuid.Parse(obj.ID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid record ID: %w", err)
 	}
 
-	addresses, err := dbTripInfo.GetRecordAddressList(recordID)
+	record, err := dbTripDataLoader.Load(ctx, recordID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get record: %w", err)
 	}
-	addressList := make([]string, len(addresses))
-	for i, addr := range addresses {
+
+	addressList := make([]string, len(record.ShouldPayAddress))
+	for i, addr := range record.ShouldPayAddress {
 		addressList[i] = string(addr)
 	}
 	return addressList, nil

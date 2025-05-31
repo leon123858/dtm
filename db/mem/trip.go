@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/vikstrous/dataloadgen"
 
 	dbt "dtm/db/db"
 )
@@ -258,7 +259,7 @@ func (db *inMemoryTripDBWrapper) DeleteTripRecord(recordID uuid.UUID) error {
 }
 
 // DataLoaderGetRecordList retrieves a list of records by their IDs.
-func (db *inMemoryTripDBWrapper) DataLoaderGetRecordList(ctx context.Context, keys []uuid.UUID) (map[uuid.UUID]dbt.Record, map[uuid.UUID]error) {
+func (db *inMemoryTripDBWrapper) DataLoaderGetRecordList(ctx context.Context, keys []uuid.UUID) (map[uuid.UUID]dbt.Record, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
@@ -283,5 +284,5 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetRecordList(ctx context.Context, ke
 		}
 	}
 
-	return records, errors
+	return records, dataloadgen.MappedFetchError[uuid.UUID](errors)
 }

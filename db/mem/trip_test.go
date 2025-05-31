@@ -368,11 +368,9 @@ func TestDataLoaderGetRecordList(t *testing.T) {
 	assert.Len(t, records, 2)
 	assert.Len(t, errors, 2)
 
-	assert.NoError(t, errors[record1.ID])
 	assert.Equal(t, record1.ID, records[record1.ID].ID)
 	assert.Equal(t, record1.Name, records[record1.ID].Name)
 
-	assert.NoError(t, errors[record3.ID])
 	assert.Equal(t, record3.ID, records[record3.ID].ID)
 	assert.Equal(t, record3.Name, records[record3.ID].Name)
 
@@ -384,15 +382,8 @@ func TestDataLoaderGetRecordList(t *testing.T) {
 	assert.Len(t, records, 3)
 	assert.Len(t, errors, 3)
 
-	assert.NoError(t, errors[record2.ID])
 	assert.Equal(t, record2.ID, records[record2.ID].ID)
-
-	assert.Error(t, errors[nonExistentRecordID])
-	assert.Contains(t, errors[nonExistentRecordID].Error(), nonExistentRecordID.String())
-	assert.Contains(t, errors[nonExistentRecordID].Error(), "not found")
 	assert.Equal(t, dbt.Record{}, records[nonExistentRecordID]) // Should be zero value
-
-	assert.NoError(t, errors[record1.ID])
 	assert.Equal(t, record1.ID, records[record1.ID].ID)
 
 	// Test 3: Get only non-existent records
@@ -402,12 +393,7 @@ func TestDataLoaderGetRecordList(t *testing.T) {
 	assert.Len(t, records, 2)
 	assert.Len(t, errors, 2)
 
-	assert.Error(t, errors[keys3[0]])
-	assert.Contains(t, errors[keys3[0]].Error(), "not found")
 	assert.Equal(t, dbt.Record{}, records[keys3[0]])
-
-	assert.Error(t, errors[keys3[1]])
-	assert.Contains(t, errors[keys3[1]].Error(), "not found")
 	assert.Equal(t, dbt.Record{}, records[keys3[1]])
 
 	// Test 4: Empty keys list

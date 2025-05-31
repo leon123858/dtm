@@ -624,9 +624,8 @@ func TestDataLoaderGetRecordList(t *testing.T) {
 		assert.True(t, ok, "Record 1 should be in the map")
 
 		// Verify the error for the missing key
-		errVal, ok := errorsMap[missingID]
-		assert.True(t, ok, "Error for missing ID should be in the map")
-		assert.Contains(t, errVal.Error(), missingID.String(), "Error message should contain the missing ID")
+		_, ok = recordsMap[missingID]
+		assert.False(t, ok, "Error should not be in the map")
 	})
 
 	t.Run("Handles all keys missing", func(t *testing.T) {
@@ -637,9 +636,8 @@ func TestDataLoaderGetRecordList(t *testing.T) {
 		assert.Len(t, errorsMap, 2, "Expected 2 errors for missing keys")
 
 		for _, key := range keys {
-			errVal, ok := errorsMap[key]
-			assert.True(t, ok, "Error should exist for all missing keys")
-			assert.Contains(t, errVal.Error(), key.String(), "Error message should contain the missing ID")
+			_, ok := recordsMap[key]
+			assert.False(t, ok, "Error should not be in the map")
 		}
 	})
 

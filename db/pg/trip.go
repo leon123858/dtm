@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/vikstrous/dataloadgen"
 	"gorm.io/gorm"
 
 	dbt "dtm/db/db"
@@ -247,7 +248,7 @@ func (pgdb *GORMTripDBWrapper) DeleteTripRecord(recordID uuid.UUID) error {
 
 // DataLoaderGetRecordList retrieves multiple records for a given set of record IDs using GORM.
 // This method is designed to be used with a DataLoader for batching queries.
-func (pgdb *GORMTripDBWrapper) DataLoaderGetRecordList(ctx context.Context, keys []uuid.UUID) (map[uuid.UUID]dbt.Record, map[uuid.UUID]error) {
+func (pgdb *GORMTripDBWrapper) DataLoaderGetRecordList(ctx context.Context, keys []uuid.UUID) (map[uuid.UUID]dbt.Record, error) {
 	// Initialize slices for results and errors
 	records := make(map[uuid.UUID]dbt.Record, len(keys))
 	errors := make(map[uuid.UUID]error, len(keys))
@@ -261,7 +262,7 @@ func (pgdb *GORMTripDBWrapper) DataLoaderGetRecordList(ctx context.Context, keys
 		for _, uid := range keys {
 			errors[uid] = fmt.Errorf("failed to retrieve records: %w", result.Error)
 		}
-		return records, errors
+		return records, dataloadgen.MappedFetchError[uuid.UUID](errors)
 	}
 
 	// Populate the map for quick lookup
@@ -287,5 +288,5 @@ func (pgdb *GORMTripDBWrapper) DataLoaderGetRecordList(ctx context.Context, keys
 		}
 	}
 
-	return records, errors
+	return records, dataloadgen.MappedFetchError[uuid.UUID](errors)
 }

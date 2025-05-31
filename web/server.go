@@ -3,9 +3,11 @@ package web
 import (
 	"dtm/db/pg"
 	"dtm/graph"
+	"dtm/graph/loader"
 	"dtm/mq/goch"
 
 	"github.com/gin-gonic/gin"
+	"github.com/vikstrous/dataloadgen"
 )
 
 func Serve() {
@@ -23,10 +25,14 @@ func Serve() {
 	}
 	defer pg.CloseGORM(db)
 	// GraphQL endpoint
+	// dbDep := mem.NewInMemoryTripDBWrapper()
+	dbDep := pg.NewGORMTripDBWrapper(db)
 	executableSchema := graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{
-		// TripDB:                  mem.NewInMemoryTripDBWrapper(),          // Use in-memory DB for simplicity
-		TripDB:                  pg.NewGORMTripDBWrapper(db),
+		TripDB:                  dbDep,
 		TripMessageQueueWrapper: goch.NewGoChanTripMessageQueueWrapper(), // Use in-memory message queue
+		TripDataLoader: loader.TripDataLoader{
+			RecordLoader: dataloadgen.NewMappedLoader(dbDep.DataLoaderGetRecordList),
+		},
 	}})
 	r.POST("/query", GraphQLHandler(executableSchema))
 	r.GET("/query", GraphQLHandler(executableSchema))
