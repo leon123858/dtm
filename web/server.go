@@ -1,7 +1,7 @@
 package web
 
 import (
-	"dtm/db/mem"
+	"dtm/db/pg"
 	"dtm/graph"
 	"dtm/mq/goch"
 
@@ -16,9 +16,16 @@ func Serve() {
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
+	// setup db service
+	db, err := pg.InitPostgresGORM(pg.CreateDSN())
+	if err != nil {
+		panic(err)
+	}
+	defer pg.CloseGORM(db)
 	// GraphQL endpoint
 	executableSchema := graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{
-		TripDB:                  mem.NewInMemoryTripDBWrapper(),          // Use in-memory DB for simplicity
+		// TripDB:                  mem.NewInMemoryTripDBWrapper(),          // Use in-memory DB for simplicity
+		TripDB: pg.NewGORMTripDBWrapper(db),
 		TripMessageQueueWrapper: goch.NewGoChanTripMessageQueueWrapper(), // Use in-memory message queue
 	}})
 	r.POST("/query", GraphQLHandler(executableSchema))

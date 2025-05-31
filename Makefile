@@ -26,3 +26,6 @@ serve:
 
 cli:
 	go run dtm.go share -i "sampleInput.csv" -o "sampleOutput.txt"
+
+dev-docker:
+	docker run -d --name dtm-pg -e POSTGRES_HOST_AUTH_METHOD=trust -p 5432:5432 postgres
