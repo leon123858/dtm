@@ -16,8 +16,8 @@ const CREATE_TRIP = gql`
 `;
 
 const GET_TRIP = gql`
-	query GetTrip($id: ID!) {
-		trip(id: $id) {
+	query GetTrip($tripId: ID!) {
+		trip(tripId: $tripId) {
 			id
 			name
 			addressList
@@ -55,8 +55,8 @@ const CREATE_RECORD = gql`
 `;
 
 const UPDATE_RECORD = gql`
-	mutation UpdateRecord($id: ID!, $input: NewRecord!) {
-		updateRecord(id: $id, input: $input) {
+	mutation UpdateRecord($tripId: ID!, $recordId: ID!, $input: NewRecord!) {
+		updateRecord(tripId: $tripId, recordId: $recordId, input: $input) {
 			id
 			name
 			amount
@@ -67,8 +67,8 @@ const UPDATE_RECORD = gql`
 `;
 
 const REMOVE_RECORD = gql`
-	mutation RemoveRecord($id: ID!) {
-		removeRecord(id: $id)
+	mutation RemoveRecord($recordId: ID!) {
+		removeRecord(recordId: $recordId)
 	}
 `;
 
@@ -92,7 +92,7 @@ describe('GraphQL API End-to-End Tests', () => {
 		it('should fetch the created trip correctly', async () => {
 			const { data, error } = await client.query({
 				query: GET_TRIP,
-				variables: { id: tripId },
+				variables: { tripId },
 			});
 
 			expect(error).toBeUndefined();
@@ -106,7 +106,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			try {
 				await client.query({
 					query: GET_TRIP,
-					variables: { id: '8bc14c40-214d-4c1d-bbd0-ebb4d5a4eee3' }, // 使用一個確保不存在的 ID
+					variables: { tripId: '8bc14c40-214d-4c1d-bbd0-ebb4d5a4eee3' }, // 使用一個確保不存在的 ID
 				});
 				// 如果代碼執行到這裡，說明沒有拋出錯誤，這是不符合預期的
 				fail('Expected client.query to throw an error, but it did not.');
@@ -141,7 +141,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			// 驗證地址是否真的被加入
 			const { data } = await client.query({
 				query: GET_TRIP,
-				variables: { id: tripId },
+				variables: { tripId: tripId },
 			});
 			expect(data.trip.addressList).toContain(addressAlice);
 			expect(data.trip.addressList).toContain(addressBob);
@@ -157,7 +157,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			// 驗證地址是否真的被移除
 			const { data: queryData } = await client.query({
 				query: GET_TRIP,
-				variables: { id: tripId },
+				variables: { tripId },
 			});
 			expect(queryData.trip.addressList).toContain(addressAlice);
 			expect(queryData.trip.addressList).not.toContain(addressBob);
@@ -190,7 +190,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			// 驗證紀錄是否真的被加入
 			const { data: tripData } = await client.query({
 				query: GET_TRIP,
-				variables: { id: tripId },
+				variables: { tripId },
 			});
 			expect(tripData.trip.records).toHaveLength(1);
 			expect(tripData.trip.records[0].name).toBe(newRecord.name);
@@ -210,7 +210,8 @@ describe('GraphQL API End-to-End Tests', () => {
 			const { data, error } = await client.mutate({
 				mutation: UPDATE_RECORD,
 				variables: {
-					id: recordId,
+					tripId,
+					recordId,
 					input: updatedRecord,
 				},
 			});
@@ -226,7 +227,7 @@ describe('GraphQL API End-to-End Tests', () => {
 
 			const { data, error } = await client.mutate({
 				mutation: REMOVE_RECORD,
-				variables: { id: recordId },
+				variables: { recordId },
 			});
 
 			expect(error).toBeUndefined();
@@ -235,7 +236,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			// 驗證紀錄是否真的被移除
 			const { data: tripData } = await client.query({
 				query: GET_TRIP,
-				variables: { id: tripId },
+				variables: { tripId },
 			});
 			expect(tripData.trip.records).toHaveLength(0);
 		});

@@ -56,9 +56,9 @@ type ComplexityRoot struct {
 		CreateRecord  func(childComplexity int, tripID string, input model.NewRecord) int
 		CreateTrip    func(childComplexity int, input model.NewTrip) int
 		DeleteAddress func(childComplexity int, tripID string, address string) int
-		RemoveRecord  func(childComplexity int, id string) int
-		UpdateRecord  func(childComplexity int, id string, input model.NewRecord) int
-		UpdateTrip    func(childComplexity int, id string, input model.NewTrip) int
+		RemoveRecord  func(childComplexity int, recordID string) int
+		UpdateRecord  func(childComplexity int, tripID string, recordID string, input model.NewRecord) int
+		UpdateTrip    func(childComplexity int, tripID string, input model.NewTrip) int
 	}
 
 	Payment struct {
@@ -67,7 +67,7 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
-		Trip func(childComplexity int, id string) int
+		Trip func(childComplexity int, tripID string) int
 	}
 
 	Record struct {
@@ -102,15 +102,15 @@ type ComplexityRoot struct {
 
 type MutationResolver interface {
 	CreateTrip(ctx context.Context, input model.NewTrip) (*model.Trip, error)
-	UpdateTrip(ctx context.Context, id string, input model.NewTrip) (*model.Trip, error)
+	UpdateTrip(ctx context.Context, tripID string, input model.NewTrip) (*model.Trip, error)
 	CreateRecord(ctx context.Context, tripID string, input model.NewRecord) (*model.Record, error)
-	UpdateRecord(ctx context.Context, id string, input model.NewRecord) (*model.Record, error)
-	RemoveRecord(ctx context.Context, id string) (string, error)
+	UpdateRecord(ctx context.Context, tripID string, recordID string, input model.NewRecord) (*model.Record, error)
+	RemoveRecord(ctx context.Context, recordID string) (string, error)
 	CreateAddress(ctx context.Context, tripID string, address string) (string, error)
 	DeleteAddress(ctx context.Context, tripID string, address string) (string, error)
 }
 type QueryResolver interface {
-	Trip(ctx context.Context, id string) (*model.Trip, error)
+	Trip(ctx context.Context, tripID string) (*model.Trip, error)
 }
 type RecordResolver interface {
 	ShouldPayAddress(ctx context.Context, obj *model.Record) ([]string, error)
@@ -205,7 +205,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.RemoveRecord(childComplexity, args["id"].(string)), true
+		return e.complexity.Mutation.RemoveRecord(childComplexity, args["recordId"].(string)), true
 
 	case "Mutation.updateRecord":
 		if e.complexity.Mutation.UpdateRecord == nil {
@@ -217,7 +217,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.UpdateRecord(childComplexity, args["id"].(string), args["input"].(model.NewRecord)), true
+		return e.complexity.Mutation.UpdateRecord(childComplexity, args["tripId"].(string), args["recordId"].(string), args["input"].(model.NewRecord)), true
 
 	case "Mutation.updateTrip":
 		if e.complexity.Mutation.UpdateTrip == nil {
@@ -229,7 +229,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.UpdateTrip(childComplexity, args["id"].(string), args["input"].(model.NewTrip)), true
+		return e.complexity.Mutation.UpdateTrip(childComplexity, args["tripId"].(string), args["input"].(model.NewTrip)), true
 
 	case "Payment.address":
 		if e.complexity.Payment.Address == nil {
@@ -255,7 +255,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Query.Trip(childComplexity, args["id"].(string)), true
+		return e.complexity.Query.Trip(childComplexity, args["tripId"].(string)), true
 
 	case "Record.amount":
 		if e.complexity.Record.Amount == nil {
@@ -693,19 +693,19 @@ func (ec *executionContext) field_Mutation_deleteAddress_argsAddress(
 func (ec *executionContext) field_Mutation_removeRecord_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Mutation_removeRecord_argsID(ctx, rawArgs)
+	arg0, err := ec.field_Mutation_removeRecord_argsRecordID(ctx, rawArgs)
 	if err != nil {
 		return nil, err
 	}
-	args["id"] = arg0
+	args["recordId"] = arg0
 	return args, nil
 }
-func (ec *executionContext) field_Mutation_removeRecord_argsID(
+func (ec *executionContext) field_Mutation_removeRecord_argsRecordID(
 	ctx context.Context,
 	rawArgs map[string]any,
 ) (string, error) {
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("id"))
-	if tmp, ok := rawArgs["id"]; ok {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("recordId"))
+	if tmp, ok := rawArgs["recordId"]; ok {
 		return ec.unmarshalNID2string(ctx, tmp)
 	}
 
@@ -716,24 +716,42 @@ func (ec *executionContext) field_Mutation_removeRecord_argsID(
 func (ec *executionContext) field_Mutation_updateRecord_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Mutation_updateRecord_argsID(ctx, rawArgs)
+	arg0, err := ec.field_Mutation_updateRecord_argsTripID(ctx, rawArgs)
 	if err != nil {
 		return nil, err
 	}
-	args["id"] = arg0
-	arg1, err := ec.field_Mutation_updateRecord_argsInput(ctx, rawArgs)
+	args["tripId"] = arg0
+	arg1, err := ec.field_Mutation_updateRecord_argsRecordID(ctx, rawArgs)
 	if err != nil {
 		return nil, err
 	}
-	args["input"] = arg1
+	args["recordId"] = arg1
+	arg2, err := ec.field_Mutation_updateRecord_argsInput(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg2
 	return args, nil
 }
-func (ec *executionContext) field_Mutation_updateRecord_argsID(
+func (ec *executionContext) field_Mutation_updateRecord_argsTripID(
 	ctx context.Context,
 	rawArgs map[string]any,
 ) (string, error) {
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("id"))
-	if tmp, ok := rawArgs["id"]; ok {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tripId"))
+	if tmp, ok := rawArgs["tripId"]; ok {
+		return ec.unmarshalNID2string(ctx, tmp)
+	}
+
+	var zeroVal string
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Mutation_updateRecord_argsRecordID(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (string, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("recordId"))
+	if tmp, ok := rawArgs["recordId"]; ok {
 		return ec.unmarshalNID2string(ctx, tmp)
 	}
 
@@ -757,11 +775,11 @@ func (ec *executionContext) field_Mutation_updateRecord_argsInput(
 func (ec *executionContext) field_Mutation_updateTrip_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Mutation_updateTrip_argsID(ctx, rawArgs)
+	arg0, err := ec.field_Mutation_updateTrip_argsTripID(ctx, rawArgs)
 	if err != nil {
 		return nil, err
 	}
-	args["id"] = arg0
+	args["tripId"] = arg0
 	arg1, err := ec.field_Mutation_updateTrip_argsInput(ctx, rawArgs)
 	if err != nil {
 		return nil, err
@@ -769,12 +787,12 @@ func (ec *executionContext) field_Mutation_updateTrip_args(ctx context.Context, 
 	args["input"] = arg1
 	return args, nil
 }
-func (ec *executionContext) field_Mutation_updateTrip_argsID(
+func (ec *executionContext) field_Mutation_updateTrip_argsTripID(
 	ctx context.Context,
 	rawArgs map[string]any,
 ) (string, error) {
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("id"))
-	if tmp, ok := rawArgs["id"]; ok {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tripId"))
+	if tmp, ok := rawArgs["tripId"]; ok {
 		return ec.unmarshalNID2string(ctx, tmp)
 	}
 
@@ -821,19 +839,19 @@ func (ec *executionContext) field_Query___type_argsName(
 func (ec *executionContext) field_Query_trip_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := ec.field_Query_trip_argsID(ctx, rawArgs)
+	arg0, err := ec.field_Query_trip_argsTripID(ctx, rawArgs)
 	if err != nil {
 		return nil, err
 	}
-	args["id"] = arg0
+	args["tripId"] = arg0
 	return args, nil
 }
-func (ec *executionContext) field_Query_trip_argsID(
+func (ec *executionContext) field_Query_trip_argsTripID(
 	ctx context.Context,
 	rawArgs map[string]any,
 ) (string, error) {
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("id"))
-	if tmp, ok := rawArgs["id"]; ok {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tripId"))
+	if tmp, ok := rawArgs["tripId"]; ok {
 		return ec.unmarshalNID2string(ctx, tmp)
 	}
 
@@ -1137,7 +1155,7 @@ func (ec *executionContext) _Mutation_updateTrip(ctx context.Context, field grap
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().UpdateTrip(rctx, fc.Args["id"].(string), fc.Args["input"].(model.NewTrip))
+		return ec.resolvers.Mutation().UpdateTrip(rctx, fc.Args["tripId"].(string), fc.Args["input"].(model.NewTrip))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -1271,7 +1289,7 @@ func (ec *executionContext) _Mutation_updateRecord(ctx context.Context, field gr
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().UpdateRecord(rctx, fc.Args["id"].(string), fc.Args["input"].(model.NewRecord))
+		return ec.resolvers.Mutation().UpdateRecord(rctx, fc.Args["tripId"].(string), fc.Args["recordId"].(string), fc.Args["input"].(model.NewRecord))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -1338,7 +1356,7 @@ func (ec *executionContext) _Mutation_removeRecord(ctx context.Context, field gr
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().RemoveRecord(rctx, fc.Args["id"].(string))
+		return ec.resolvers.Mutation().RemoveRecord(rctx, fc.Args["recordId"].(string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -1591,7 +1609,7 @@ func (ec *executionContext) _Query_trip(ctx context.Context, field graphql.Colle
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Trip(rctx, fc.Args["id"].(string))
+		return ec.resolvers.Query().Trip(rctx, fc.Args["tripId"].(string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)

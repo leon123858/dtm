@@ -17,8 +17,8 @@ const CREATE_TRIP = gql`
 
 // 更新 GET_TRIP 查詢，包含 moneyShare
 const GET_TRIP = gql`
-	query GetTrip($id: ID!) {
-		trip(id: $id) {
+	query GetTrip($tripId: ID!) {
+		trip(tripId: $tripId) {
 			id
 			name
 			addressList
@@ -96,7 +96,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 		// 驗證地址是否成功添加
 		const { data: fetchedTripData } = await client.query({
 			query: GET_TRIP,
-			variables: { id: tripId },
+			variables: { tripId },
 		});
 		expect(fetchedTripData.trip.addressList).toEqual(
 			expect.arrayContaining([addressAlice, addressBob, addressCharlie])
@@ -146,7 +146,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			// Fetch the trip with all details, including moneyShare
 			const { data, error } = await client.query({
 				query: GET_TRIP,
-				variables: { id: tripId },
+				variables: { tripId },
 			});
 
 			expect(error).toBeUndefined();

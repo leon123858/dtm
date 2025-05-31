@@ -17,7 +17,7 @@ const CREATE_TRIP = gql`
 
 const GET_TRIP = gql`
 	query GetTrip($id: ID!) {
-		trip(id: $id) {
+		trip(tripId: $id) {
 			id
 			name
 			addressList
@@ -67,8 +67,8 @@ const CREATE_RECORD = gql`
 `;
 
 const UPDATE_RECORD = gql`
-	mutation UpdateRecord($id: ID!, $input: NewRecord!) {
-		updateRecord(id: $id, input: $input) {
+	mutation UpdateRecord($tripId: ID!, $recordId: ID!, $input: NewRecord!) {
+		updateRecord(tripId: $tripId, recordId: $recordId, input: $input) {
 			id
 			name
 			amount
@@ -80,7 +80,7 @@ const UPDATE_RECORD = gql`
 
 const REMOVE_RECORD = gql`
 	mutation RemoveRecord($id: ID!) {
-		removeRecord(id: $id)
+		removeRecord(recordId: $id)
 	}
 `;
 
@@ -308,7 +308,8 @@ describe('GraphQL API End-to-End Tests', () => {
 			const { data, error } = await client.mutate({
 				mutation: UPDATE_RECORD,
 				variables: {
-					id: recordId,
+					tripId,
+					recordId,
 					input: updatedRecord,
 				},
 			});
@@ -474,7 +475,11 @@ describe('GraphQL API End-to-End Tests', () => {
 
 			const { data: mutationData, error: mutationError } = await client.mutate({
 				mutation: UPDATE_RECORD,
-				variables: { id: recordIdForSubTests, input: updatedRecordPayload },
+				variables: {
+					tripId,
+					recordId: recordIdForSubTests,
+					input: updatedRecordPayload,
+				},
 			});
 
 			expect(mutationError).toBeUndefined();

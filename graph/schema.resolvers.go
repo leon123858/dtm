@@ -35,15 +35,15 @@ func (r *mutationResolver) CreateTrip(ctx context.Context, input model.NewTrip) 
 }
 
 // UpdateTrip is the resolver for the updateTrip field.
-func (r *mutationResolver) UpdateTrip(ctx context.Context, id string, input model.NewTrip) (*model.Trip, error) {
+func (r *mutationResolver) UpdateTrip(ctx context.Context, tripID string, input model.NewTrip) (*model.Trip, error) {
 	dbTripInfo := r.TripDB
-	tripID, err := uuid.Parse(id)
+	id, err := uuid.Parse(tripID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
 	}
 
 	tripInfo := &db.TripInfo{
-		ID:   tripID,
+		ID:   id,
 		Name: input.Name,
 	}
 	if err := dbTripInfo.UpdateTripInfo(tripInfo); err != nil {
@@ -51,7 +51,7 @@ func (r *mutationResolver) UpdateTrip(ctx context.Context, id string, input mode
 	}
 
 	trip := &model.Trip{
-		ID:   id,
+		ID:   tripID,
 		Name: input.Name,
 	}
 	return trip, nil
@@ -98,15 +98,15 @@ func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, inpu
 }
 
 // UpdateRecord is the resolver for the updateRecord field.
-func (r *mutationResolver) UpdateRecord(ctx context.Context, id string, input model.NewRecord) (*model.Record, error) {
+func (r *mutationResolver) UpdateRecord(ctx context.Context, tripID string, recordID string, input model.NewRecord) (*model.Record, error) {
 	dbTripInfo := r.TripDB
-	recordID, err := uuid.Parse(id)
+	recordUID, err := uuid.Parse(recordID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid record ID: %w", err)
 	}
 
 	record := &db.Record{
-		ID:               recordID,
+		ID:               recordUID,
 		Name:             input.Name,
 		Amount:           input.Amount,
 		PrePayAddress:    db.Address(input.PrePayAddress),
@@ -138,25 +138,25 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, id string, input mo
 }
 
 // RemoveRecord is the resolver for the removeRecord field.
-func (r *mutationResolver) RemoveRecord(ctx context.Context, id string) (string, error) {
+func (r *mutationResolver) RemoveRecord(ctx context.Context, recordID string) (string, error) {
 	dbTripInfo := r.TripDB
-	recordID, err := uuid.Parse(id)
+	recordUID, err := uuid.Parse(recordID)
 	if err != nil {
 		return "", fmt.Errorf("invalid record ID: %w", err)
 	}
 
-	if err := dbTripInfo.DeleteTripRecord(recordID); err != nil {
+	if err := dbTripInfo.DeleteTripRecord(recordUID); err != nil {
 		return "", fmt.Errorf("failed to delete record: %w", err)
 	}
 
 	tripMQ := r.TripMessageQueueWrapper.GetTripRecordMessageQueue(mq.ActionDelete)
 	if tripMQ.Publish(mq.TripRecordMessage{
-		ID: recordID,
+		ID: recordUID,
 	}) != nil {
 		fmt.Println("Warning: fail to notice event")
 	}
 
-	return id, nil
+	return recordID, nil
 }
 
 // CreateAddress is the resolver for the createAddress field.
@@ -206,14 +206,14 @@ func (r *mutationResolver) DeleteAddress(ctx context.Context, tripID string, add
 }
 
 // Trip is the resolver for the trip field.
-func (r *queryResolver) Trip(ctx context.Context, id string) (*model.Trip, error) {
+func (r *queryResolver) Trip(ctx context.Context, tripID string) (*model.Trip, error) {
 	dbTripInfo := r.TripDB
-	tripID, err := uuid.Parse(id)
+	id, err := uuid.Parse(tripID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
 	}
 
-	tripInfo, err := dbTripInfo.GetTripInfo(tripID)
+	tripInfo, err := dbTripInfo.GetTripInfo(id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get trip info: %w", err)
 	}

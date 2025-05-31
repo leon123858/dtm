@@ -37,7 +37,7 @@ type Subscription {
 }
 
 type Query {
-	trip(id: ID!): Trip
+	trip(tripId: ID!): Trip
 }
 
 input NewRecord {
@@ -53,10 +53,10 @@ input NewTrip {
 
 type Mutation {
 	createTrip(input: NewTrip!): Trip!
-	updateTrip(id: ID!, input: NewTrip!): Trip!
+	updateTrip(tripId: ID!, input: NewTrip!): Trip!
 	createRecord(tripId: ID!, input: NewRecord!): Record!
-	updateRecord(id: ID!, input: NewRecord!): Record!
-	removeRecord(id: ID!): ID!
+	updateRecord(tripId: ID!, recordId: ID!, input: NewRecord!): Record!
+	removeRecord(recordId: ID!): ID!
 	createAddress(tripId: ID!, address: String!): String!
 	deleteAddress(tripId: ID!, address: String!): String!
 }

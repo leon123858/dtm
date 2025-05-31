@@ -25,7 +25,7 @@ func Serve() {
 	// GraphQL endpoint
 	executableSchema := graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{
 		// TripDB:                  mem.NewInMemoryTripDBWrapper(),          // Use in-memory DB for simplicity
-		TripDB: pg.NewGORMTripDBWrapper(db),
+		TripDB:                  pg.NewGORMTripDBWrapper(db),
 		TripMessageQueueWrapper: goch.NewGoChanTripMessageQueueWrapper(), // Use in-memory message queue
 	}})
 	r.POST("/query", GraphQLHandler(executableSchema))
