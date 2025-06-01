@@ -33,14 +33,15 @@ func InitPostgresGORM(dsn string) (*gorm.DB, error) {
 	newLogger := logger.New(
 		log.New(os.Stdout, "\r\n", log.LstdFlags), // io writer
 		logger.Config{
-			SlowThreshold: time.Second,   // Slow SQL threshold
+			SlowThreshold: time.Second, // Slow SQL threshold
 			LogLevel:      logger.Silent, // Log level (Silent, Error, Warn, Info)
-			Colorful:      true,          // Disable color
+			Colorful:      true,        // Disable color
 		},
 	)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: newLogger, // Apply the custom logger
+		DisableForeignKeyConstraintWhenMigrating: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
@@ -61,6 +62,7 @@ func InitPostgresGORM(dsn string) (*gorm.DB, error) {
 		&TripInfoModel{},
 		&RecordModel{},
 		&TripAddressListModel{},
+		&RecordShouldPayAddressListModel{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to auto migrate database: %w", err)

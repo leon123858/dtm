@@ -1,348 +1,658 @@
-package mem_test // Use _test suffix for test package
+package mem
 
 import (
+	"context"
+	"sort"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	dbt "dtm/db/db" // Assuming dtm/db/db contains the interface and types
-	"dtm/db/mem"    // Import the package containing inMemoryTripDBWrapper
+	dbt "dtm/db/db"
 )
 
-// setupTest creates a new inMemoryTripDBWrapper instance for each test.
-func setupTest() dbt.TripDBWrapper {
-	return mem.NewInMemoryTripDBWrapper()
+// Helper function to create a new TripInfo
+func newTripInfo(name string) *dbt.TripInfo {
+	return &dbt.TripInfo{
+		ID:   uuid.New(),
+		Name: name,
+	}
+}
+
+// Helper function to create a new Record
+func newRecord(name string, amount float64, prePayAddress dbt.Address, shouldPayAddresses []dbt.Address) dbt.Record {
+	return dbt.Record{
+		RecordInfo: dbt.RecordInfo{
+			ID:            uuid.New(),
+			Name:          name,
+			Amount:        amount,
+			PrePayAddress: prePayAddress,
+		},
+		RecordData: dbt.RecordData{
+			ShouldPayAddress: shouldPayAddresses,
+		},
+	}
 }
 
 func TestCreateTrip(t *testing.T) {
-	db := setupTest()
+	db := NewInMemoryTripDBWrapper()
 
-	// Test 1: Successfully create a trip
-	tripID := uuid.New()
-	tripInfo := &dbt.TripInfo{
-		ID:   tripID,
-		Name: "Test Trip 1",
-	}
-	err := db.CreateTrip(tripInfo)
-	assert.NoError(t, err, "CreateTrip should not return an error for a new trip")
+	t.Run("Successfully create a trip", func(t *testing.T) {
+		info := newTripInfo("Trip Alpha")
+		err := db.CreateTrip(info)
+		assert.NoError(t, err)
 
-	retrievedInfo, err := db.GetTripInfo(tripID)
-	assert.NoError(t, err)
-	assert.NotNil(t, retrievedInfo)
-	assert.Equal(t, tripInfo.ID, retrievedInfo.ID)
-	assert.Equal(t, tripInfo.Name, retrievedInfo.Name)
+		retrievedInfo, err := db.GetTripInfo(info.ID)
+		assert.NoError(t, err)
+		assert.NotNil(t, retrievedInfo)
+		assert.Equal(t, info.ID, retrievedInfo.ID)
+		assert.Equal(t, info.Name, retrievedInfo.Name)
 
-	// Test 2: Try to create a trip with an existing ID (should fail)
-	err = db.CreateTrip(tripInfo)
-	assert.Error(t, err, "CreateTrip should return an error for a duplicate trip ID")
-	assert.Contains(t, err.Error(), "already exists")
-}
+		// Ensure TripData is initialized
+		tripData, err := db.GetTripRecords(info.ID) // GetTripRecords indirectly checks TripData's records slice
+		assert.NoError(t, err)
+		assert.Empty(t, tripData)
 
-func TestGetTripInfo(t *testing.T) {
-	db := setupTest()
+		addressList, err := db.GetTripAddressList(info.ID)
+		assert.NoError(t, err)
+		assert.Empty(t, addressList)
+	})
 
-	// Prepare data
-	tripID := uuid.New()
-	tripInfo := &dbt.TripInfo{
-		ID:   tripID,
-		Name: "Test Trip Get Info",
-	}
-	db.CreateTrip(tripInfo)
+	t.Run("Fail to create a trip with existing ID", func(t *testing.T) {
+		info := newTripInfo("Trip Beta")
+		err := db.CreateTrip(info)
+		assert.NoError(t, err)
 
-	// Test 1: Get existing trip info
-	retrievedInfo, err := db.GetTripInfo(tripID)
-	assert.NoError(t, err)
-	assert.NotNil(t, retrievedInfo)
-	assert.Equal(t, tripInfo.ID, retrievedInfo.ID)
-	assert.Equal(t, tripInfo.Name, retrievedInfo.Name)
-
-	// Test 2: Get non-existent trip info (should fail)
-	nonExistentID := uuid.New()
-	retrievedInfo, err = db.GetTripInfo(nonExistentID)
-	assert.Error(t, err, "GetTripInfo should return an error for non-existent trip")
-	assert.Nil(t, retrievedInfo)
-	assert.Contains(t, err.Error(), "not found")
-}
-
-func TestUpdateTripInfo(t *testing.T) {
-	db := setupTest()
-
-	// Prepare data
-	tripID := uuid.New()
-	tripInfo := &dbt.TripInfo{
-		ID:   tripID,
-		Name: "Original Name",
-	}
-	db.CreateTrip(tripInfo)
-
-	// Test 1: Successfully update trip info
-	updatedTripInfo := &dbt.TripInfo{
-		ID:   tripID,
-		Name: "Updated Name",
-	}
-	err := db.UpdateTripInfo(updatedTripInfo)
-	assert.NoError(t, err, "UpdateTripInfo should not return an error")
-
-	retrievedInfo, err := db.GetTripInfo(tripID)
-	assert.NoError(t, err)
-	assert.NotNil(t, retrievedInfo)
-	assert.Equal(t, updatedTripInfo.Name, retrievedInfo.Name) // Check if name is updated
-
-	// Test 2: Try to update non-existent trip info (should fail)
-	nonExistentID := uuid.New()
-	nonExistentTripInfo := &dbt.TripInfo{
-		ID:   nonExistentID,
-		Name: "Non Existent",
-	}
-	err = db.UpdateTripInfo(nonExistentTripInfo)
-	assert.Error(t, err, "UpdateTripInfo should return an error for non-existent trip")
-	assert.Contains(t, err.Error(), "not found for update")
-}
-
-func TestDeleteTrip(t *testing.T) {
-	db := setupTest()
-
-	// Prepare data
-	tripID := uuid.New()
-	tripInfo := &dbt.TripInfo{
-		ID:   tripID,
-		Name: "Trip to Delete",
-	}
-	db.CreateTrip(tripInfo)
-
-	// Test 1: Successfully delete a trip
-	err := db.DeleteTrip(tripID)
-	assert.NoError(t, err, "DeleteTrip should not return an error")
-
-	retrievedInfo, err := db.GetTripInfo(tripID)
-	assert.Error(t, err, "GetTripInfo should return an error after deletion")
-	assert.Nil(t, retrievedInfo)
-	assert.Contains(t, err.Error(), "not found")
-
-	// Test 2: Try to delete a non-existent trip (should fail)
-	nonExistentID := uuid.New()
-	err = db.DeleteTrip(nonExistentID)
-	assert.Error(t, err, "DeleteTrip should return an error for non-existent trip")
-	assert.Contains(t, err.Error(), "not found for deletion")
+		err = db.CreateTrip(info) // Try to create again with the same ID
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "already exists")
+	})
 }
 
 func TestCreateTripRecords(t *testing.T) {
-	db := setupTest()
+	db := NewInMemoryTripDBWrapper()
+	tripInfo := newTripInfo("Trip Gamma")
+	_ = db.CreateTrip(tripInfo)
 
-	// Prepare trip
-	tripID := uuid.New()
-	db.CreateTrip(&dbt.TripInfo{ID: tripID, Name: "Trip for Records"})
+	t.Run("Successfully add records to a trip", func(t *testing.T) {
+		records := []dbt.Record{
+			newRecord("Record 1", 100.0, "Address A", []dbt.Address{"Address X", "Address Y"}),
+			newRecord("Record 2", 50.0, "Address B", []dbt.Address{"Address Z"}),
+		}
+		err := db.CreateTripRecords(tripInfo.ID, records)
+		assert.NoError(t, err)
 
-	// Test 1: Successfully add records to an existing trip
-	record1 := dbt.Record{ID: uuid.New(), Name: "Record A", Amount: 100.0}
-	record2 := dbt.Record{ID: uuid.New(), Name: "Record B", Amount: 200.0}
-	recordsToAdd := []dbt.Record{record1, record2}
+		retrievedRecords, err := db.GetTripRecords(tripInfo.ID)
+		assert.NoError(t, err)
+		assert.Len(t, retrievedRecords, 2)
 
-	err := db.CreateTripRecords(tripID, recordsToAdd)
-	assert.NoError(t, err, "CreateTripRecords should not return an error")
+		// Check if record details match (compare RecordInfo only as GetTripRecords returns RecordInfo)
+		assert.Contains(t, retrievedRecords, records[0].RecordInfo)
+		assert.Contains(t, retrievedRecords, records[1].RecordInfo)
 
-	retrievedRecords, err := db.GetTripRecords(tripID)
-	assert.NoError(t, err)
-	assert.Len(t, retrievedRecords, 2)
-	assert.Contains(t, retrievedRecords, record1)
-	assert.Contains(t, retrievedRecords, record2)
+		// Add more records
+		moreRecords := []dbt.Record{
+			newRecord("Record 3", 75.0, "Address C", []dbt.Address{"Address W"}),
+		}
+		err = db.CreateTripRecords(tripInfo.ID, moreRecords)
+		assert.NoError(t, err)
 
-	// Test 2: Add more records
-	record3 := dbt.Record{ID: uuid.New(), Name: "Record C", Amount: 300.0}
-	err = db.CreateTripRecords(tripID, []dbt.Record{record3})
-	assert.NoError(t, err)
-	retrievedRecords, err = db.GetTripRecords(tripID)
-	assert.NoError(t, err)
-	assert.Len(t, retrievedRecords, 3)
-	assert.Contains(t, retrievedRecords, record3)
+		retrievedRecords, err = db.GetTripRecords(tripInfo.ID)
+		assert.NoError(t, err)
+		assert.Len(t, retrievedRecords, 3)
+		assert.Contains(t, retrievedRecords, moreRecords[0].RecordInfo)
+	})
 
-	// Test 3: Try to add records to a non-existent trip (should fail)
-	nonExistentID := uuid.New()
-	err = db.CreateTripRecords(nonExistentID, recordsToAdd)
-	assert.Error(t, err, "CreateTripRecords should return an error for non-existent trip")
-	assert.Contains(t, err.Error(), "not found")
+	t.Run("Fail to add records to non-existent trip", func(t *testing.T) {
+		nonExistentID := uuid.New()
+		records := []dbt.Record{newRecord("Record 4", 20.0, "Address D", nil)}
+		err := db.CreateTripRecords(nonExistentID, records)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "trip with ID")
+		assert.Contains(t, err.Error(), "not found")
+	})
+}
+
+func TestGetTripInfo(t *testing.T) {
+	db := NewInMemoryTripDBWrapper()
+	info1 := newTripInfo("Trip Delta")
+	info2 := newTripInfo("Trip Epsilon")
+	_ = db.CreateTrip(info1)
+	_ = db.CreateTrip(info2)
+
+	t.Run("Successfully retrieve existing trip info", func(t *testing.T) {
+		retrievedInfo, err := db.GetTripInfo(info1.ID)
+		assert.NoError(t, err)
+		assert.NotNil(t, retrievedInfo)
+		assert.Equal(t, info1.ID, retrievedInfo.ID)
+		assert.Equal(t, info1.Name, retrievedInfo.Name)
+	})
+
+	t.Run("Fail to retrieve non-existent trip info", func(t *testing.T) {
+		nonExistentID := uuid.New()
+		retrievedInfo, err := db.GetTripInfo(nonExistentID)
+		assert.Error(t, err)
+		assert.Nil(t, retrievedInfo)
+		assert.Contains(t, err.Error(), "not found")
+	})
 }
 
 func TestGetTripRecords(t *testing.T) {
-	db := setupTest()
+	db := NewInMemoryTripDBWrapper()
+	tripInfo := newTripInfo("Trip Zeta")
+	_ = db.CreateTrip(tripInfo)
 
-	// Prepare trip and records
-	tripID := uuid.New()
-	db.CreateTrip(&dbt.TripInfo{ID: tripID, Name: "Trip for Get Records"})
-	record1 := dbt.Record{ID: uuid.New(), Name: "Record X", Amount: 10.0}
-	db.CreateTripRecords(tripID, []dbt.Record{record1})
+	record1 := newRecord("Zeta Record 1", 10.0, "Addr1", []dbt.Address{"Pay1"})
+	record2 := newRecord("Zeta Record 2", 20.0, "Addr2", []dbt.Address{"Pay2", "Pay3"})
+	_ = db.CreateTripRecords(tripInfo.ID, []dbt.Record{record1, record2})
 
-	// Test 1: Get records for an existing trip
-	retrievedRecords, err := db.GetTripRecords(tripID)
-	assert.NoError(t, err)
-	assert.Len(t, retrievedRecords, 1)
-	assert.Equal(t, record1.ID, retrievedRecords[0].ID)
+	t.Run("Successfully retrieve trip records", func(t *testing.T) {
+		retrievedRecords, err := db.GetTripRecords(tripInfo.ID)
+		assert.NoError(t, err)
+		assert.Len(t, retrievedRecords, 2)
 
-	// Test 2: Get records for a trip with no records
-	tripIDNoRecords := uuid.New()
-	db.CreateTrip(&dbt.TripInfo{ID: tripIDNoRecords, Name: "Trip No Records"})
-	retrievedRecords, err = db.GetTripRecords(tripIDNoRecords)
-	assert.NoError(t, err)
-	assert.Empty(t, retrievedRecords)
+		// Convert original records to RecordInfo for comparison
+		expectedRecords := []dbt.RecordInfo{record1.RecordInfo, record2.RecordInfo}
+		sort.Slice(retrievedRecords, func(i, j int) bool {
+			return retrievedRecords[i].ID.String() < retrievedRecords[j].ID.String()
+		})
+		sort.Slice(expectedRecords, func(i, j int) bool {
+			return expectedRecords[i].ID.String() < expectedRecords[j].ID.String()
+		})
+		assert.Equal(t, expectedRecords, retrievedRecords)
+	})
 
-	// Test 3: Get records for a non-existent trip (should fail)
-	nonExistentID := uuid.New()
-	retrievedRecords, err = db.GetTripRecords(nonExistentID)
-	assert.Error(t, err, "GetTripRecords should return an error for non-existent trip")
-	assert.Nil(t, retrievedRecords)
-	assert.Contains(t, err.Error(), "not found")
+	t.Run("Retrieve records for trip with no records", func(t *testing.T) {
+		emptyTrip := newTripInfo("Empty Trip")
+		_ = db.CreateTrip(emptyTrip)
+		retrievedRecords, err := db.GetTripRecords(emptyTrip.ID)
+		assert.NoError(t, err)
+		assert.Empty(t, retrievedRecords)
+	})
+
+	t.Run("Fail to retrieve records for non-existent trip", func(t *testing.T) {
+		nonExistentID := uuid.New()
+		retrievedRecords, err := db.GetTripRecords(nonExistentID)
+		assert.Error(t, err)
+		assert.Nil(t, retrievedRecords)
+		assert.Contains(t, err.Error(), "not found")
+	})
+}
+
+func TestGetTripAddressList(t *testing.T) {
+	db := NewInMemoryTripDBWrapper()
+	tripInfo := newTripInfo("Trip Eta")
+	_ = db.CreateTrip(tripInfo)
+
+	_ = db.TripAddressListAdd(tripInfo.ID, "Addr A")
+	_ = db.TripAddressListAdd(tripInfo.ID, "Addr B")
+
+	t.Run("Successfully retrieve trip address list", func(t *testing.T) {
+		addressList, err := db.GetTripAddressList(tripInfo.ID)
+		assert.NoError(t, err)
+		assert.Len(t, addressList, 2)
+		assert.Contains(t, addressList, dbt.Address("Addr A"))
+		assert.Contains(t, addressList, dbt.Address("Addr B"))
+	})
+
+	t.Run("Retrieve address list for trip with no addresses", func(t *testing.T) {
+		emptyTrip := newTripInfo("Empty Address Trip")
+		_ = db.CreateTrip(emptyTrip)
+		addressList, err := db.GetTripAddressList(emptyTrip.ID)
+		assert.NoError(t, err)
+		assert.Empty(t, addressList)
+	})
+
+	t.Run("Fail to retrieve address list for non-existent trip", func(t *testing.T) {
+		nonExistentID := uuid.New()
+		addressList, err := db.GetTripAddressList(nonExistentID)
+		assert.Error(t, err)
+		assert.Nil(t, addressList)
+		assert.Contains(t, err.Error(), "not found")
+	})
 }
 
 func TestGetRecordAddressList(t *testing.T) {
-	db := setupTest()
+	db := NewInMemoryTripDBWrapper()
+	tripInfo := newTripInfo("Trip Theta")
+	_ = db.CreateTrip(tripInfo)
 
-	// Prepare trip and records
-	tripID := uuid.New()
-	db.CreateTrip(&dbt.TripInfo{ID: tripID, Name: "Trip for Record Address List"})
-	record1 := dbt.Record{ID: uuid.New(), Name: "Record 1", Amount: 50.0, PrePayAddress: "Address 1", ShouldPayAddress: []dbt.Address{"Address 1"}}
-	record2 := dbt.Record{ID: uuid.New(), Name: "Record 2", Amount: 75.0, PrePayAddress: "Address 2", ShouldPayAddress: []dbt.Address{"Address 2"}}
-	err := db.CreateTripRecords(tripID, []dbt.Record{record1, record2})
-	assert.NoError(t, err, "CreateTripRecords should not return an error")
+	record1 := newRecord("Rec Theta 1", 10.0, "PrePay1", []dbt.Address{"ShouldPay1", "ShouldPay2"})
+	record2 := newRecord("Rec Theta 2", 20.0, "PrePay2", []dbt.Address{"ShouldPay3"})
+	_ = db.CreateTripRecords(tripInfo.ID, []dbt.Record{record1, record2})
 
-	// Test 1: Get address list for an existing record
-	addressList, err := db.GetRecordAddressList(record1.ID)
-	assert.NoError(t, err)
-	assert.Len(t, addressList, 1)
-	assert.Equal(t, record1.PrePayAddress, addressList[0])
+	t.Run("Successfully retrieve record's should pay address list", func(t *testing.T) {
+		addressList, err := db.GetRecordAddressList(record1.ID)
+		assert.NoError(t, err)
+		assert.Len(t, addressList, 2)
+		assert.Contains(t, addressList, dbt.Address("ShouldPay1"))
+		assert.Contains(t, addressList, dbt.Address("ShouldPay2"))
 
-	// Test 2: Get address list for a non-existent record (should fail)
-	nonExistentRecordID := uuid.New()
-	addressList, err = db.GetRecordAddressList(nonExistentRecordID)
-	assert.Error(t, err, "GetRecordAddressList should return an error for non-existent record")
-	assert.Nil(t, addressList)
-	assert.Contains(t, err.Error(), "not found")
+		addressList, err = db.GetRecordAddressList(record2.ID)
+		assert.NoError(t, err)
+		assert.Len(t, addressList, 1)
+		assert.Contains(t, addressList, dbt.Address("ShouldPay3"))
+	})
+
+	t.Run("Retrieve should pay address list for record with no should pay addresses", func(t *testing.T) {
+		recordEmpty := newRecord("Rec Empty", 5.0, "PrePay", nil)
+		_ = db.CreateTripRecords(tripInfo.ID, []dbt.Record{recordEmpty})
+		addressList, err := db.GetRecordAddressList(recordEmpty.ID)
+		assert.NoError(t, err)
+		assert.Empty(t, addressList)
+	})
+
+	t.Run("Fail to retrieve record's should pay address list for non-existent record", func(t *testing.T) {
+		nonExistentID := uuid.New()
+		addressList, err := db.GetRecordAddressList(nonExistentID)
+		assert.Error(t, err)
+		assert.Nil(t, addressList)
+		assert.Contains(t, err.Error(), "not found")
+	})
+}
+
+func TestUpdateTripInfo(t *testing.T) {
+	db := NewInMemoryTripDBWrapper()
+	info := newTripInfo("Original Trip Name")
+	_ = db.CreateTrip(info)
+
+	t.Run("Successfully update trip info", func(t *testing.T) {
+		updatedInfo := &dbt.TripInfo{
+			ID:   info.ID,
+			Name: "Updated Trip Name",
+		}
+		err := db.UpdateTripInfo(updatedInfo)
+		assert.NoError(t, err)
+
+		retrievedInfo, err := db.GetTripInfo(info.ID)
+		assert.NoError(t, err)
+		assert.NotNil(t, retrievedInfo)
+		assert.Equal(t, updatedInfo.Name, retrievedInfo.Name)
+	})
+
+	t.Run("Fail to update non-existent trip info", func(t *testing.T) {
+		nonExistentID := uuid.New()
+		updatedInfo := &dbt.TripInfo{
+			ID:   nonExistentID,
+			Name: "Non-existent Update",
+		}
+		err := db.UpdateTripInfo(updatedInfo)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found for update")
+	})
 }
 
 func TestUpdateTripRecord(t *testing.T) {
-	db := setupTest()
+	db := NewInMemoryTripDBWrapper()
+	tripInfo := newTripInfo("Trip Iota")
+	_ = db.CreateTrip(tripInfo)
 
-	// Prepare trip and records
-	tripID := uuid.New()
-	db.CreateTrip(&dbt.TripInfo{ID: tripID, Name: "Trip for Update Record"})
-	record1 := dbt.Record{ID: uuid.New(), Name: "Old Name", Amount: 100.0}
-	db.CreateTripRecords(tripID, []dbt.Record{record1})
+	record1 := newRecord("Rec Iota 1", 10.0, "PrePay1", []dbt.Address{"PayA"})
+	record2 := newRecord("Rec Iota 2", 20.0, "PrePay2", []dbt.Address{"PayB"})
+	_ = db.CreateTripRecords(tripInfo.ID, []dbt.Record{record1, record2})
 
-	// Test 1: Successfully update an existing record
-	updatedRecord := dbt.Record{ID: record1.ID, Name: "New Name", Amount: 150.0}
-	err := db.UpdateTripRecord(updatedRecord)
-	assert.NoError(t, err, "UpdateTripRecord should not return an error")
+	t.Run("Successfully update an existing record", func(t *testing.T) {
+		updatedRecordInfo := dbt.RecordInfo{
+			ID:            record1.ID,
+			Name:          "Updated Rec Iota 1",
+			Amount:        15.0,
+			PrePayAddress: "NewPrePay1",
+		}
+		// The RecordData part (ShouldPayAddress) is not updated via UpdateTripRecord,
+		// but the in-memory implementation does keep the original RecordData.
+		err := db.UpdateTripRecord(updatedRecordInfo)
+		assert.NoError(t, err)
 
-	retrievedRecords, err := db.GetTripRecords(tripID)
-	assert.NoError(t, err)
-	assert.Len(t, retrievedRecords, 1)
-	assert.Equal(t, updatedRecord.Name, retrievedRecords[0].Name)
-	assert.Equal(t, updatedRecord.Amount, retrievedRecords[0].Amount)
+		// Retrieve records and verify
+		retrievedRecords, err := db.GetTripRecords(tripInfo.ID)
+		assert.NoError(t, err)
+		assert.Len(t, retrievedRecords, 2)
 
-	// Test 2: Try to update a non-existent record (should fail)
-	nonExistentRecord := dbt.Record{ID: uuid.New(), Name: "Fake", Amount: 999.9}
-	err = db.UpdateTripRecord(nonExistentRecord)
-	assert.Error(t, err, "UpdateTripRecord should return an error for non-existent record")
-	assert.Contains(t, err.Error(), "not found for update")
-}
+		found := false
+		for _, r := range retrievedRecords {
+			if r.ID == updatedRecordInfo.ID {
+				assert.Equal(t, updatedRecordInfo.Name, r.Name)
+				assert.Equal(t, updatedRecordInfo.Amount, r.Amount)
+				assert.Equal(t, updatedRecordInfo.PrePayAddress, r.PrePayAddress)
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "Updated record not found in retrieved list")
 
-func TestDeleteTripRecord(t *testing.T) {
-	db := setupTest()
+		// Verify that RecordData (ShouldPayAddress) remains the same
+		shouldPayList, err := db.GetRecordAddressList(record1.ID)
+		assert.NoError(t, err)
+		assert.Equal(t, []dbt.Address{"PayA"}, shouldPayList) // Should be original
+	})
 
-	// Prepare trip and records
-	tripID := uuid.New()
-	db.CreateTrip(&dbt.TripInfo{ID: tripID, Name: "Trip for Delete Record"})
-	record1 := dbt.Record{ID: uuid.New(), Name: "Record 1", Amount: 100.0}
-	record2 := dbt.Record{ID: uuid.New(), Name: "Record 2", Amount: 200.0}
-	db.CreateTripRecords(tripID, []dbt.Record{record1, record2})
-
-	// Test 1: Successfully delete an existing record
-	err := db.DeleteTripRecord(record1.ID)
-	assert.NoError(t, err, "DeleteTripRecord should not return an error")
-
-	retrievedRecords, err := db.GetTripRecords(tripID)
-	assert.NoError(t, err)
-	assert.Len(t, retrievedRecords, 1)
-	assert.Equal(t, record2.ID, retrievedRecords[0].ID) // Only record2 should remain
-
-	// Test 2: Try to delete a non-existent record from an existing trip (should fail)
-	nonExistentRecordID := uuid.New()
-	err = db.DeleteTripRecord(nonExistentRecordID)
-	assert.Error(t, err, "DeleteTripRecord should return an error for non-existent record")
-	assert.Contains(t, err.Error(), "not found")
+	t.Run("Fail to update non-existent record", func(t *testing.T) {
+		nonExistentRecordInfo := dbt.RecordInfo{
+			ID:   uuid.New(),
+			Name: "Non-existent Record",
+		}
+		err := db.UpdateTripRecord(nonExistentRecordInfo)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+	})
 }
 
 func TestTripAddressListAdd(t *testing.T) {
-	db := setupTest()
+	db := NewInMemoryTripDBWrapper()
+	tripInfo := newTripInfo("Trip Kappa")
+	_ = db.CreateTrip(tripInfo)
 
-	// Prepare trip
-	tripID := uuid.New()
-	db.CreateTrip(&dbt.TripInfo{ID: tripID, Name: "Trip for Addresses"})
+	t.Run("Successfully add address to list", func(t *testing.T) {
+		err := db.TripAddressListAdd(tripInfo.ID, "Address Alpha")
+		assert.NoError(t, err)
+		list, _ := db.GetTripAddressList(tripInfo.ID)
+		assert.Contains(t, list, dbt.Address("Address Alpha"))
+		assert.Len(t, list, 1)
 
-	// Test 1: Successfully add addresses
-	addr1 := dbt.Address("Address A")
-	addr2 := dbt.Address("Address B")
+		err = db.TripAddressListAdd(tripInfo.ID, "Address Beta")
+		assert.NoError(t, err)
+		list, _ = db.GetTripAddressList(tripInfo.ID)
+		assert.Contains(t, list, dbt.Address("Address Beta"))
+		assert.Len(t, list, 2)
+	})
 
-	err := db.TripAddressListAdd(tripID, addr1)
-	assert.NoError(t, err)
-	err = db.TripAddressListAdd(tripID, addr2)
-	assert.NoError(t, err)
+	t.Run("Fail to add existing address", func(t *testing.T) {
+		err := db.TripAddressListAdd(tripInfo.ID, "Address Alpha") // Try to add again
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "already exists")
+		list, _ := db.GetTripAddressList(tripInfo.ID)
+		assert.Len(t, list, 2) // Should still be 2
+	})
 
-	retrievedAddresses, err := db.GetTripAddressList(tripID)
-	assert.NoError(t, err)
-	assert.Len(t, retrievedAddresses, 2)
-	assert.Contains(t, retrievedAddresses, addr1)
-	assert.Contains(t, retrievedAddresses, addr2)
-
-	// Test 2: Try to add a duplicate address (should fail)
-	err = db.TripAddressListAdd(tripID, addr1)
-	assert.Error(t, err, "TripAddressListAdd should return an error for duplicate address")
-	assert.Contains(t, err.Error(), "already exists")
-	retrievedAddresses, _ = db.GetTripAddressList(tripID)
-	assert.Len(t, retrievedAddresses, 2) // Length should remain 2
-
-	// Test 3: Try to add address to a non-existent trip (should fail)
-	nonExistentID := uuid.New()
-	err = db.TripAddressListAdd(nonExistentID, "Fake Address")
-	assert.Error(t, err, "TripAddressListAdd should return an error for non-existent trip")
-	assert.Contains(t, err.Error(), "not found")
+	t.Run("Fail to add address to non-existent trip", func(t *testing.T) {
+		nonExistentID := uuid.New()
+		err := db.TripAddressListAdd(nonExistentID, "Address Gamma")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+	})
 }
 
 func TestTripAddressListRemove(t *testing.T) {
-	db := setupTest()
+	db := NewInMemoryTripDBWrapper()
+	tripInfo := newTripInfo("Trip Lambda")
+	_ = db.CreateTrip(tripInfo)
+	_ = db.TripAddressListAdd(tripInfo.ID, "Address X")
+	_ = db.TripAddressListAdd(tripInfo.ID, "Address Y")
+	_ = db.TripAddressListAdd(tripInfo.ID, "Address Z")
 
-	// Prepare trip and addresses
-	tripID := uuid.New()
-	db.CreateTrip(&dbt.TripInfo{ID: tripID, Name: "Trip for Address Removal"})
-	addr1 := dbt.Address("Address 1")
-	addr2 := dbt.Address("Address 2")
-	addr3 := dbt.Address("Address 3")
-	db.TripAddressListAdd(tripID, addr1)
-	db.TripAddressListAdd(tripID, addr2)
-	db.TripAddressListAdd(tripID, addr3)
+	t.Run("Successfully remove address from list", func(t *testing.T) {
+		err := db.TripAddressListRemove(tripInfo.ID, "Address Y")
+		assert.NoError(t, err)
+		list, _ := db.GetTripAddressList(tripInfo.ID)
+		assert.NotContains(t, list, dbt.Address("Address Y"))
+		assert.Len(t, list, 2)
 
-	// Test 1: Successfully remove an address
-	err := db.TripAddressListRemove(tripID, addr2)
-	assert.NoError(t, err)
+		err = db.TripAddressListRemove(tripInfo.ID, "Address X")
+		assert.NoError(t, err)
+		list, _ = db.GetTripAddressList(tripInfo.ID)
+		assert.NotContains(t, list, dbt.Address("Address X"))
+		assert.Len(t, list, 1)
+	})
 
-	retrievedAddresses, err := db.GetTripAddressList(tripID)
-	assert.NoError(t, err)
-	assert.Len(t, retrievedAddresses, 2)
-	assert.NotContains(t, retrievedAddresses, addr2)
-	assert.Contains(t, retrievedAddresses, addr1)
-	assert.Contains(t, retrievedAddresses, addr3)
+	t.Run("Fail to remove non-existent address", func(t *testing.T) {
+		err := db.TripAddressListRemove(tripInfo.ID, "Address W")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+		list, _ := db.GetTripAddressList(tripInfo.ID)
+		assert.Len(t, list, 1) // Should still be 1 (Address Z)
+	})
 
-	// Test 2: Try to remove a non-existent address from an existing trip (should fail)
-	nonExistentAddr := dbt.Address("Non Existent Address")
-	err = db.TripAddressListRemove(tripID, nonExistentAddr)
-	assert.Error(t, err, "TripAddressListRemove should return an error for non-existent address")
-	assert.Contains(t, err.Error(), "not found")
-	retrievedAddresses, _ = db.GetTripAddressList(tripID)
-	assert.Len(t, retrievedAddresses, 2) // Length should remain 2
+	t.Run("Fail to remove address from non-existent trip", func(t *testing.T) {
+		nonExistentID := uuid.New()
+		err := db.TripAddressListRemove(nonExistentID, "Address Z")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+	})
+}
 
-	// Test 3: Try to remove address from a non-existent trip (should fail)
-	nonExistentID := uuid.New()
-	err = db.TripAddressListRemove(nonExistentID, addr1)
-	assert.Error(t, err, "TripAddressListRemove should return an error for non-existent trip")
-	assert.Contains(t, err.Error(), "not found")
+func TestDeleteTrip(t *testing.T) {
+	db := NewInMemoryTripDBWrapper()
+	trip1 := newTripInfo("Trip Mu")
+	_ = db.CreateTrip(trip1)
+	record1 := newRecord("Rec Mu 1", 10.0, "P1", []dbt.Address{"S1"})
+	_ = db.CreateTripRecords(trip1.ID, []dbt.Record{record1})
+	_ = db.TripAddressListAdd(trip1.ID, "AddrM1")
+
+	trip2 := newTripInfo("Trip Nu")
+	_ = db.CreateTrip(trip2)
+
+	t.Run("Successfully delete an existing trip", func(t *testing.T) {
+		err := db.DeleteTrip(trip1.ID)
+		assert.NoError(t, err)
+
+		_, err = db.GetTripInfo(trip1.ID)
+		assert.Error(t, err) // Should not find trip info
+		assert.Contains(t, err.Error(), "not found")
+
+		_, err = db.GetTripRecords(trip1.ID)
+		assert.Error(t, err) // Should not find trip records
+		assert.Contains(t, err.Error(), "not found")
+
+		_, err = db.GetTripAddressList(trip1.ID)
+		assert.Error(t, err) // Should not find trip address list
+		assert.Contains(t, err.Error(), "not found")
+
+		// Ensure associated record is also deleted from recordsByID map
+		_, err = db.GetRecordAddressList(record1.ID) // This checks recordsByID map
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+	})
+
+	t.Run("Fail to delete non-existent trip", func(t *testing.T) {
+		nonExistentID := uuid.New()
+		err := db.DeleteTrip(nonExistentID)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found for deletion")
+	})
+}
+
+func TestDeleteTripRecord(t *testing.T) {
+	db := NewInMemoryTripDBWrapper()
+	tripInfo := newTripInfo("Trip Xi")
+	_ = db.CreateTrip(tripInfo)
+
+	record1 := newRecord("Rec Xi 1", 10.0, "P1", []dbt.Address{"S1"})
+	record2 := newRecord("Rec Xi 2", 20.0, "P2", []dbt.Address{"S2"})
+	record3 := newRecord("Rec Xi 3", 30.0, "P3", []dbt.Address{"S3"})
+	_ = db.CreateTripRecords(tripInfo.ID, []dbt.Record{record1, record2, record3})
+
+	t.Run("Successfully delete an existing record", func(t *testing.T) {
+		err := db.DeleteTripRecord(record2.ID)
+		assert.NoError(t, err)
+
+		retrievedRecords, err := db.GetTripRecords(tripInfo.ID)
+		assert.NoError(t, err)
+		assert.Len(t, retrievedRecords, 2) // record2 should be gone
+		assert.Contains(t, retrievedRecords, record1.RecordInfo)
+		assert.Contains(t, retrievedRecords, record3.RecordInfo)
+		assert.NotContains(t, retrievedRecords, record2.RecordInfo)
+
+		// Ensure record is removed from recordsByID map
+		_, err = db.GetRecordAddressList(record2.ID)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+	})
+
+	t.Run("Fail to delete non-existent record", func(t *testing.T) {
+		nonExistentID := uuid.New()
+		err := db.DeleteTripRecord(nonExistentID)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found in any trip")
+	})
+}
+
+func TestDataLoaderGetRecordInfoList(t *testing.T) {
+	db := NewInMemoryTripDBWrapper()
+	ctx := context.Background()
+
+	trip1 := newTripInfo("Trip Omicron")
+	_ = db.CreateTrip(trip1)
+	rec1 := newRecord("Rec Omi 1", 1.0, "P1", nil)
+	rec2 := newRecord("Rec Omi 2", 2.0, "P2", nil)
+	_ = db.CreateTripRecords(trip1.ID, []dbt.Record{rec1, rec2})
+
+	trip2 := newTripInfo("Trip Pi")
+	_ = db.CreateTrip(trip2)
+	rec3 := newRecord("Rec Pi 1", 3.0, "P3", nil)
+	_ = db.CreateTripRecords(trip2.ID, []dbt.Record{rec3})
+
+	t.Run("Successfully load existing record infos", func(t *testing.T) {
+		keys := []uuid.UUID{trip1.ID, trip2.ID}
+		result, _ := db.DataLoaderGetRecordInfoList(ctx, keys)
+		// assert.NoError(t, err)
+		assert.Len(t, result, 2)
+
+		assert.Contains(t, result, trip1.ID)
+		assert.Len(t, result[trip1.ID], 2)
+		assert.Equal(t, rec1.RecordInfo, result[trip1.ID][0])
+
+		assert.Contains(t, result, trip2.ID)
+		assert.Len(t, result[trip2.ID], 1)
+		assert.Equal(t, rec3.RecordInfo, result[trip2.ID][0])
+	})
+
+	t.Run("Handle missing record infos", func(t *testing.T) {
+		nonExistentID := uuid.New()
+		keys := []uuid.UUID{trip1.ID, nonExistentID}
+		result, err := db.DataLoaderGetRecordInfoList(ctx, keys)
+		assert.Len(t, result, 2)
+
+		assert.Contains(t, result, trip1.ID)
+		assert.Len(t, result[trip1.ID], 2)
+		assert.Equal(t, rec1.RecordInfo, result[trip1.ID][0])
+
+		assert.Contains(t, result, nonExistentID)
+		assert.Equal(t, result[nonExistentID], []dbt.RecordInfo{}) // Missing key should have nil value
+		assert.Contains(t, err.Error(), nonExistentID.String()+" not found")
+	})
+}
+
+func TestDataLoaderGetTripAddressList(t *testing.T) {
+	db := NewInMemoryTripDBWrapper()
+	ctx := context.Background()
+
+	trip1 := newTripInfo("Trip Rho")
+	_ = db.CreateTrip(trip1)
+	_ = db.TripAddressListAdd(trip1.ID, "A1")
+	_ = db.TripAddressListAdd(trip1.ID, "A2")
+
+	trip2 := newTripInfo("Trip Sigma")
+	_ = db.CreateTrip(trip2)
+	// No addresses for trip2
+
+	t.Run("Successfully load existing trip address lists", func(t *testing.T) {
+		keys := []uuid.UUID{trip1.ID, trip2.ID}
+		result, _ := db.DataLoaderGetTripAddressList(ctx, keys)
+		assert.Len(t, result, 2)
+
+		assert.Contains(t, result, trip1.ID)
+		assert.ElementsMatch(t, []dbt.Address{"A1", "A2"}, result[trip1.ID])
+
+		assert.Contains(t, result, trip2.ID)
+		assert.Empty(t, result[trip2.ID]) // Empty list for trip2
+	})
+
+	t.Run("Handle missing trip address lists", func(t *testing.T) {
+		nonExistentID := uuid.New()
+		keys := []uuid.UUID{trip1.ID, nonExistentID}
+		result, err := db.DataLoaderGetTripAddressList(ctx, keys)
+		// assert.Error(t, err)
+		assert.Len(t, result, 2)
+
+		assert.Contains(t, result, trip1.ID)
+		assert.ElementsMatch(t, []dbt.Address{"A1", "A2"}, result[trip1.ID])
+
+		assert.Contains(t, result, nonExistentID)
+		assert.Equal(t, result[nonExistentID], []dbt.Address{}) // Missing key should have empty slice
+		assert.Contains(t, err.Error(), nonExistentID.String()+" not found")
+	})
+}
+
+func TestDataLoaderGetRecordShouldPayList(t *testing.T) {
+	db := NewInMemoryTripDBWrapper()
+	ctx := context.Background()
+
+	trip1 := newTripInfo("Trip Tau")
+	_ = db.CreateTrip(trip1)
+	rec1 := newRecord("Rec Tau 1", 100.0, "P1", []dbt.Address{"SP1", "SP2"})
+	rec2 := newRecord("Rec Tau 2", 200.0, "P2", []dbt.Address{"SP3"})
+	rec3 := newRecord("Rec Tau 3", 300.0, "P3", nil) // No should pay addresses
+	_ = db.CreateTripRecords(trip1.ID, []dbt.Record{rec1, rec2, rec3})
+
+	t.Run("Successfully load existing record should pay lists", func(t *testing.T) {
+		keys := []uuid.UUID{rec1.ID, rec2.ID, rec3.ID}
+		result, _ := db.DataLoaderGetRecordShouldPayList(ctx, keys)
+		// assert.NoError(t, err)
+		assert.Len(t, result, 3)
+
+		assert.Contains(t, result, rec1.ID)
+		assert.ElementsMatch(t, []dbt.Address{"SP1", "SP2"}, result[rec1.ID])
+
+		assert.Contains(t, result, rec2.ID)
+		assert.ElementsMatch(t, []dbt.Address{"SP3"}, result[rec2.ID])
+
+		assert.Contains(t, result, rec3.ID)
+		assert.Empty(t, result[rec3.ID]) // Empty for rec3
+	})
+
+	t.Run("Handle missing record should pay lists", func(t *testing.T) {
+		nonExistentID := uuid.New()
+		keys := []uuid.UUID{rec1.ID, nonExistentID}
+		result, err := db.DataLoaderGetRecordShouldPayList(ctx, keys)
+		// assert.Error(t, err)
+		assert.Len(t, result, 2)
+
+		assert.Contains(t, result, rec1.ID)
+		assert.ElementsMatch(t, []dbt.Address{"SP1", "SP2"}, result[rec1.ID])
+
+		assert.Contains(t, result, nonExistentID)
+		assert.Equal(t, result[nonExistentID], []dbt.Address{}) // Missing key should have empty slice
+		assert.Contains(t, err.Error(), nonExistentID.String()+" not found")
+	})
+}
+
+func TestDataLoaderGetTripInfoList(t *testing.T) {
+	db := NewInMemoryTripDBWrapper()
+	ctx := context.Background()
+
+	trip1 := newTripInfo("DataLoader Trip 1")
+	trip2 := newTripInfo("DataLoader Trip 2")
+	_ = db.CreateTrip(trip1)
+	_ = db.CreateTrip(trip2)
+
+	t.Run("Successfully load existing trip infos", func(t *testing.T) {
+		keys := []uuid.UUID{trip1.ID, trip2.ID}
+		result, _ := db.DataLoaderGetTripInfoList(ctx, keys)
+		// assert.NoError(t, err)
+		assert.Len(t, result, 2)
+
+		assert.Contains(t, result, trip1.ID)
+		assert.Equal(t, trip1.ID, result[trip1.ID].ID)
+		assert.Equal(t, trip1.Name, result[trip1.ID].Name)
+
+		assert.Contains(t, result, trip2.ID)
+		assert.Equal(t, trip2.ID, result[trip2.ID].ID)
+		assert.Equal(t, trip2.Name, result[trip2.ID].Name)
+	})
+
+	t.Run("Handle missing trip infos", func(t *testing.T) {
+		nonExistentID := uuid.New()
+		keys := []uuid.UUID{trip1.ID, nonExistentID}
+		result, err := db.DataLoaderGetTripInfoList(ctx, keys)
+		assert.Error(t, err)
+		assert.Len(t, result, 2)
+
+		assert.Contains(t, result, trip1.ID)
+		assert.Equal(t, trip1.ID, result[trip1.ID].ID)
+		assert.Equal(t, trip1.Name, result[trip1.ID].Name)
+
+		assert.Contains(t, result, nonExistentID)
+		assert.Nil(t, result[nonExistentID])
+		assert.Contains(t, err.Error(), nonExistentID.String())
+	})
 }

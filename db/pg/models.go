@@ -4,16 +4,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 )
 
 // TripInfoModel 代表 trips 表
 type TripInfoModel struct {
-	ID        uuid.UUID `gorm:"type:uuid;primaryKey"`
-	Name      string    `gorm:"size:255;not null"`
+	ID   uuid.UUID `gorm:"type:uuid;primaryKey"`
+	Name string    `gorm:"size:255;not null"`
+	// meta data
 	CreatedAt time.Time
 	UpdatedAt time.Time
-	// Records 和 AddressList 將透過關聯管理，而不是直接儲存在此模型中
 }
 
 // TableName returns the table name for TripInfoModel.
@@ -23,15 +22,16 @@ func (TripInfoModel) TableName() string {
 
 // RecordModel 代表 records 表
 type RecordModel struct {
-	ID               uuid.UUID      `gorm:"type:uuid;primaryKey"`
-	TripID           uuid.UUID      `gorm:"type:uuid;not null"`                                                            // 外鍵
-	TripInfo         TripInfoModel  `gorm:"foreignKey:TripID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"` // 新增的 GORM 關係
-	Name             string         `gorm:"size:255;not null"`
-	Amount           float64        `gorm:"type:numeric(10,2);not null"`
-	PrePayAddress    string         `gorm:"size:255;not null"`
-	ShouldPayAddress pq.StringArray `gorm:"type:text[];not null;default:'{}'"`
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID            uuid.UUID `gorm:"type:uuid;primaryKey"`
+	TripID        uuid.UUID `gorm:"type:uuid;not null"`
+	Name          string    `gorm:"size:255;not null"`
+	Amount        float64   `gorm:"type:numeric(10,2);not null"`
+	PrePayAddress string    `gorm:"size:255;not null"`
+	// meta data
+	TripInfo        TripInfoModel        `gorm:"foreignKey:TripID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	TripAddressList TripAddressListModel `gorm:"foreignKey:TripID,PrePayAddress;references:TripID,Address;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // TableName returns the table name for RecordModel.
@@ -39,11 +39,28 @@ func (RecordModel) TableName() string {
 	return "records"
 }
 
+// RecordShouldPayAddressListModel
+type RecordShouldPayAddressListModel struct {
+	RecordID uuid.UUID `gorm:"type:uuid;primaryKey"`
+	TripID   uuid.UUID `gorm:"type:uuid;primaryKey"`
+	Address  string    `gorm:"size:255;primaryKey"`
+	// meta data
+	Record RecordModel `gorm:"foreignKey:RecordID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	TripAddressList TripAddressListModel   `gorm:"foreignKey:TripID,Address;references:TripID,Address;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (RecordShouldPayAddressListModel) TableName() string {
+	return "record_should_pay_address_lists"
+}
+
 // TripAddressListModel 代表 trip_address_lists 表
 type TripAddressListModel struct {
-	TripID    uuid.UUID     `gorm:"type:uuid;primaryKey"`                                                          // 複合主鍵的一部分
-	TripInfo  TripInfoModel `gorm:"foreignKey:TripID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"` // 新增的 GORM 關係
-	Address   string        `gorm:"size:255;primaryKey"`                                                           // 複合主鍵的一部分
+	TripID  uuid.UUID `gorm:"type:uuid;primaryKey"`
+	Address string    `gorm:"size:255;primaryKey"`
+	// meta data
+	TripInfo  TripInfoModel `gorm:"foreignKey:TripID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

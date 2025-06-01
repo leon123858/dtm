@@ -2,267 +2,253 @@ package pg
 
 import (
 	"context"
-	"fmt"
-	"strings"
+	"dtm/db/db"
 
 	"github.com/google/uuid"
-	"github.com/vikstrous/dataloadgen"
 	"gorm.io/gorm"
-
-	dbt "dtm/db/db"
 )
 
-// GORMTripDBWrapper is a GORM-based PostgreSQL implementation of dbt.TripDBWrapper.
-type GORMTripDBWrapper struct {
+// pgDBWrapper is an implementation of TripDBWrapper using GORM.
+type pgDBWrapper struct {
 	db *gorm.DB
 }
 
-// NewGORMTripDBWrapper creates and returns a new instance of GORMTripDBWrapper.
-func NewGORMTripDBWrapper(db *gorm.DB) dbt.TripDBWrapper {
-	return &GORMTripDBWrapper{
-		db: db,
-	}
+// NewPgDBWrapper creates a new instance of pgDBWrapper.
+func NewPgDBWrapper(db *gorm.DB) db.TripDBWrapper { // Assuming db.TripDBWrapper is the interface type
+	return &pgDBWrapper{db: db}
 }
 
-// CreateTrip creates a new trip entry using GORM.
-func (pgdb *GORMTripDBWrapper) CreateTrip(info *dbt.TripInfo) error {
+// Create
+func (p *pgDBWrapper) CreateTrip(info *db.TripInfo) error { // Assuming db.TripInfo is the type from db/types.go
 	tripModel := TripInfoModel{
 		ID:   info.ID,
 		Name: info.Name,
 	}
-	result := pgdb.db.Create(&tripModel)
-	if result.Error != nil {
-		if strings.Contains(result.Error.Error(), "duplicate key value violates unique constraint") {
-			return fmt.Errorf("trip with ID %s already exists: %w", info.ID, result.Error)
-		}
-		return fmt.Errorf("failed to create trip: %w", result.Error)
-	}
-	return nil
+	return p.db.Create(&tripModel).Error
 }
 
-// CreateTripRecords adds a slice of records to an existing trip using GORM.
-func (pgdb *GORMTripDBWrapper) CreateTripRecords(tripID uuid.UUID, records []dbt.Record) error {
-	if len(records) == 0 {
+func (p *pgDBWrapper) CreateTripRecords(id uuid.UUID, records []db.Record) error { // Assuming db.Record
+	// This can be done in a transaction for atomicity
+	return p.db.Transaction(func(tx *gorm.DB) error {
+		for _, rec := range records {
+			recordModel := RecordModel{
+				ID:            rec.RecordInfo.ID,
+				TripID:        id, // Link to the trip
+				Name:          rec.RecordInfo.Name,
+				Amount:        rec.RecordInfo.Amount,
+				PrePayAddress: string(rec.RecordInfo.PrePayAddress),
+			}
+			if err := tx.Create(&recordModel).Error; err != nil {
+				return err
+			}
+
+			// Create entries in RecordShouldPayAddressListModel
+			for _, addr := range rec.RecordData.ShouldPayAddress {
+				shouldPayModel := RecordShouldPayAddressListModel{
+					RecordID: rec.RecordInfo.ID,
+					TripID:   id, // Link to the trip
+					Address:  string(addr),
+				}
+				if err := tx.Create(&shouldPayModel).Error; err != nil {
+					return err
+				}
+			}
+		}
 		return nil
-	}
-
-	var recordModels []RecordModel
-	for _, record := range records {
-		var shouldPayAddresses []string
-
-		for _, addr := range record.ShouldPayAddress {
-			shouldPayAddresses = append(shouldPayAddresses, string(addr))
-		}
-		recordModels = append(recordModels, RecordModel{
-			ID:               record.ID,
-			TripID:           tripID,
-			Name:             record.Name,
-			Amount:           record.Amount,
-			PrePayAddress:    string(record.PrePayAddress),
-			ShouldPayAddress: shouldPayAddresses,
-		})
-
-	}
-
-	// GORM Create In Batches
-	result := pgdb.db.Create(&recordModels)
-	if result.Error != nil {
-		// Check if tripID exists (foreign key constraint violation)
-		if strings.Contains(result.Error.Error(), "violates foreign key constraint") {
-			return fmt.Errorf("trip with ID %s not found for creating records: %w", tripID, result.Error)
-		}
-		return fmt.Errorf("failed to create trip records for trip %s: %w", tripID, result.Error)
-	}
-	return nil
+	})
 }
 
-// GetTripInfo retrieves trip information by ID using GORM.
-func (pgdb *GORMTripDBWrapper) GetTripInfo(id uuid.UUID) (*dbt.TripInfo, error) {
-	var tripInfoModel TripInfoModel
-	result := pgdb.db.First(&tripInfoModel, "id = ?", id)
-	if result.Error != nil {
-		if result.Error == gorm.ErrRecordNotFound {
-			return nil, fmt.Errorf("trip info with ID %s not found", id)
-		}
-		return nil, fmt.Errorf("failed to get trip info for ID %s: %w", id, result.Error)
+// Read
+func (p *pgDBWrapper) GetTripInfo(id uuid.UUID) (*db.TripInfo, error) {
+	var tripModel TripInfoModel
+	if err := p.db.First(&tripModel, "id = ?", id).Error; err != nil {
+		return nil, err
 	}
-	return &dbt.TripInfo{
-		ID:   tripInfoModel.ID,
-		Name: tripInfoModel.Name,
+	return &db.TripInfo{
+		ID:   tripModel.ID,
+		Name: tripModel.Name,
 	}, nil
 }
 
-// GetTripRecords retrieves all records for a given trip ID using GORM.
-func (pgdb *GORMTripDBWrapper) GetTripRecords(id uuid.UUID) ([]dbt.Record, error) {
+func (p *pgDBWrapper) GetTripRecords(id uuid.UUID) ([]db.RecordInfo, error) {
 	var recordModels []RecordModel
-	result := pgdb.db.Where("trip_id = ?", id).Find(&recordModels)
-	if result.Error != nil {
-		return nil, fmt.Errorf("failed to get trip records for trip ID %s: %w", id, result.Error)
+	if err := p.db.Where("trip_id = ?", id).Find(&recordModels).Error; err != nil {
+		return nil, err
 	}
 
-	var records []dbt.Record
+	var recordInfos []db.RecordInfo
 	for _, rm := range recordModels {
-		var shouldPayAddresses []dbt.Address
-		for _, addr := range rm.ShouldPayAddress {
-			shouldPayAddresses = append(shouldPayAddresses, dbt.Address(addr))
-		}
-		records = append(records, dbt.Record{
-			ID:               rm.ID,
-			Name:             rm.Name,
-			Amount:           rm.Amount,
-			PrePayAddress:    dbt.Address(rm.PrePayAddress),
-			ShouldPayAddress: shouldPayAddresses,
+		recordInfos = append(recordInfos, db.RecordInfo{
+			ID:            rm.ID,
+			Name:          rm.Name,
+			Amount:        rm.Amount,
+			PrePayAddress: db.Address(rm.PrePayAddress),
 		})
 	}
-	return records, nil
+	return recordInfos, nil
 }
 
-// GetTripAddressList retrieves the address list for a given trip ID using GORM.
-func (pgdb *GORMTripDBWrapper) GetTripAddressList(id uuid.UUID) ([]dbt.Address, error) {
-	var addressListModels []TripAddressListModel
-	result := pgdb.db.Where("trip_id = ?", id).Find(&addressListModels)
-	if result.Error != nil {
-		return nil, fmt.Errorf("failed to get trip address list for trip ID %s: %w", id, result.Error)
+func (p *pgDBWrapper) GetTripAddressList(id uuid.UUID) ([]db.Address, error) {
+	var addressModels []TripAddressListModel
+	if err := p.db.Where("trip_id = ?", id).Find(&addressModels).Error; err != nil {
+		return nil, err
 	}
 
-	var addresses []dbt.Address
-	for _, alm := range addressListModels {
-		addresses = append(addresses, dbt.Address(alm.Address))
+	var addresses []db.Address
+	for _, am := range addressModels {
+		addresses = append(addresses, db.Address(am.Address))
 	}
 	return addresses, nil
 }
 
-// GetRecordAddressList retrieves the ShouldPayAddress list for a given record ID using GORM.
-func (pgdb *GORMTripDBWrapper) GetRecordAddressList(recordID uuid.UUID) ([]dbt.Address, error) {
-	var recordModel RecordModel
-	result := pgdb.db.Select("should_pay_address").First(&recordModel, "id = ?", recordID)
-	if result.Error != nil {
-		if result.Error == gorm.ErrRecordNotFound {
-			return nil, fmt.Errorf("record with ID %s not found", recordID)
-		}
-		return nil, fmt.Errorf("failed to get record address list for record ID %s: %w", recordID, result.Error)
+func (p *pgDBWrapper) GetRecordAddressList(recordID uuid.UUID) ([]db.Address, error) {
+	var shouldPayModels []RecordShouldPayAddressListModel
+	if err := p.db.Where("record_id = ?", recordID).Find(&shouldPayModels).Error; err != nil {
+		return nil, err
 	}
 
-	var addresses []dbt.Address
-	for _, addr := range recordModel.ShouldPayAddress {
-		addresses = append(addresses, dbt.Address(addr))
+	var addresses []db.Address
+	for _, spm := range shouldPayModels {
+		addresses = append(addresses, db.Address(spm.Address))
 	}
 	return addresses, nil
 }
 
-// UpdateTripInfo updates the information of an existing trip using GORM.
-func (pgdb *GORMTripDBWrapper) UpdateTripInfo(info *dbt.TripInfo) error {
-	result := pgdb.db.Model(&TripInfoModel{}).Where("id = ?", info.ID).Update("name", info.Name)
-	if result.Error != nil {
-		return fmt.Errorf("failed to update trip info for ID %s: %w", info.ID, result.Error)
+// Update
+func (p *pgDBWrapper) UpdateTripInfo(info *db.TripInfo) error {
+	tripModel := TripInfoModel{
+		ID:   info.ID,
+		Name: info.Name,
 	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("trip with ID %s not found for update", info.ID)
-	}
-	return nil
+	return p.db.Model(&TripInfoModel{}).Where("id = ?", info.ID).Updates(tripModel).Error
 }
 
-// UpdateTripRecord updates a specific record within a trip using GORM.
-func (pgdb *GORMTripDBWrapper) UpdateTripRecord(record dbt.Record) error {
-	var shouldPayAddresses []string
-	for _, addr := range record.ShouldPayAddress {
-		shouldPayAddresses = append(shouldPayAddresses, string(addr))
-	}
-
+func (p *pgDBWrapper) UpdateTripRecord(record db.RecordInfo) error {
 	recordModel := RecordModel{
-		ID:               record.ID,
-		Name:             record.Name,
-		Amount:           record.Amount,
-		PrePayAddress:    string(record.PrePayAddress),
-		ShouldPayAddress: shouldPayAddresses,
+		ID:            record.ID,
+		Name:          record.Name,
+		Amount:        record.Amount,
+		PrePayAddress: string(record.PrePayAddress),
 	}
-
-	// 使用 Select 選擇要更新的欄位，避免更新 CreatedAt 等 GORM 自動欄位
-	result := pgdb.db.Model(&recordModel).Select("name", "amount", "pre_pay_address", "should_pay_address").Where("id = ?", record.ID).Updates(recordModel)
-	if result.Error != nil {
-		return fmt.Errorf("failed to update record with ID %s: %w", record.ID, result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("record with ID %s not found for update", record.ID)
-	}
-	return nil
+	// Note: This only updates fields in RecordModel.
+	// If RecordData.ShouldPayAddress needs updating, that's a separate, more complex operation:
+	// 1. Delete existing RecordShouldPayAddressListModel entries for this record.
+	// 2. Create new RecordShouldPayAddressListModel entries.
+	// This would typically be handled in a transaction.
+	return p.db.Model(&RecordModel{}).Where("id = ?", record.ID).Updates(recordModel).Error
 }
 
-// TripAddressListAdd adds an address to a trip's address list using GORM.
-func (pgdb *GORMTripDBWrapper) TripAddressListAdd(id uuid.UUID, address dbt.Address) error {
+func (p *pgDBWrapper) TripAddressListAdd(id uuid.UUID, address db.Address) error {
 	addressModel := TripAddressListModel{
 		TripID:  id,
 		Address: string(address),
 	}
-	result := pgdb.db.Create(&addressModel)
-	if result.Error != nil {
-		if strings.Contains(result.Error.Error(), "duplicate key value violates unique constraint") {
-			return fmt.Errorf("address %s already exists in trip %s", address, id)
-		}
-		// Check if the trip_id exists (foreign key constraint violation)
-		if strings.Contains(result.Error.Error(), "violates foreign key constraint") {
-			return fmt.Errorf("trip with ID %s not found: %w", id, result.Error)
-		}
-		return fmt.Errorf("failed to add address %s to trip %s: %w", address, id, result.Error)
-	}
-	return nil
+	// Using FirstOrCreate to avoid duplicate entries if the address already exists for the trip.
+	return p.db.FirstOrCreate(&addressModel, TripAddressListModel{TripID: id, Address: string(address)}).Error
 }
 
-// TripAddressListRemove removes an address from a trip's address list using GORM.
-func (pgdb *GORMTripDBWrapper) TripAddressListRemove(id uuid.UUID, address dbt.Address) error {
-	result := pgdb.db.Where("trip_id = ? AND address = ?", id, string(address)).Delete(&TripAddressListModel{})
-	if result.Error != nil {
-		return fmt.Errorf("failed to remove address %s from trip %s: %w", address, id, result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("address %s not found in trip %s", address, id)
-	}
-	return nil
+func (p *pgDBWrapper) TripAddressListRemove(id uuid.UUID, address db.Address) error {
+	return p.db.Where("trip_id = ? AND address = ?", id, string(address)).Delete(&TripAddressListModel{}).Error
 }
 
-// DeleteTrip deletes a trip and all its associated data using GORM.
-// GORM will respect ON DELETE CASCADE if configured in the database,
-// otherwise, you might need to handle deletions of associated records/address lists manually or via GORM hooks.
-func (pgdb *GORMTripDBWrapper) DeleteTrip(id uuid.UUID) error {
-	result := pgdb.db.Delete(&TripInfoModel{}, "id = ?", id)
-	if result.Error != nil {
-		return fmt.Errorf("failed to delete trip with ID %s: %w", id, result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("trip with ID %s not found for deletion", id)
-	}
-	return nil
+// Delete
+func (p *pgDBWrapper) DeleteTrip(id uuid.UUID) error {
+	// GORM's CASCADE constraint should handle deleting associated records, trip_address_lists,
+	// and record_should_pay_address_lists.
+	return p.db.Delete(&TripInfoModel{}, "id = ?", id).Error
 }
 
-// DeleteTripRecord deletes a specific record using GORM.
-func (pgdb *GORMTripDBWrapper) DeleteTripRecord(recordID uuid.UUID) error {
-	result := pgdb.db.Delete(&RecordModel{}, "id = ?", recordID)
-	if result.Error != nil {
-		return fmt.Errorf("failed to delete record with ID %s: %w", recordID, result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("record with ID %s not found for deletion", recordID)
-	}
-	return nil
+func (p *pgDBWrapper) DeleteTripRecord(recordID uuid.UUID) error {
+	// GORM's CASCADE constraint on RecordModel should handle deleting associated
+	// record_should_pay_address_lists.
+	return p.db.Delete(&RecordModel{}, "id = ?", recordID).Error
 }
 
-// DataLoaderGetTripRecordList retrieves multiple records for a given trip IDs using GORM.
-// This method is designed to be used with a DataLoader for batching queries.
-func (pgdb *GORMTripDBWrapper) DataLoaderGetTripRecordList(ctx context.Context, keys []uuid.UUID) (map[uuid.UUID][]dbt.Record, error) {
-	// Initialize slices for results and errors
-	records := make(map[uuid.UUID][]dbt.Record, len(keys))
-	errors := make(map[uuid.UUID]error, len(keys))
+// Data Loader
+// These are more complex and often involve custom SQL or optimized GORM queries
+// to avoid N+1 problems. The implementations below are basic.
 
-	// i only want to cache same tripID, so do not need to care multi trip performance
-	for _, key := range keys {
-		if v, err := pgdb.GetTripRecords(key); err != nil {
-			records[key] = v
-			errors[key] = nil
-		} else {
-			records[key] = nil
-			errors[key] = fmt.Errorf("record with ID %s not found", key)
+func (p *pgDBWrapper) DataLoaderGetRecordInfoList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]db.RecordInfo, error) {
+	var records []RecordModel
+	if err := p.db.WithContext(ctx).Where("trip_id IN ?", tripIds).Find(&records).Error; err != nil {
+		return nil, err
+	}
+
+	result := make(map[uuid.UUID][]db.RecordInfo)
+	for _, r := range records {
+		result[r.TripID] = append(result[r.TripID], db.RecordInfo{
+			ID:            r.ID,
+			Name:          r.Name,
+			Amount:        r.Amount,
+			PrePayAddress: db.Address(r.PrePayAddress),
+		})
+	}
+	// Ensure all requested tripIds have an entry in the map, even if empty
+	for _, tripID := range tripIds {
+		if _, ok := result[tripID]; !ok {
+			result[tripID] = []db.RecordInfo{}
 		}
 	}
+	return result, nil
+}
 
-	return records, dataloadgen.MappedFetchError[uuid.UUID](errors)
+func (p *pgDBWrapper) DataLoaderGetTripAddressList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]db.Address, error) {
+	var addresses []TripAddressListModel
+	if err := p.db.WithContext(ctx).Where("trip_id IN ?", tripIds).Find(&addresses).Error; err != nil {
+		return nil, err
+	}
+
+	result := make(map[uuid.UUID][]db.Address)
+	for _, a := range addresses {
+		result[a.TripID] = append(result[a.TripID], db.Address(a.Address))
+	}
+	// Ensure all requested tripIds have an entry in the map, even if empty
+	for _, tripID := range tripIds {
+		if _, ok := result[tripID]; !ok {
+			result[tripID] = []db.Address{}
+		}
+	}
+	return result, nil
+}
+
+func (p *pgDBWrapper) DataLoaderGetRecordShouldPayList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID][]db.Address, error) {
+	var shouldPayAddresses []RecordShouldPayAddressListModel
+	// Assuming RecordShouldPayAddressListModel has RecordID and Address
+	if err := p.db.WithContext(ctx).Where("record_id IN ?", recordIds).Find(&shouldPayAddresses).Error; err != nil {
+		return nil, err
+	}
+
+	result := make(map[uuid.UUID][]db.Address)
+	for _, sp := range shouldPayAddresses {
+		result[sp.RecordID] = append(result[sp.RecordID], db.Address(sp.Address))
+	}
+	// Ensure all requested recordIds have an entry in the map, even if empty
+	for _, recordID := range recordIds {
+		if _, ok := result[recordID]; !ok {
+			result[recordID] = []db.Address{}
+		}
+	}
+	return result, nil
+}
+
+func (p *pgDBWrapper) DataLoaderGetTripInfoList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID]*db.TripInfo, error) {
+	var trips []TripInfoModel
+	if err := p.db.WithContext(ctx).Where("id IN ?", tripIds).Find(&trips).Error; err != nil {
+		return nil, err
+	}
+
+	result := make(map[uuid.UUID]*db.TripInfo)
+	for _, t := range trips {
+		result[t.ID] = &db.TripInfo{
+			ID:   t.ID,
+			Name: t.Name,
+		}
+	}
+	// Ensure all requested tripIds have an entry in the map, even if nil
+	for _, tripID := range tripIds {
+		if _, ok := result[tripID]; !ok {
+			result[tripID] = nil // Or an empty TripInfo if that's preferred
+		}
+	}
+	return result, nil
 }

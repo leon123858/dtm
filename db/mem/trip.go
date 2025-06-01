@@ -8,15 +8,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/vikstrous/dataloadgen"
 
-	dbt "dtm/db/db"
+	// Assuming this library is used for dataloaders
+	dbt "dtm/db/db" // Alias the db package as dbt
 )
 
 // inMemoryTripDBWrapper is an in-memory implementation of dbt.TripDBWrapper.
 // It uses maps to store data for quick lookups.
 type inMemoryTripDBWrapper struct {
 	// Using maps to store dbt.TripInfo and TripData by Trip ID.
-	// In a real application, you might want to store the full Trip struct
-	// or separate components based on access patterns.
 	tripsInfo map[uuid.UUID]*dbt.TripInfo
 	tripsData map[uuid.UUID]*dbt.TripData // Stores records and address lists for each trip
 
@@ -31,6 +30,8 @@ func NewInMemoryTripDBWrapper() dbt.TripDBWrapper {
 		tripsData: make(map[uuid.UUID]*dbt.TripData),
 	}
 }
+
+// --- Create Operations ---
 
 // CreateTrip creates a new trip entry in memory.
 func (db *inMemoryTripDBWrapper) CreateTrip(info *dbt.TripInfo) error {
@@ -61,11 +62,15 @@ func (db *inMemoryTripDBWrapper) CreateTripRecords(id uuid.UUID, records []dbt.R
 		return fmt.Errorf("trip with ID %s not found", id)
 	}
 
-	// Append new records. Make a copy of records to avoid modifying the original slice
-	// if it's reused elsewhere.
-	tripData.Records = append(tripData.Records, records...)
+	// Append new records and also add them to the flat recordsByID map.
+	for _, record := range records {
+		recordCopy := record // Create a copy for the map
+		tripData.Records = append(tripData.Records, recordCopy)
+	}
 	return nil
 }
+
+// --- Read Operations ---
 
 // GetTripInfo retrieves trip information by ID.
 func (db *inMemoryTripDBWrapper) GetTripInfo(id uuid.UUID) (*dbt.TripInfo, error) {
@@ -82,7 +87,7 @@ func (db *inMemoryTripDBWrapper) GetTripInfo(id uuid.UUID) (*dbt.TripInfo, error
 }
 
 // GetTripRecords retrieves all records for a given trip ID.
-func (db *inMemoryTripDBWrapper) GetTripRecords(id uuid.UUID) ([]dbt.Record, error) {
+func (db *inMemoryTripDBWrapper) GetTripRecords(id uuid.UUID) ([]dbt.RecordInfo, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
@@ -91,10 +96,12 @@ func (db *inMemoryTripDBWrapper) GetTripRecords(id uuid.UUID) ([]dbt.Record, err
 		return nil, fmt.Errorf("trip data with ID %s not found", id)
 	}
 
-	// Return a copy of the slice to prevent external modification
-	recordsCopy := make([]dbt.Record, len(tripData.Records))
-	copy(recordsCopy, tripData.Records)
-	return recordsCopy, nil
+	// Convert Record to RecordInfo for the return type
+	recordInfos := make([]dbt.RecordInfo, len(tripData.Records))
+	for i, r := range tripData.Records {
+		recordInfos[i] = r.RecordInfo
+	}
+	return recordInfos, nil
 }
 
 // GetTripAddressList retrieves the address list for a given trip ID.
@@ -113,11 +120,11 @@ func (db *inMemoryTripDBWrapper) GetTripAddressList(id uuid.UUID) ([]dbt.Address
 	return addressListCopy, nil
 }
 
+// GetRecordAddressList retrieves the ShouldPayAddress list for a given record ID.
 func (db *inMemoryTripDBWrapper) GetRecordAddressList(recordID uuid.UUID) ([]dbt.Address, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
-	// Search through all trips for the record
 	for _, tripData := range db.tripsData {
 		for _, record := range tripData.Records {
 			if record.ID == recordID {
@@ -128,8 +135,12 @@ func (db *inMemoryTripDBWrapper) GetRecordAddressList(recordID uuid.UUID) ([]dbt
 			}
 		}
 	}
-	return nil, fmt.Errorf("record with ID %s not found in any trip", recordID)
+
+	// If we reach here, the record was not found in any trip
+	return nil, fmt.Errorf("record with ID %s not found", recordID)
 }
+
+// --- Update Operations ---
 
 // UpdateTripInfo updates the information of an existing trip.
 func (db *inMemoryTripDBWrapper) UpdateTripInfo(info *dbt.TripInfo) error {
@@ -147,29 +158,27 @@ func (db *inMemoryTripDBWrapper) UpdateTripInfo(info *dbt.TripInfo) error {
 }
 
 // UpdateTripRecord updates a specific record within a trip.
-// This assumes the record's ID is unique within the context of a trip's records.
-func (db *inMemoryTripDBWrapper) UpdateTripRecord(record dbt.Record) error {
+// This function updates both the RecordInfo and RecordData parts.
+func (db *inMemoryTripDBWrapper) UpdateTripRecord(recordInfo dbt.RecordInfo) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
-	found := false
+	// Update the RecordInfo in trip data
 	for _, tripData := range db.tripsData {
-		for i, r := range tripData.Records {
-			if r.ID == record.ID {
-				tripData.Records[i] = record // Update the record
-				found = true
+		foundIdx := -1
+		for i, record := range tripData.Records {
+			if record.ID == recordInfo.ID {
+				foundIdx = i
 				break
 			}
 		}
-		if found {
-			break
+		if foundIdx != -1 {
+			// Update the record in the trip data
+			tripData.Records[foundIdx].RecordInfo = recordInfo
+			return nil // Record found and updated, exit early
 		}
 	}
-
-	if !found {
-		return fmt.Errorf("record with ID %s not found for update in any trip", record.ID)
-	}
-	return nil
+	return fmt.Errorf("record with ID %s not found in any trip for update", recordInfo.ID)
 }
 
 // TripAddressListAdd adds an address to a trip's address list.
@@ -220,13 +229,20 @@ func (db *inMemoryTripDBWrapper) TripAddressListRemove(id uuid.UUID, address dbt
 	return nil
 }
 
+// --- Delete Operations ---
+
 // DeleteTrip deletes a trip and all its associated data (info, records, address list).
 func (db *inMemoryTripDBWrapper) DeleteTrip(id uuid.UUID) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
+	// check if the trip exists
 	if _, exists := db.tripsInfo[id]; !exists {
 		return fmt.Errorf("trip with ID %s not found for deletion", id)
+	}
+	// Delete the trip info and data
+	if _, exists := db.tripsData[id]; !exists {
+		return fmt.Errorf("trip data with ID %s not found for deletion", id)
 	}
 
 	delete(db.tripsInfo, id)
@@ -239,6 +255,7 @@ func (db *inMemoryTripDBWrapper) DeleteTripRecord(recordID uuid.UUID) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
+	found := false
 	for _, tripData := range db.tripsData {
 		foundIdx := -1
 		for i, record := range tripData.Records {
@@ -251,33 +268,123 @@ func (db *inMemoryTripDBWrapper) DeleteTripRecord(recordID uuid.UUID) error {
 		if foundIdx != -1 {
 			// Remove the record by slicing
 			tripData.Records = append(tripData.Records[:foundIdx], tripData.Records[foundIdx+1:]...)
-			return nil
+			found = true
+			break // Record found and removed from one trip, assume unique record ID across trips
 		}
 	}
 
-	return fmt.Errorf("record with ID %s not found in any trip", recordID)
+	if !found {
+		return fmt.Errorf("record with ID %s not found in any trip for deletion", recordID)
+	}
+
+	return nil
 }
 
-// DataLoaderGetTripRecordList retrieves a list of records by their trip IDs.
-func (db *inMemoryTripDBWrapper) DataLoaderGetTripRecordList(ctx context.Context, keys []uuid.UUID) (map[uuid.UUID][]dbt.Record, error) {
+// --- Data Loader Operations ---
+
+// DataLoaderGetRecordInfoList retrieves a map of RecordInfo lists for given trip IDs.
+func (db *inMemoryTripDBWrapper) DataLoaderGetRecordInfoList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]dbt.RecordInfo, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
-	records := make(map[uuid.UUID][]dbt.Record, len(keys))
-	errors := make(map[uuid.UUID]error, len(keys))
+	result := make(map[uuid.UUID][]dbt.RecordInfo)
+	errors := make(map[uuid.UUID]error)
 
-	// i only want to cache same tripID, so do not need to care multi trip performance
-
-	recordMap := make(map[uuid.UUID][]dbt.Record)
-	for _, key := range keys {
-		if v, err := db.GetTripRecords(key); err != nil {
-			recordMap[key] = v
-			errors[key] = nil
+	for _, tripID := range tripIds {
+		if tripData, exists := db.tripsData[tripID]; exists {
+			recordInfos := make([]dbt.RecordInfo, len(tripData.Records))
+			for i, r := range tripData.Records {
+				recordInfos[i] = r.RecordInfo
+			}
+			result[tripID] = recordInfos
+			errors[tripID] = nil // No error for this trip ID
 		} else {
-			recordMap[key] = nil
-			errors[key] = fmt.Errorf("record with ID %s not found", key)
+			// If a trip ID is not found, you might choose to return an empty slice or an error.
+			// For a data loader, typically an empty slice is returned if no data exists for the key.
+			result[tripID] = []dbt.RecordInfo{}
+			errors[tripID] = fmt.Errorf("trip with ID %s not found", tripID)
+		}
+	}
+	return result, dataloadgen.MappedFetchError[uuid.UUID](errors)
+}
+
+// DataLoaderGetTripAddressList retrieves a map of Address lists for given trip IDs.
+func (db *inMemoryTripDBWrapper) DataLoaderGetTripAddressList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]dbt.Address, error) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	result := make(map[uuid.UUID][]dbt.Address)
+	errors := make(map[uuid.UUID]error)
+
+	for _, tripID := range tripIds {
+		if tripData, exists := db.tripsData[tripID]; exists {
+			// Return a copy of the slice to prevent external modification
+			addressListCopy := make([]dbt.Address, len(tripData.AddressList))
+			copy(addressListCopy, tripData.AddressList)
+			result[tripID] = addressListCopy
+			errors[tripID] = nil // No error for this trip ID
+		} else {
+			result[tripID] = []dbt.Address{}
+			errors[tripID] = fmt.Errorf("trip with ID %s not found", tripID)
+		}
+	}
+	return result, dataloadgen.MappedFetchError[uuid.UUID](errors)
+}
+
+// DataLoaderGetRecordShouldPayList retrieves a map of ShouldPayAddress lists for given record IDs.
+func (db *inMemoryTripDBWrapper) DataLoaderGetRecordShouldPayList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID][]dbt.Address, error) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	result := make(map[uuid.UUID][]dbt.Address)
+	errors := make(map[uuid.UUID]error)
+
+	for _, recordID := range recordIds {
+		found := false
+		for _, tripData := range db.tripsData {
+			for _, record := range tripData.Records {
+				if record.ID == recordID {
+					// Return a copy of the ShouldPayAddress list
+					addressListCopy := make([]dbt.Address, len(record.ShouldPayAddress))
+					copy(addressListCopy, record.ShouldPayAddress)
+					result[recordID] = addressListCopy
+					errors[recordID] = nil // No error for this record ID
+					found = true
+					break // Record found, move to the next recordID
+				}
+			}
+			if found {
+				break
+			}
+		}
+		if !found {
+			result[recordID] = []dbt.Address{}
+			errors[recordID] = fmt.Errorf("record with ID %s not found", recordID)
+		}
+	}
+	return result, dataloadgen.MappedFetchError[uuid.UUID](errors)
+}
+
+// DataLoaderGetTripInfoList retrieves a map of TripInfo pointers for given trip IDs.
+func (db *inMemoryTripDBWrapper) DataLoaderGetTripInfoList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID]*dbt.TripInfo, error) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	result := make(map[uuid.UUID]*dbt.TripInfo)
+	errors := make(map[uuid.UUID]error)
+
+	for _, tripID := range tripIds {
+		if tripInfo, exists := db.tripsInfo[tripID]; exists {
+			// Return a copy to prevent external modification
+			infoCopy := *tripInfo
+			result[tripID] = &infoCopy
+			errors[tripID] = nil // No error for this trip ID
+		} else {
+			// If a trip ID is not found, typically nil is returned for that specific key.
+			result[tripID] = nil
+			errors[tripID] = fmt.Errorf("trip with ID %s not found", tripID)
 		}
 	}
 
-	return records, dataloadgen.MappedFetchError[uuid.UUID](errors)
+	return result, dataloadgen.MappedFetchError[uuid.UUID](errors)
 }

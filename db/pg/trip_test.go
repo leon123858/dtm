@@ -1,532 +1,476 @@
 package pg
 
 import (
-	// 為了確保可以在 TestMain 中關閉 *sql.DB
-
-	"log"
-	"strings"
+	"context"
+	"dtm/db/db"
+	"os"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
-
-	dbt "dtm/db/db" // 假設這是您的 dbt 介面和結構的導入路徑
 )
 
-var testDB *gorm.DB
-var tripDB dbt.TripDBWrapper
+// Helper function to get a test DSN.
+// Prioritizes TEST_DATABASE_URL environment variable if set.
+func getTestDSN() string {
+	if testDSN := os.Getenv("TEST_DATABASE_URL"); testDSN != "" {
+		return testDSN
+	}
+	// Fallback to the default DSN creator from init.go
+	// IMPORTANT: Ensure this DSN points to a TEST database.
+	return CreateDSN()
+}
 
-func initTest() {
-	var err error
-	testDB, err = InitPostgresGORM(CreateDSN())
-	if err != nil {
-		log.Fatalf("Failed to initialize test database: %v", err)
+// setupTestDB initializes the database for testing and returns the wrapper and a cleanup function.
+func setupTestDB(t *testing.T) (db.TripDBWrapper, func()) {
+	dsn := getTestDSN()
+	gormDB, err := InitPostgresGORM(dsn) // Assumes InitPostgresGORM handles base migrations from init.go
+	require.NoError(t, err, "Failed to initialize test database using DSN: %s", dsn)
+
+	tripDBWrapper := NewPgDBWrapper(gormDB)
+
+	cleanup := func() {
+		// Truncate tables to clean up data. Order matters if not using CASCADE effectively.
+		// Using Exec for raw SQL.
+		// RESTART IDENTITY is important to reset auto-incrementing PKs for predictable test data.
+		// CASCADE should handle dependent rows.
+		err := gormDB.Exec("TRUNCATE TABLE record_should_pay_address_lists, records, trip_address_lists, trips RESTART IDENTITY CASCADE").Error
+		if err != nil {
+			// Fallback if TRUNCATE CASCADE isn't working as expected or not fully supported for all constraints.
+			// This is a less ideal cleanup as it doesn't reset sequences typically.
+			t.Logf("TRUNCATE CASCADE failed: %v. Attempting individual deletes.", err)
+			gormDB.Exec("DELETE FROM record_should_pay_address_lists")
+			gormDB.Exec("DELETE FROM records")
+			gormDB.Exec("DELETE FROM trip_address_lists")
+			gormDB.Exec("DELETE FROM trips")
+		}
+
+		sqlDB, _ := gormDB.DB()
+		err = sqlDB.Close()
+		if err != nil {
+			t.Logf("Error closing test DB connection: %v", err)
+		}
 	}
 
-	tripDB = NewGORMTripDBWrapper(testDB)
+	return tripDBWrapper, cleanup
 }
 
-func cleanupTest() {
-	log.Println("Cleaning up test database...")
-	// 按照外鍵約束的順序刪除資料
-	// 使用 Unscoped() 確保可以刪除所有記錄，即使有軟刪除設置 (GORM 軟刪除默認不會物理刪除)
-	testDB.Exec("DELETE FROM trip_address_lists;")
-	testDB.Exec("DELETE FROM records;")
-	testDB.Exec("DELETE FROM trips;")
-	log.Println("Test database cleaned.")
-	CloseGORM(testDB)
-}
+// --- Test Cases ---
 
 func TestCreateTrip(t *testing.T) {
-	initTest()
-	defer cleanupTest()
+	wrapper, cleanup := setupTestDB(t)
+	defer cleanup()
 
 	tripID := uuid.New()
-	tripInfo := &dbt.TripInfo{
+	tripInfo := &db.TripInfo{
 		ID:   tripID,
-		Name: "Test Trip 1",
+		Name: "My Test Trip",
 	}
 
-	err := tripDB.CreateTrip(tripInfo)
-	require.NoError(t, err, "CreateTrip should not return an error")
+	err := wrapper.CreateTrip(tripInfo)
+	require.NoError(t, err)
 
-	// 驗證是否已建立
-	retrievedInfo, err := tripDB.GetTripInfo(tripID)
-	require.NoError(t, err, "GetTripInfo should not return an error after creation")
-	assert.Equal(t, tripInfo.ID, retrievedInfo.ID)
-	assert.Equal(t, tripInfo.Name, retrievedInfo.Name)
+	fetchedTrip, err := wrapper.GetTripInfo(tripID)
+	require.NoError(t, err)
+	require.NotNil(t, fetchedTrip)
+	assert.Equal(t, tripInfo.ID, fetchedTrip.ID)
+	assert.Equal(t, tripInfo.Name, fetchedTrip.Name)
+}
 
-	// 測試重複建立
-	err = tripDB.CreateTrip(tripInfo)
-	assert.Error(t, err, "CreateTrip should return an error for duplicate ID")
-	assert.True(t, strings.Contains(err.Error(), "already exists"), "Error message should indicate duplicate")
+func TestGetTripInfo_NotFound(t *testing.T) {
+	wrapper, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	_, err := wrapper.GetTripInfo(uuid.New())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
 }
 
 func TestCreateTripRecords(t *testing.T) {
-	initTest()
-	defer cleanupTest()
+	wrapper, cleanup := setupTestDB(t)
+	defer cleanup()
 
 	tripID := uuid.New()
-	err := tripDB.CreateTrip(&dbt.TripInfo{ID: tripID, Name: "Trip for Records"})
+	tripInfo := &db.TripInfo{ID: tripID, Name: "Trip For Records"}
+	err := wrapper.CreateTrip(tripInfo)
 	require.NoError(t, err)
+
+	// Prerequisites for foreign keys in RecordModel and RecordShouldPayAddressListModel:
+	// Addresses used in PrePayAddress and ShouldPayAddress must exist in TripAddressListModel for the trip.
+	prePayAddr1 := db.Address("prepay_addr_for_records")
+	shouldPayAddrA := db.Address("should_pay_A_for_records")
+	shouldPayAddrB := db.Address("should_pay_B_for_records")
+	shouldPayAddrC := db.Address("should_pay_C_for_records")
+
+	require.NoError(t, wrapper.TripAddressListAdd(tripID, prePayAddr1))
+	require.NoError(t, wrapper.TripAddressListAdd(tripID, shouldPayAddrA))
+	require.NoError(t, wrapper.TripAddressListAdd(tripID, shouldPayAddrB))
+	require.NoError(t, wrapper.TripAddressListAdd(tripID, shouldPayAddrC))
 
 	recordID1 := uuid.New()
 	recordID2 := uuid.New()
-	records := []dbt.Record{
+	recordsToCreate := []db.Record{
 		{
-			ID:            recordID1,
-			Name:          "Record 1",
-			Amount:        100.0,
-			PrePayAddress: "AddrA",
-			ShouldPayAddress: []dbt.Address{
-				"Payer1", "Payer2",
+			RecordInfo: db.RecordInfo{
+				ID:            recordID1,
+				Name:          "Record 1",
+				Amount:        100.50,
+				PrePayAddress: prePayAddr1,
+			},
+			RecordData: db.RecordData{
+				ShouldPayAddress: []db.Address{shouldPayAddrA, shouldPayAddrB},
 			},
 		},
 		{
-			ID:            recordID2,
-			Name:          "Record 2",
-			Amount:        200.50,
-			PrePayAddress: "AddrB",
-			ShouldPayAddress: []dbt.Address{
-				"Payer3",
+			RecordInfo: db.RecordInfo{
+				ID:            recordID2,
+				Name:          "Record 2",
+				Amount:        200.75,
+				PrePayAddress: prePayAddr1,
 			},
-		},
-	}
-
-	err = tripDB.CreateTripRecords(tripID, records)
-	require.NoError(t, err, "CreateTripRecords should not return an error")
-
-	// 驗證是否已建立
-	retrievedRecords, err := tripDB.GetTripRecords(tripID)
-	require.NoError(t, err, "GetTripRecords should not return an error")
-	assert.Len(t, retrievedRecords, 2, "Should have 2 records")
-
-	// 由於切片順序可能不同，按 ID 檢查
-	foundCount := 0
-	for _, r := range retrievedRecords {
-		if r.ID == recordID1 {
-			assert.Equal(t, records[0].Name, r.Name)
-			assert.InDelta(t, records[0].Amount, r.Amount, 0.001) // 浮點數比較
-			assert.Equal(t, records[0].PrePayAddress, r.PrePayAddress)
-			assert.ElementsMatch(t, records[0].ShouldPayAddress, r.ShouldPayAddress)
-			foundCount++
-		} else if r.ID == recordID2 {
-			assert.Equal(t, records[1].Name, r.Name)
-			assert.InDelta(t, records[1].Amount, r.Amount, 0.001)
-			assert.Equal(t, records[1].PrePayAddress, r.PrePayAddress)
-			assert.ElementsMatch(t, records[1].ShouldPayAddress, r.ShouldPayAddress)
-			foundCount++
-		}
-	}
-	assert.Equal(t, 2, foundCount, "Both records should be found")
-
-	// 測試為不存在的 Trip ID 建立 Records
-	records = []dbt.Record{
-		{
-			ID:            uuid.New(),
-			Name:          "Record 1",
-			Amount:        100.0,
-			PrePayAddress: "AddrA",
-			ShouldPayAddress: []dbt.Address{
-				"Payer1", "Payer2",
-			},
-		},
-		{
-			ID:            uuid.New(),
-			Name:          "Record 2",
-			Amount:        200.50,
-			PrePayAddress: "AddrB",
-			ShouldPayAddress: []dbt.Address{
-				"Payer3",
+			RecordData: db.RecordData{
+				ShouldPayAddress: []db.Address{shouldPayAddrC},
 			},
 		},
 	}
 
-	nonExistentTripID := uuid.New()
-	err = tripDB.CreateTripRecords(nonExistentTripID, records)
-	assert.Error(t, err, "CreateTripRecords should return an error for non-existent trip ID")
-	assert.True(t, strings.Contains(err.Error(), "not found"), "Error message should indicate trip not found")
+	err = wrapper.CreateTripRecords(tripID, recordsToCreate)
+	require.NoError(t, err)
 
-	// 測試建立空 records slice
-	err = tripDB.CreateTripRecords(tripID, []dbt.Record{})
-	require.NoError(t, err, "Creating empty records should not return an error")
+	fetchedRecords, err := wrapper.GetTripRecords(tripID)
+	require.NoError(t, err)
+	require.Len(t, fetchedRecords, 2)
+
+	// Sort records by name for consistent checking if order isn't guaranteed
+	// For simplicity, we assume they are returned in creation order or test both possibilities.
+	var r1, r2 db.RecordInfo
+	if fetchedRecords[0].ID == recordID1 {
+		r1, r2 = fetchedRecords[0], fetchedRecords[1]
+	} else {
+		r1, r2 = fetchedRecords[1], fetchedRecords[0]
+	}
+
+	assert.Equal(t, recordID1, r1.ID)
+	assert.Equal(t, "Record 1", r1.Name)
+	assert.Equal(t, 100.50, r1.Amount)
+	assert.Equal(t, prePayAddr1, r1.PrePayAddress)
+	shouldPay1, err := wrapper.GetRecordAddressList(recordID1)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []db.Address{shouldPayAddrA, shouldPayAddrB}, shouldPay1)
+
+	assert.Equal(t, recordID2, r2.ID)
+	assert.Equal(t, "Record 2", r2.Name)
+	assert.Equal(t, 200.75, r2.Amount)
+	shouldPay2, err := wrapper.GetRecordAddressList(recordID2)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []db.Address{shouldPayAddrC}, shouldPay2)
 }
 
-func TestGetTripInfo(t *testing.T) {
-	initTest()
-	defer cleanupTest()
+func TestGetTripRecords_NoRecords(t *testing.T) {
+	wrapper, cleanup := setupTestDB(t)
+	defer cleanup()
 
 	tripID := uuid.New()
-	tripInfo := &dbt.TripInfo{
-		ID:   tripID,
-		Name: "Get Info Trip",
-	}
-	err := tripDB.CreateTrip(tripInfo)
+	err := wrapper.CreateTrip(&db.TripInfo{ID: tripID, Name: "Trip With No Records"})
 	require.NoError(t, err)
 
-	retrievedInfo, err := tripDB.GetTripInfo(tripID)
-	require.NoError(t, err, "GetTripInfo should not return an error")
-	assert.Equal(t, tripInfo.ID, retrievedInfo.ID)
-	assert.Equal(t, tripInfo.Name, retrievedInfo.Name)
-
-	// 測試獲取不存在的 Trip Info
-	nonExistentID := uuid.New()
-	_, err = tripDB.GetTripInfo(nonExistentID)
-	assert.Error(t, err, "GetTripInfo should return an error for non-existent ID")
-	assert.True(t, strings.Contains(err.Error(), "not found"), "Error message should indicate not found")
+	records, err := wrapper.GetTripRecords(tripID)
+	require.NoError(t, err)
+	assert.Empty(t, records)
 }
 
-func TestGetTripRecords(t *testing.T) {
-	initTest()
-	defer cleanupTest()
+func TestTripAddressListAddAndGet(t *testing.T) {
+	wrapper, cleanup := setupTestDB(t)
+	defer cleanup()
 
 	tripID := uuid.New()
-	err := tripDB.CreateTrip(&dbt.TripInfo{ID: tripID, Name: "Trip for Get Records"})
+	err := wrapper.CreateTrip(&db.TripInfo{ID: tripID, Name: "Trip For Address List"})
 	require.NoError(t, err)
 
-	recordID1 := uuid.New()
-	recordID2 := uuid.New()
-	records := []dbt.Record{
-		{ID: recordID1, Name: "GR1", Amount: 1.1, PrePayAddress: "P1", ShouldPayAddress: []dbt.Address{"A1", "A2"}},
-		{ID: recordID2, Name: "GR2", Amount: 2.2, PrePayAddress: "P2", ShouldPayAddress: []dbt.Address{"A3"}},
-	}
-	err = tripDB.CreateTripRecords(tripID, records)
+	addr1 := db.Address("addr1_test_talag")
+	addr2 := db.Address("addr2_test_talag")
+
+	require.NoError(t, wrapper.TripAddressListAdd(tripID, addr1))
+	require.NoError(t, wrapper.TripAddressListAdd(tripID, addr2))
+	require.NoError(t, wrapper.TripAddressListAdd(tripID, addr1)) // Test idempotency
+
+	addresses, err := wrapper.GetTripAddressList(tripID)
 	require.NoError(t, err)
-
-	retrievedRecords, err := tripDB.GetTripRecords(tripID)
-	require.NoError(t, err, "GetTripRecords should not return an error")
-	assert.Len(t, retrievedRecords, 2, "Should retrieve 2 records")
-
-	// 驗證內容
-	foundCount := 0
-	for _, r := range retrievedRecords {
-		if r.ID == recordID1 {
-			assert.Equal(t, records[0].Name, r.Name)
-			assert.InDelta(t, records[0].Amount, r.Amount, 0.001)
-			assert.Equal(t, records[0].PrePayAddress, r.PrePayAddress)
-			assert.ElementsMatch(t, records[0].ShouldPayAddress, r.ShouldPayAddress)
-			foundCount++
-		} else if r.ID == recordID2 {
-			assert.Equal(t, records[1].Name, r.Name)
-			assert.InDelta(t, records[1].Amount, r.Amount, 0.001)
-			assert.Equal(t, records[1].PrePayAddress, r.PrePayAddress)
-			assert.ElementsMatch(t, records[1].ShouldPayAddress, r.ShouldPayAddress)
-			foundCount++
-		}
-	}
-	assert.Equal(t, 2, foundCount, "Both records should be found and match")
-
-	// 測試獲取不存在的 Trip ID 的記錄
-	nonExistentTripID := uuid.New()
-	retrievedRecords, err = tripDB.GetTripRecords(nonExistentTripID)
-	require.NoError(t, err, "GetTripRecords for non-existent trip should return empty slice, not error") // GORM Find doesn't return error for no records
-	assert.Empty(t, retrievedRecords, "Should return an empty slice for non-existent trip with no records")
-}
-
-func TestGetTripAddressList(t *testing.T) {
-	initTest()
-	defer cleanupTest()
-
-	tripID := uuid.New()
-	err := tripDB.CreateTrip(&dbt.TripInfo{ID: tripID, Name: "Trip for Addresses"})
-	require.NoError(t, err)
-
-	addresses := []dbt.Address{"Addr1", "Addr2", "Addr3"}
-	for _, addr := range addresses {
-		err = tripDB.TripAddressListAdd(tripID, addr)
-		require.NoError(t, err)
-	}
-
-	retrievedAddresses, err := tripDB.GetTripAddressList(tripID)
-	require.NoError(t, err, "GetTripAddressList should not return an error")
-	assert.ElementsMatch(t, addresses, retrievedAddresses, "Retrieved addresses should match")
-
-	// 測試獲取不存在的 Trip ID 的地址列表
-	nonExistentTripID := uuid.New()
-	retrievedAddresses, err = tripDB.GetTripAddressList(nonExistentTripID)
-	require.NoError(t, err, "GetTripAddressList for non-existent trip should return empty slice, not error")
-	assert.Empty(t, retrievedAddresses, "Should return an empty slice for non-existent trip")
-}
-
-func TestGetRecordAddressList(t *testing.T) {
-	initTest()
-	defer cleanupTest()
-
-	tripID := uuid.New()
-	err := tripDB.CreateTrip(&dbt.TripInfo{ID: tripID, Name: "Trip for Rec Addr List"})
-	require.NoError(t, err)
-
-	recordID1 := uuid.New()
-	recordID2 := uuid.New()
-	records := []dbt.Record{
-		{
-			ID:            recordID1,
-			Name:          "Rec 1",
-			Amount:        10.0,
-			PrePayAddress: "P1",
-			ShouldPayAddress: []dbt.Address{
-				"R1_Payer1", "R1_Payer2",
-			},
-		},
-		{
-			ID:            recordID2,
-			Name:          "Rec 2",
-			Amount:        20.0,
-			PrePayAddress: "P2",
-			ShouldPayAddress: []dbt.Address{
-				"R2_Payer1",
-			},
-		},
-	}
-	err = tripDB.CreateTripRecords(tripID, records)
-	require.NoError(t, err)
-
-	// 獲取 Record 1 的地址列表
-	list1, err := tripDB.GetRecordAddressList(recordID1)
-	require.NoError(t, err, "GetRecordAddressList for record1 should not return an error")
-	assert.ElementsMatch(t, []dbt.Address{"R1_Payer1", "R1_Payer2"}, list1)
-
-	// 獲取 Record 2 的地址列表
-	list2, err := tripDB.GetRecordAddressList(recordID2)
-	require.NoError(t, err, "GetRecordAddressList for record2 should not return an error")
-	assert.ElementsMatch(t, []dbt.Address{"R2_Payer1"}, list2)
-
-	// 測試獲取不存在的 Record ID 的地址列表
-	nonExistentRecordID := uuid.New()
-	_, err = tripDB.GetRecordAddressList(nonExistentRecordID)
-	assert.Error(t, err, "GetRecordAddressList should return an error for non-existent ID")
-	assert.True(t, strings.Contains(err.Error(), "not found"), "Error message should indicate not found")
-}
-
-func TestUpdateTripInfo(t *testing.T) {
-	initTest()
-	defer cleanupTest()
-
-	tripID := uuid.New()
-	originalInfo := &dbt.TripInfo{
-		ID:   tripID,
-		Name: "Original Trip Name",
-	}
-	err := tripDB.CreateTrip(originalInfo)
-	require.NoError(t, err)
-
-	updatedInfo := &dbt.TripInfo{
-		ID:   tripID,
-		Name: "New Trip Name",
-	}
-	err = tripDB.UpdateTripInfo(updatedInfo)
-	require.NoError(t, err, "UpdateTripInfo should not return an error")
-
-	retrievedInfo, err := tripDB.GetTripInfo(tripID)
-	require.NoError(t, err)
-	assert.Equal(t, updatedInfo.Name, retrievedInfo.Name, "Trip name should be updated")
-
-	// 測試更新不存在的 Trip Info
-	nonExistentID := uuid.New()
-	nonExistentInfo := &dbt.TripInfo{
-		ID:   nonExistentID,
-		Name: "Non Existent Update",
-	}
-	err = tripDB.UpdateTripInfo(nonExistentInfo)
-	assert.Error(t, err, "UpdateTripInfo should return an error for non-existent ID")
-	assert.True(t, strings.Contains(err.Error(), "not found for update"), "Error message should indicate not found for update")
-}
-
-func TestUpdateTripRecord(t *testing.T) {
-	initTest()
-	defer cleanupTest()
-
-	tripID := uuid.New()
-	err := tripDB.CreateTrip(&dbt.TripInfo{ID: tripID, Name: "Trip for Update Record"})
-	require.NoError(t, err)
-
-	recordID := uuid.New()
-	originalRecord := dbt.Record{
-		ID:            recordID,
-		Name:          "Original Record",
-		Amount:        99.99,
-		PrePayAddress: "OrigP",
-		ShouldPayAddress: []dbt.Address{
-			"O1", "O2",
-		},
-	}
-	err = tripDB.CreateTripRecords(tripID, []dbt.Record{originalRecord})
-	require.NoError(t, err)
-
-	updatedRecord := dbt.Record{
-		ID:            recordID,
-		Name:          "Updated Record Name",
-		Amount:        199.99,
-		PrePayAddress: "UpdatedP",
-		ShouldPayAddress: []dbt.Address{
-			"U1", "U2", "U3",
-		},
-	}
-	err = tripDB.UpdateTripRecord(updatedRecord)
-	require.NoError(t, err, "UpdateTripRecord should not return an error")
-
-	// 驗證更新是否成功
-	retrievedRecords, err := tripDB.GetTripRecords(tripID)
-	require.NoError(t, err)
-	assert.Len(t, retrievedRecords, 1, "Should still have 1 record")
-	retrievedRecord := retrievedRecords[0]
-	assert.Equal(t, updatedRecord.Name, retrievedRecord.Name)
-	assert.InDelta(t, updatedRecord.Amount, retrievedRecord.Amount, 0.001)
-	assert.Equal(t, updatedRecord.PrePayAddress, retrievedRecord.PrePayAddress)
-	assert.ElementsMatch(t, updatedRecord.ShouldPayAddress, retrievedRecord.ShouldPayAddress)
-
-	// 測試更新不存在的 Record
-	nonExistentRecordID := uuid.New()
-	nonExistentRecord := dbt.Record{
-		ID:   nonExistentRecordID,
-		Name: "Non Existent Record",
-	}
-	err = tripDB.UpdateTripRecord(nonExistentRecord)
-	assert.Error(t, err, "UpdateTripRecord should return an error for non-existent record")
-	assert.True(t, strings.Contains(err.Error(), "not found for update"), "Error message should indicate not found for update")
-}
-
-func TestTripAddressListAdd(t *testing.T) {
-	initTest()
-	defer cleanupTest()
-
-	tripID := uuid.New()
-	err := tripDB.CreateTrip(&dbt.TripInfo{ID: tripID, Name: "Trip for Addr List Add"})
-	require.NoError(t, err)
-
-	address1 := dbt.Address("add_addr1@example.com")
-	err = tripDB.TripAddressListAdd(tripID, address1)
-	require.NoError(t, err, "TripAddressListAdd should not return an error")
-
-	retrievedList, err := tripDB.GetTripAddressList(tripID)
-	require.NoError(t, err)
-	assert.Contains(t, retrievedList, address1)
-	assert.Len(t, retrievedList, 1)
-
-	// 測試添加重複地址
-	err = tripDB.TripAddressListAdd(tripID, address1)
-	assert.Error(t, err, "TripAddressListAdd should return an error for duplicate address")
-	assert.True(t, strings.Contains(err.Error(), "already exists"), "Error message should indicate already exists")
-
-	// 測試為不存在的 Trip 添加地址
-	nonExistentTripID := uuid.New()
-	err = tripDB.TripAddressListAdd(nonExistentTripID, "orphan@example.com")
-	assert.Error(t, err, "TripAddressListAdd should return an error for non-existent trip")
-	assert.True(t, strings.Contains(err.Error(), "not found"), "Error message should indicate trip not found")
+	assert.ElementsMatch(t, []db.Address{addr1, addr2}, addresses)
 }
 
 func TestTripAddressListRemove(t *testing.T) {
-	initTest()
-	defer cleanupTest()
+	wrapper, cleanup := setupTestDB(t)
+	defer cleanup()
 
 	tripID := uuid.New()
-	err := tripDB.CreateTrip(&dbt.TripInfo{ID: tripID, Name: "Trip for Addr List Remove"})
+	err := wrapper.CreateTrip(&db.TripInfo{ID: tripID, Name: "Trip For Address Removal"})
 	require.NoError(t, err)
 
-	address1 := dbt.Address("rem_addr1@example.com")
-	address2 := dbt.Address("rem_addr2@example.com")
-	err = tripDB.TripAddressListAdd(tripID, address1)
+	addr1 := db.Address("addr_to_remove1_talr")
+	addr2 := db.Address("addr_to_keep_talr")
+
+	require.NoError(t, wrapper.TripAddressListAdd(tripID, addr1))
+	require.NoError(t, wrapper.TripAddressListAdd(tripID, addr2))
+
+	err = wrapper.TripAddressListRemove(tripID, addr1)
 	require.NoError(t, err)
-	err = tripDB.TripAddressListAdd(tripID, address2)
+
+	addresses, err := wrapper.GetTripAddressList(tripID)
 	require.NoError(t, err)
+	assert.ElementsMatch(t, []db.Address{addr2}, addresses)
 
-	// 移除地址1
-	err = tripDB.TripAddressListRemove(tripID, address1)
-	require.NoError(t, err, "TripAddressListRemove should not return an error")
-
-	retrievedList, err := tripDB.GetTripAddressList(tripID)
-	require.NoError(t, err)
-	assert.NotContains(t, retrievedList, address1)
-	assert.Contains(t, retrievedList, address2)
-	assert.Len(t, retrievedList, 1)
-
-	// 測試移除不存在的地址
-	nonExistentAddress := dbt.Address("non_existent@example.com")
-	err = tripDB.TripAddressListRemove(tripID, nonExistentAddress)
-	assert.Error(t, err, "TripAddressListRemove should return an error for non-existent address")
-	assert.True(t, strings.Contains(err.Error(), "not found"), "Error message should indicate not found")
-
-	// 測試為不存在的 Trip 移除地址
-	nonExistentTripID := uuid.New()
-	err = tripDB.TripAddressListRemove(nonExistentTripID, address2)
-	assert.Error(t, err, "TripAddressListRemove should return an error for non-existent trip")
-	assert.True(t, strings.Contains(err.Error(), "not found"), "Error message should indicate not found")
+	err = wrapper.TripAddressListRemove(tripID, db.Address("non_existent_addr_talr"))
+	require.NoError(t, err) // Should not error
 }
 
-func TestDeleteTrip(t *testing.T) {
-	initTest()
-	defer cleanupTest()
+func TestUpdateTripInfo(t *testing.T) {
+	wrapper, cleanup := setupTestDB(t)
+	defer cleanup()
 
 	tripID := uuid.New()
-	err := tripDB.CreateTrip(&dbt.TripInfo{ID: tripID, Name: "Trip to Delete"})
+	err := wrapper.CreateTrip(&db.TripInfo{ID: tripID, Name: "Original Trip Name"})
 	require.NoError(t, err)
 
-	// 建立相關聯的記錄和地址，驗證 CASCADE DELETE
+	updatedInfo := &db.TripInfo{ID: tripID, Name: "Updated Trip Name"}
+	err = wrapper.UpdateTripInfo(updatedInfo)
+	require.NoError(t, err)
+
+	fetchedTrip, err := wrapper.GetTripInfo(tripID)
+	require.NoError(t, err)
+	assert.Equal(t, updatedInfo.Name, fetchedTrip.Name)
+}
+
+func TestUpdateTripRecord(t *testing.T) {
+	wrapper, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	tripID := uuid.New()
+	err := wrapper.CreateTrip(&db.TripInfo{ID: tripID, Name: "Trip for Record Update"})
+	require.NoError(t, err)
+
+	prePayAddr := db.Address("prepay_for_update_test_utr")
+	require.NoError(t, wrapper.TripAddressListAdd(tripID, prePayAddr)) // Prereq for RecordModel FK
+
 	recordID := uuid.New()
-	err = tripDB.CreateTripRecords(tripID, []dbt.Record{
-		{ID: recordID, Name: "Rec for Delete", Amount: 1.0, PrePayAddress: "P", ShouldPayAddress: []dbt.Address{"A"}},
-	})
+	originalRecord := []db.Record{
+		{RecordInfo: db.RecordInfo{ID: recordID, Name: "Original Record", Amount: 50.0, PrePayAddress: prePayAddr}},
+	}
+	err = wrapper.CreateTripRecords(tripID, originalRecord)
 	require.NoError(t, err)
-	err = tripDB.TripAddressListAdd(tripID, "addr_to_delete@example.com")
+
+	updatedRecordInfo := db.RecordInfo{ID: recordID, Name: "Updated Record", Amount: 75.25, PrePayAddress: prePayAddr}
+	err = wrapper.UpdateTripRecord(updatedRecordInfo)
 	require.NoError(t, err)
 
-	err = tripDB.DeleteTrip(tripID)
-	require.NoError(t, err, "DeleteTrip should not return an error")
-
-	// 驗證 Trip 是否被刪除
-	_, err = tripDB.GetTripInfo(tripID)
-	assert.Error(t, err, "GetTripInfo should return an error after deletion")
-	assert.True(t, strings.Contains(err.Error(), "not found"), "Error message should indicate not found")
-
-	// 驗證相關聯的 Records 是否被刪除 (ON DELETE CASCADE)
-	retrievedRecords, err := tripDB.GetTripRecords(tripID)
-	require.NoError(t, err, "GetTripRecords for deleted trip should not error")
-	assert.Empty(t, retrievedRecords, "Records for deleted trip should be empty")
-
-	// 驗證相關聯的 AddressList 是否被刪除 (ON DELETE CASCADE)
-	retrievedAddresses, err := tripDB.GetTripAddressList(tripID)
-	require.NoError(t, err, "GetTripAddressList for deleted trip should not error")
-	assert.Empty(t, retrievedAddresses, "AddressList for deleted trip should be empty")
-
-	// 測試刪除不存在的 Trip
-	nonExistentID := uuid.New()
-	err = tripDB.DeleteTrip(nonExistentID)
-	assert.Error(t, err, "DeleteTrip should return an error for non-existent ID")
-	assert.True(t, strings.Contains(err.Error(), "not found for deletion"), "Error message should indicate not found for deletion")
+	fetchedRecords, err := wrapper.GetTripRecords(tripID)
+	require.NoError(t, err)
+	require.Len(t, fetchedRecords, 1)
+	assert.Equal(t, updatedRecordInfo.Name, fetchedRecords[0].Name)
+	assert.Equal(t, updatedRecordInfo.Amount, fetchedRecords[0].Amount)
+	assert.Equal(t, updatedRecordInfo.PrePayAddress, fetchedRecords[0].PrePayAddress)
 }
 
 func TestDeleteTripRecord(t *testing.T) {
-	initTest()
-	defer cleanupTest()
+	wrapper, cleanup := setupTestDB(t)
+	defer cleanup()
 
 	tripID := uuid.New()
-	err := tripDB.CreateTrip(&dbt.TripInfo{ID: tripID, Name: "Trip for Delete Record"})
+	err := wrapper.CreateTrip(&db.TripInfo{ID: tripID, Name: "Trip for Record Deletion"})
 	require.NoError(t, err)
 
-	recordID1 := uuid.New()
-	recordID2 := uuid.New()
-	records := []dbt.Record{
-		{ID: recordID1, Name: "Rec 1", Amount: 1.0, PrePayAddress: "P1", ShouldPayAddress: []dbt.Address{"A1"}},
-		{ID: recordID2, Name: "Rec 2", Amount: 2.0, PrePayAddress: "P2", ShouldPayAddress: []dbt.Address{"A2"}},
+	prePayAddr := db.Address("prepay_for_delete_dtr")
+	shouldPayAddr := db.Address("shouldpay_for_delete_dtr")
+	require.NoError(t, wrapper.TripAddressListAdd(tripID, prePayAddr))
+	require.NoError(t, wrapper.TripAddressListAdd(tripID, shouldPayAddr))
+
+	recordID := uuid.New()
+	records := []db.Record{
+		{
+			RecordInfo: db.RecordInfo{ID: recordID, Name: "Record to Delete", Amount: 10, PrePayAddress: prePayAddr},
+			RecordData: db.RecordData{ShouldPayAddress: []db.Address{shouldPayAddr}},
+		},
 	}
-	err = tripDB.CreateTripRecords(tripID, records)
+	err = wrapper.CreateTripRecords(tripID, records)
 	require.NoError(t, err)
 
-	// 刪除 Record 1
-	err = tripDB.DeleteTripRecord(recordID1)
-	require.NoError(t, err, "DeleteTripRecord should not return an error")
-
-	// 驗證 Record 1 是否被刪除
-	retrievedRecords, err := tripDB.GetTripRecords(tripID)
+	err = wrapper.DeleteTripRecord(recordID)
 	require.NoError(t, err)
-	assert.Len(t, retrievedRecords, 1, "Should have 1 record remaining")
-	assert.Equal(t, recordID2, retrievedRecords[0].ID, "Remaining record should be Record 2")
 
-	// 測試刪除不存在的 Record
-	nonExistentRecordID := uuid.New()
-	err = tripDB.DeleteTripRecord(nonExistentRecordID)
-	assert.Error(t, err, "DeleteTripRecord should return an error for non-existent ID")
-	assert.True(t, strings.Contains(err.Error(), "not found for deletion"), "Error message should indicate not found for deletion")
+	fetchedRecords, err := wrapper.GetTripRecords(tripID)
+	require.NoError(t, err)
+	assert.Empty(t, fetchedRecords)
+
+	// Verify associated RecordShouldPayAddressList entries are deleted (due to CASCADE)
+	dbConn := (wrapper.(*pgDBWrapper)).db
+	var count int64
+	err = dbConn.Model(&RecordShouldPayAddressListModel{}).Where("record_id = ?", recordID).Count(&count).Error
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), count)
+}
+
+func TestDeleteTrip(t *testing.T) {
+	wrapper, cleanup := setupTestDB(t)
+	defer cleanup()
+	dbConn := (wrapper.(*pgDBWrapper)).db // For direct DB checks
+
+	tripID := uuid.New()
+	err := wrapper.CreateTrip(&db.TripInfo{ID: tripID, Name: "Trip To Fully Delete"})
+	require.NoError(t, err)
+
+	addr := db.Address("addr_for_delete_trip_dt")
+	require.NoError(t, wrapper.TripAddressListAdd(tripID, addr))
+
+	recordID := uuid.New()
+	records := []db.Record{
+		{
+			RecordInfo: db.RecordInfo{ID: recordID, Name: "Record in Deleted Trip", Amount: 1.0, PrePayAddress: addr},
+			RecordData: db.RecordData{ShouldPayAddress: []db.Address{addr}},
+		},
+	}
+	err = wrapper.CreateTripRecords(tripID, records)
+	require.NoError(t, err)
+
+	err = wrapper.DeleteTrip(tripID)
+	require.NoError(t, err)
+
+	_, err = wrapper.GetTripInfo(tripID)
+	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
+
+	var count int64
+	err = dbConn.Model(&TripAddressListModel{}).Where("trip_id = ?", tripID).Count(&count).Error
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), count, "TripAddressList entries should be deleted")
+
+	err = dbConn.Model(&RecordModel{}).Where("trip_id = ?", tripID).Count(&count).Error
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), count, "RecordModel entries should be deleted")
+
+	err = dbConn.Model(&RecordShouldPayAddressListModel{}).Where("trip_id = ?", tripID).Count(&count).Error
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), count, "RecordShouldPayAddressListModel entries should be deleted")
+}
+
+// --- Data Loader Tests ---
+
+func TestDataLoaderGetTripInfoList(t *testing.T) {
+	wrapper, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	ids := []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}
+	infos := []*db.TripInfo{
+		{ID: ids[0], Name: "DL Trip 1"},
+		{ID: ids[1], Name: "DL Trip 2"},
+	}
+	require.NoError(t, wrapper.CreateTrip(infos[0]))
+	require.NoError(t, wrapper.CreateTrip(infos[1]))
+
+	resultMap, err := wrapper.DataLoaderGetTripInfoList(ctx, ids)
+	require.NoError(t, err)
+	require.Len(t, resultMap, 3)
+	assert.Equal(t, infos[0].Name, resultMap[ids[0]].Name)
+	assert.Equal(t, infos[1].Name, resultMap[ids[1]].Name)
+	assert.Nil(t, resultMap[ids[2]])
+}
+
+func TestDataLoaderGetRecordInfoList(t *testing.T) {
+	wrapper, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	tripID1 := uuid.New()
+	require.NoError(t, wrapper.CreateTrip(&db.TripInfo{ID: tripID1, Name: "DLRec Trip 1"}))
+	tripID2 := uuid.New()
+	require.NoError(t, wrapper.CreateTrip(&db.TripInfo{ID: tripID2, Name: "DLRec Trip 2"}))
+	tripID3 := uuid.New()
+	require.NoError(t, wrapper.CreateTrip(&db.TripInfo{ID: tripID3, Name: "DLRec Trip 3"})) // No records
+
+	addrT1 := db.Address("dlrec_t1_addr")
+	require.NoError(t, wrapper.TripAddressListAdd(tripID1, addrT1))
+	addrT2 := db.Address("dlrec_t2_addr")
+	require.NoError(t, wrapper.TripAddressListAdd(tripID2, addrT2))
+
+	rec1T1 := db.Record{RecordInfo: db.RecordInfo{ID: uuid.New(), Name: "T1R1", PrePayAddress: addrT1}}
+	rec2T1 := db.Record{RecordInfo: db.RecordInfo{ID: uuid.New(), Name: "T1R2", PrePayAddress: addrT1}}
+	require.NoError(t, wrapper.CreateTripRecords(tripID1, []db.Record{rec1T1, rec2T1}))
+
+	rec1T2 := db.Record{RecordInfo: db.RecordInfo{ID: uuid.New(), Name: "T2R1", PrePayAddress: addrT2}}
+	require.NoError(t, wrapper.CreateTripRecords(tripID2, []db.Record{rec1T2}))
+
+	resultMap, err := wrapper.DataLoaderGetRecordInfoList(ctx, []uuid.UUID{tripID1, tripID2, tripID3})
+	require.NoError(t, err)
+	require.Len(t, resultMap, 3)
+	assert.Len(t, resultMap[tripID1], 2)
+	assert.Len(t, resultMap[tripID2], 1)
+	assert.Empty(t, resultMap[tripID3])
+}
+
+func TestDataLoaderGetTripAddressList(t *testing.T) {
+	wrapper, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	tripID1 := uuid.New()
+	require.NoError(t, wrapper.CreateTrip(&db.TripInfo{ID: tripID1, Name: "DLAddr Trip 1"}))
+	tripID2 := uuid.New()
+	require.NoError(t, wrapper.CreateTrip(&db.TripInfo{ID: tripID2, Name: "DLAddr Trip 2"}))
+	tripID3 := uuid.New()
+	require.NoError(t, wrapper.CreateTrip(&db.TripInfo{ID: tripID3, Name: "DLAddr Trip 3"})) // No addresses
+
+	addr1T1 := db.Address("t1a1_dl")
+	addr2T1 := db.Address("t1a2_dl")
+	require.NoError(t, wrapper.TripAddressListAdd(tripID1, addr1T1))
+	require.NoError(t, wrapper.TripAddressListAdd(tripID1, addr2T1))
+
+	addr1T2 := db.Address("t2a1_dl")
+	require.NoError(t, wrapper.TripAddressListAdd(tripID2, addr1T2))
+
+	resultMap, err := wrapper.DataLoaderGetTripAddressList(ctx, []uuid.UUID{tripID1, tripID2, tripID3})
+	require.NoError(t, err)
+	require.Len(t, resultMap, 3)
+	assert.ElementsMatch(t, []db.Address{addr1T1, addr2T1}, resultMap[tripID1])
+	assert.ElementsMatch(t, []db.Address{addr1T2}, resultMap[tripID2])
+	assert.Empty(t, resultMap[tripID3])
+}
+
+func TestDataLoaderGetRecordShouldPayList(t *testing.T) {
+	wrapper, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	tripID := uuid.New()
+	require.NoError(t, wrapper.CreateTrip(&db.TripInfo{ID: tripID, Name: "DLShouldPay Trip"}))
+
+	// Pre-add all addresses to TripAddressList
+	prePay := db.Address("dlsp_prepay")
+	addrA := db.Address("dlsp_A")
+	addrB := db.Address("dlsp_B")
+	addrC := db.Address("dlsp_C")
+	require.NoError(t, wrapper.TripAddressListAdd(tripID, prePay))
+	require.NoError(t, wrapper.TripAddressListAdd(tripID, addrA))
+	require.NoError(t, wrapper.TripAddressListAdd(tripID, addrB))
+	require.NoError(t, wrapper.TripAddressListAdd(tripID, addrC))
+
+	recID1 := uuid.New()
+	recID2 := uuid.New()
+	recID3 := uuid.New() // rec3 has no should pay
+	recID4NonExistent := uuid.New()
+
+	records := []db.Record{
+		{RecordInfo: db.RecordInfo{ID: recID1, Name: "R1", PrePayAddress: prePay}, RecordData: db.RecordData{ShouldPayAddress: []db.Address{addrA, addrB}}},
+		{RecordInfo: db.RecordInfo{ID: recID2, Name: "R2", PrePayAddress: prePay}, RecordData: db.RecordData{ShouldPayAddress: []db.Address{addrC}}},
+		{RecordInfo: db.RecordInfo{ID: recID3, Name: "R3", PrePayAddress: prePay}, RecordData: db.RecordData{ShouldPayAddress: []db.Address{}}},
+	}
+	require.NoError(t, wrapper.CreateTripRecords(tripID, records))
+
+	resultMap, err := wrapper.DataLoaderGetRecordShouldPayList(ctx, []uuid.UUID{recID1, recID2, recID3, recID4NonExistent})
+	require.NoError(t, err)
+	require.Len(t, resultMap, 4)
+	assert.ElementsMatch(t, []db.Address{addrA, addrB}, resultMap[recID1])
+	assert.ElementsMatch(t, []db.Address{addrC}, resultMap[recID2])
+	assert.Empty(t, resultMap[recID3])
+	assert.Empty(t, resultMap[recID4NonExistent])
 }

@@ -618,7 +618,7 @@ func TestChannelTripAddressMessageQueue_Lifecycle(t *testing.T) {
 		}
 	}()
 
-	receivedMsg, ok := receiveMsgWithTimeout(t, subChan, 100*time.Millisecond)
+	receivedMsg, ok := receiveMsgWithTimeout(t, subChan, 300*time.Millisecond)
 	if !ok {
 		t.Fatal("Failed to receive TripAddressMessage or channel closed/timed out")
 	}

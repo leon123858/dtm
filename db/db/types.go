@@ -19,10 +19,18 @@ type Trip struct {
 	TripData
 }
 
-type Record struct {
-	ID               uuid.UUID
-	Name             string
-	Amount           float64
-	PrePayAddress    Address
+type RecordInfo struct {
+	ID            uuid.UUID
+	Name          string
+	Amount        float64
+	PrePayAddress Address
+}
+
+type RecordData struct {
 	ShouldPayAddress []Address
+}
+
+type Record struct {
+	RecordInfo
+	RecordData
 }
