@@ -33,15 +33,15 @@ func InitPostgresGORM(dsn string) (*gorm.DB, error) {
 	newLogger := logger.New(
 		log.New(os.Stdout, "\r\n", log.LstdFlags), // io writer
 		logger.Config{
-			SlowThreshold: time.Second, // Slow SQL threshold
+			SlowThreshold: time.Second,   // Slow SQL threshold
 			LogLevel:      logger.Silent, // Log level (Silent, Error, Warn, Info)
-			Colorful:      true,        // Disable color
+			Colorful:      true,          // Disable color
 		},
 	)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: newLogger, // Apply the custom logger
-		DisableForeignKeyConstraintWhenMigrating: true,
+		// DisableForeignKeyConstraintWhenMigrating: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
@@ -58,16 +58,16 @@ func InitPostgresGORM(dsn string) (*gorm.DB, error) {
 
 	// AutoMigrate all models. This will create tables and missing columns.
 	// In production, you might prefer explicit migrations (e.g., using Goose, Flyway).
-	err = db.AutoMigrate(
-		&TripInfoModel{},
-		&RecordModel{},
-		&TripAddressListModel{},
-		&RecordShouldPayAddressListModel{},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to auto migrate database: %w", err)
-	}
+	// err = db.AutoMigrate(
+	// 	&TripInfoModel{},
+	// 	&RecordModel{},
+	// 	&TripAddressListModel{},
+	// 	&RecordShouldPayAddressListModel{},
+	// )
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to auto migrate database: %w", err)
+	// }
 
-	log.Println("PostgreSQL GORM connection initialized and auto-migrated successfully!")
+	log.Println("PostgreSQL GORM connection initialized successfully!")
 	return db, nil
 }

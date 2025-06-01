@@ -45,10 +45,10 @@ type RecordShouldPayAddressListModel struct {
 	TripID   uuid.UUID `gorm:"type:uuid;primaryKey"`
 	Address  string    `gorm:"size:255;primaryKey"`
 	// meta data
-	Record RecordModel `gorm:"foreignKey:RecordID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
-	TripAddressList TripAddressListModel   `gorm:"foreignKey:TripID,Address;references:TripID,Address;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Record          RecordModel          `gorm:"foreignKey:RecordID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	TripAddressList TripAddressListModel `gorm:"foreignKey:TripID,Address;references:TripID,Address;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 func (RecordShouldPayAddressListModel) TableName() string {

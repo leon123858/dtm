@@ -66,11 +66,15 @@ func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, inpu
 	}
 
 	record := &db.Record{
-		ID:               uuid.New(),
-		Name:             input.Name,
-		Amount:           input.Amount,
-		PrePayAddress:    db.Address(input.PrePayAddress),
-		ShouldPayAddress: make([]db.Address, len(input.ShouldPayAddress)),
+		RecordInfo: db.RecordInfo{
+			ID:            uuid.New(),
+			Name:          input.Name,
+			Amount:        input.Amount,
+			PrePayAddress: db.Address(input.PrePayAddress),
+		},
+		RecordData: db.RecordData{
+			ShouldPayAddress: make([]db.Address, len(input.ShouldPayAddress)),
+		},
 	}
 	for i, addr := range input.ShouldPayAddress {
 		record.ShouldPayAddress[i] = db.Address(addr)
@@ -106,16 +110,20 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, tripID string, reco
 	}
 
 	record := &db.Record{
-		ID:               recordUID,
-		Name:             input.Name,
-		Amount:           input.Amount,
-		PrePayAddress:    db.Address(input.PrePayAddress),
-		ShouldPayAddress: make([]db.Address, len(input.ShouldPayAddress)),
+		RecordInfo: db.RecordInfo{
+			ID:            recordUID,
+			Name:          input.Name,
+			Amount:        input.Amount,
+			PrePayAddress: db.Address(input.PrePayAddress),
+		},
+		RecordData: db.RecordData{
+			ShouldPayAddress: make([]db.Address, len(input.ShouldPayAddress)),
+		},
 	}
 	for i, addr := range input.ShouldPayAddress {
 		record.ShouldPayAddress[i] = db.Address(addr)
 	}
-	if err := dbTripInfo.UpdateTripRecord(*record); err != nil {
+	if err := dbTripInfo.UpdateTripRecord(record.RecordInfo); err != nil {
 		return nil, fmt.Errorf("failed to update record: %w", err)
 	}
 
@@ -354,21 +362,21 @@ func (r *tripResolver) MoneyShare(ctx context.Context, obj *model.Trip) ([]*mode
 
 	// Process records to create money share transactions
 	payments := make([]tx.UserPayment, 0, len(records))
-	for _, record := range records {
-		if record.Amount <= 0 {
-			continue // Skip records with non-positive amounts
-		}
-		payment := tx.UserPayment{
-			Name:             record.Name,
-			Amount:           record.Amount,
-			PrePayAddress:    string(record.PrePayAddress),
-			ShouldPayAddress: make([]string, len(record.ShouldPayAddress)),
-		}
-		for i, addr := range record.ShouldPayAddress {
-			payment.ShouldPayAddress[i] = string(addr)
-		}
-		payments = append(payments, payment)
-	}
+	// for _, record := range records {
+	// 	if record.Amount <= 0 {
+	// 		continue // Skip records with non-positive amounts
+	// 	}
+	// 	payment := tx.UserPayment{
+	// 		Name:             record.Name,
+	// 		Amount:           record.Amount,
+	// 		PrePayAddress:    string(record.PrePayAddress),
+	// 		ShouldPayAddress: make([]string, len(record.ShouldPayAddress)),
+	// 	}
+	// 	for i, addr := range record.ShouldPayAddress {
+	// 		payment.ShouldPayAddress[i] = string(addr)
+	// 	}
+	// 	payments = append(payments, payment)
+	// }
 	txPackage, totalRemaining, err := tx.ShareMoneyEasyNoLog(payments)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create TxPackage: %w", err)
