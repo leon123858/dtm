@@ -298,9 +298,14 @@ func TestUpdateTripRecord(t *testing.T) {
 			Amount:        15.0,
 			PrePayAddress: "NewPrePay1",
 		}
-		// The RecordData part (ShouldPayAddress) is not updated via UpdateTripRecord,
-		// but the in-memory implementation does keep the original RecordData.
-		err := db.UpdateTripRecord(updatedRecordInfo)
+		updatedRecord := dbt.Record{
+			RecordInfo: updatedRecordInfo,
+			RecordData: dbt.RecordData{
+				ShouldPayAddress: []dbt.Address{"PayU"},
+			},
+		}
+
+		err := db.UpdateTripRecord(&updatedRecord)
 		assert.NoError(t, err)
 
 		// Retrieve records and verify
@@ -320,10 +325,10 @@ func TestUpdateTripRecord(t *testing.T) {
 		}
 		assert.True(t, found, "Updated record not found in retrieved list")
 
-		// Verify that RecordData (ShouldPayAddress) remains the same
+		// Verify that RecordData (ShouldPayAddress)
 		shouldPayList, err := db.GetRecordAddressList(record1.ID)
 		assert.NoError(t, err)
-		assert.Equal(t, []dbt.Address{"PayA"}, shouldPayList) // Should be original
+		assert.Equal(t, []dbt.Address{"PayU"}, shouldPayList) // Should be updated to "PayU"
 	})
 
 	t.Run("Fail to update non-existent record", func(t *testing.T) {
@@ -331,7 +336,12 @@ func TestUpdateTripRecord(t *testing.T) {
 			ID:   uuid.New(),
 			Name: "Non-existent Record",
 		}
-		err := db.UpdateTripRecord(nonExistentRecordInfo)
+		err := db.UpdateTripRecord(&dbt.Record{
+			RecordInfo: nonExistentRecordInfo,
+			RecordData: dbt.RecordData{
+				ShouldPayAddress: []dbt.Address{"PayX"},
+			},
+		})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not found")
 	})

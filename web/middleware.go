@@ -1,6 +1,7 @@
 package web
 
 import (
+	"dtm/db/db"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -32,6 +33,13 @@ func limiterMiddleWare() gin.HandlerFunc {
 	middleware := mgin.NewMiddleware(instance)
 
 	return middleware
+}
+
+func TripDataLoaderInjectionMiddleware(wrapper db.TripDBWrapper) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set(string(db.DataLoaderKeyTripData), db.NewTripDataLoader(wrapper))
+		c.Next()
+	}
 }
 
 func setupMiddlewares(r *gin.Engine) {

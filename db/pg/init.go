@@ -56,18 +56,6 @@ func InitPostgresGORM(dsn string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	// AutoMigrate all models. This will create tables and missing columns.
-	// In production, you might prefer explicit migrations (e.g., using Goose, Flyway).
-	// err = db.AutoMigrate(
-	// 	&TripInfoModel{},
-	// 	&RecordModel{},
-	// 	&TripAddressListModel{},
-	// 	&RecordShouldPayAddressListModel{},
-	// )
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to auto migrate database: %w", err)
-	// }
-
 	log.Println("PostgreSQL GORM connection initialized successfully!")
 	return db, nil
 }

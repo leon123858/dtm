@@ -2,7 +2,6 @@ package graph
 
 import (
 	"dtm/db/db"
-	"dtm/graph/loader"
 	"dtm/mq/mq"
 )
 
@@ -14,5 +13,4 @@ import (
 type Resolver struct {
 	TripDB                  db.TripDBWrapper
 	TripMessageQueueWrapper mq.TripMessageQueueWrapper
-	TripDataLoader          loader.TripDataLoader
 }

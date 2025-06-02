@@ -102,7 +102,7 @@ func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, inpu
 }
 
 // UpdateRecord is the resolver for the updateRecord field.
-func (r *mutationResolver) UpdateRecord(ctx context.Context, tripID string, recordID string, input model.NewRecord) (*model.Record, error) {
+func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, input model.NewRecord) (*model.Record, error) {
 	dbTripInfo := r.TripDB
 	recordUID, err := uuid.Parse(recordID)
 	if err != nil {
@@ -123,7 +123,7 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, tripID string, reco
 	for i, addr := range input.ShouldPayAddress {
 		record.ShouldPayAddress[i] = db.Address(addr)
 	}
-	if err := dbTripInfo.UpdateTripRecord(record.RecordInfo); err != nil {
+	if err := dbTripInfo.UpdateTripRecord(record); err != nil {
 		return nil, fmt.Errorf("failed to update record: %w", err)
 	}
 
@@ -230,6 +230,29 @@ func (r *queryResolver) Trip(ctx context.Context, tripID string) (*model.Trip, e
 		ID:   tripInfo.ID.String(),
 		Name: tripInfo.Name,
 	}, nil
+}
+
+// ShouldPayAddress is the resolver for the shouldPayAddress field.
+func (r *recordResolver) ShouldPayAddress(ctx context.Context, obj *model.Record) ([]string, error) {
+	dataLoader, ok := ctx.Value(db.DataLoaderKeyTripData).(db.TripDataLoader)
+	if !ok {
+		return nil, fmt.Errorf("data loader is not available")
+	}
+	recordID, err := uuid.Parse(obj.ID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid record ID: %w", err)
+	}
+
+	addresses, err := dataLoader.GetRecordShouldPayList.Load(ctx, recordID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get should pay addresses: %w", err)
+	}
+
+	addressList := make([]string, len(addresses))
+	for i, addr := range addresses {
+		addressList[i] = string(addr)
+	}
+	return addressList, nil
 }
 
 // SubRecordCreate is the resolver for the subRecordCreate field.
@@ -350,6 +373,11 @@ func (r *tripResolver) Records(ctx context.Context, obj *model.Trip) ([]*model.R
 // MoneyShare is the resolver for the moneyShare field.
 func (r *tripResolver) MoneyShare(ctx context.Context, obj *model.Trip) ([]*model.Tx, error) {
 	dbTripInfo := r.TripDB
+	dataLoader, ok := ctx.Value(db.DataLoaderKeyTripData).(db.TripDataLoader)
+	if !ok {
+		return nil, fmt.Errorf("data loader is not available")
+	}
+
 	tripID, err := uuid.Parse(obj.ID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
@@ -360,23 +388,31 @@ func (r *tripResolver) MoneyShare(ctx context.Context, obj *model.Trip) ([]*mode
 		return nil, fmt.Errorf("failed to get trip records: %w", err)
 	}
 
+	recordAddresses := make([][]db.Address, len(records))
+	for i, record := range records {
+		recordAddresses[i], err = dataLoader.GetRecordShouldPayList.Load(ctx, record.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get should pay addresses for record %s: %w", record.ID, err)
+		}
+	}
+
 	// Process records to create money share transactions
 	payments := make([]tx.UserPayment, 0, len(records))
-	// for _, record := range records {
-	// 	if record.Amount <= 0 {
-	// 		continue // Skip records with non-positive amounts
-	// 	}
-	// 	payment := tx.UserPayment{
-	// 		Name:             record.Name,
-	// 		Amount:           record.Amount,
-	// 		PrePayAddress:    string(record.PrePayAddress),
-	// 		ShouldPayAddress: make([]string, len(record.ShouldPayAddress)),
-	// 	}
-	// 	for i, addr := range record.ShouldPayAddress {
-	// 		payment.ShouldPayAddress[i] = string(addr)
-	// 	}
-	// 	payments = append(payments, payment)
-	// }
+	for i, record := range records {
+		if record.Amount <= 0 {
+			continue // Skip records with non-positive amounts
+		}
+		payment := tx.UserPayment{
+			Name:             record.Name,
+			Amount:           record.Amount,
+			PrePayAddress:    string(record.PrePayAddress),
+			ShouldPayAddress: make([]string, len(recordAddresses[i])),
+		}
+		for j, addr := range recordAddresses[i] {
+			payment.ShouldPayAddress[j] = string(addr)
+		}
+		payments = append(payments, payment)
+	}
 	txPackage, totalRemaining, err := tx.ShareMoneyEasyNoLog(payments)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create TxPackage: %w", err)
@@ -431,6 +467,9 @@ func (r *Resolver) Mutation() MutationResolver { return &mutationResolver{r} }
 // Query returns QueryResolver implementation.
 func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
 
+// Record returns RecordResolver implementation.
+func (r *Resolver) Record() RecordResolver { return &recordResolver{r} }
+
 // Subscription returns SubscriptionResolver implementation.
 func (r *Resolver) Subscription() SubscriptionResolver { return &subscriptionResolver{r} }
 
@@ -439,5 +478,6 @@ func (r *Resolver) Trip() TripResolver { return &tripResolver{r} }
 
 type mutationResolver struct{ *Resolver }
 type queryResolver struct{ *Resolver }
+type recordResolver struct{ *Resolver }
 type subscriptionResolver struct{ *Resolver }
 type tripResolver struct{ *Resolver }

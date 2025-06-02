@@ -28,10 +28,8 @@ type RecordModel struct {
 	Amount        float64   `gorm:"type:numeric(10,2);not null"`
 	PrePayAddress string    `gorm:"size:255;not null"`
 	// meta data
-	TripInfo        TripInfoModel        `gorm:"foreignKey:TripID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
-	TripAddressList TripAddressListModel `gorm:"foreignKey:TripID,PrePayAddress;references:TripID,Address;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // TableName returns the table name for RecordModel.
@@ -45,10 +43,8 @@ type RecordShouldPayAddressListModel struct {
 	TripID   uuid.UUID `gorm:"type:uuid;primaryKey"`
 	Address  string    `gorm:"size:255;primaryKey"`
 	// meta data
-	Record          RecordModel          `gorm:"foreignKey:RecordID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
-	TripAddressList TripAddressListModel `gorm:"foreignKey:TripID,Address;references:TripID,Address;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 func (RecordShouldPayAddressListModel) TableName() string {
@@ -60,7 +56,6 @@ type TripAddressListModel struct {
 	TripID  uuid.UUID `gorm:"type:uuid;primaryKey"`
 	Address string    `gorm:"size:255;primaryKey"`
 	// meta data
-	TripInfo  TripInfoModel `gorm:"foreignKey:TripID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

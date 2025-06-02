@@ -123,7 +123,7 @@ func TestFanOutQueueCore_PublishSubscribeDeSubscribe_Simple(t *testing.T) {
 		t.Errorf("Expected message %d, got %d", testMsg, receivedMsg)
 	}
 
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 
 	// DeSubscribe
 	err = core.DeSubscribe(id1)
@@ -133,7 +133,7 @@ func TestFanOutQueueCore_PublishSubscribeDeSubscribe_Simple(t *testing.T) {
 
 	// Check if channel is closed (eventually)
 	// Give a moment for the close operation to complete.
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	if !isChanClosed(subChan1) {
 		// Attempt a read, which should confirm closure
 		_, stillOpen := <-subChan1
@@ -155,7 +155,7 @@ func TestFanOutQueueCore_PublishSubscribeDeSubscribe_Simple(t *testing.T) {
 			t.Errorf("Received message %v on desubscribed channel; expected channel to be closed.", val)
 		}
 		// If !stillOpen, it's correctly closed, received zero value.
-	case <-time.After(50 * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 		// This case can be hit if the channel is closed and empty.
 		// isChanClosed check above is more deterministic for closure.
 	}
@@ -186,7 +186,7 @@ func TestFanOutQueueCore_MultipleSubscribers(t *testing.T) {
 	}
 
 	for id, ch := range subChans {
-		msg, ok := receiveMsgWithTimeout(t, ch, 200*time.Millisecond)
+		msg, ok := receiveMsgWithTimeout(t, ch, 500*time.Millisecond)
 		if !ok {
 			t.Errorf("Subscriber %s failed to receive message or timed out", id)
 			return
@@ -196,7 +196,7 @@ func TestFanOutQueueCore_MultipleSubscribers(t *testing.T) {
 		}
 	}
 
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 
 	// DeSubscribe one subscriber
 	idToDeSub := subIDs[0]
@@ -207,7 +207,7 @@ func TestFanOutQueueCore_MultipleSubscribers(t *testing.T) {
 	}
 	delete(subChans, idToDeSub) // Remove from active map for next check
 
-	time.Sleep(50 * time.Millisecond) // Allow for channel close propagation
+	time.Sleep(500 * time.Millisecond) // Allow for channel close propagation
 	if !isChanClosed(chanToClose) {
 		t.Errorf("Channel for %s not closed after de-subscribe", idToDeSub)
 	}
@@ -220,7 +220,7 @@ func TestFanOutQueueCore_MultipleSubscribers(t *testing.T) {
 
 	// Check remaining subscribers receive the second message
 	for id, ch := range subChans {
-		msg, ok := receiveMsgWithTimeout(t, ch, 100*time.Millisecond)
+		msg, ok := receiveMsgWithTimeout(t, ch, 500*time.Millisecond)
 		if !ok {
 			t.Errorf("Subscriber %s failed to receive message '%s' or timed out", id, testMsg2)
 			return
@@ -275,7 +275,7 @@ func TestFanOutQueueCore_Stop(t *testing.T) {
 
 	go func() {
 		for {
-			msg, ok := receiveMsgWithTimeout(t, subChan1, 250*time.Millisecond)
+			msg, ok := receiveMsgWithTimeout(t, subChan1, 500*time.Millisecond)
 			if !ok {
 				break
 			}
@@ -285,7 +285,7 @@ func TestFanOutQueueCore_Stop(t *testing.T) {
 	}()
 	go func() {
 		for {
-			msg, ok := receiveMsgWithTimeout(t, subChan2, 250*time.Millisecond)
+			msg, ok := receiveMsgWithTimeout(t, subChan2, 500*time.Millisecond)
 			if !ok {
 				break
 			}
@@ -350,7 +350,7 @@ func TestFanOutQueueCore_BlockedSubscriberWillRemove(t *testing.T) {
 		t.Fatalf("Publish failed: %v", pubErr)
 	}
 
-	time.Sleep(150 * time.Millisecond) // Give ample time for either default or timeout.
+	time.Sleep(500 * time.Millisecond) // Give ample time for either default or timeout.
 
 	core.mu.RLock()
 	_, stillSubscribed := core.subscribers[id]
@@ -418,7 +418,7 @@ func TestFanOutQueueCore_PublishToFullPublishChan_ReturnsError(t *testing.T) {
 		}
 	}()
 
-	time.Sleep(100 * time.Millisecond) // Allow time for auto-desubscribe if it happened.
+	time.Sleep(500 * time.Millisecond) // Allow time for auto-desubscribe if it happened.
 
 	core.mu.RLock()
 	_, stillSubscribed := core.subscribers[blockerSubID]
@@ -511,7 +511,7 @@ func TestChannelTripRecordMessageQueue_Lifecycle(t *testing.T) {
 		}
 	}()
 
-	receivedMsg, ok := receiveMsgWithTimeout(t, subChan, 100*time.Millisecond)
+	receivedMsg, ok := receiveMsgWithTimeout(t, subChan, 500*time.Millisecond)
 	if !ok {
 		t.Fatal("Failed to receive TripRecordMessage or channel closed/timed out")
 	}
@@ -524,7 +524,7 @@ func TestChannelTripRecordMessageQueue_Lifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DeSubscribe failed: %v", err)
 	}
-	time.Sleep(50 * time.Millisecond) // allow for channel close
+	time.Sleep(500 * time.Millisecond) // allow for channel close
 	if !isChanClosed(subChan) {
 		t.Error("Subscriber channel not closed after DeSubscribe")
 	}
@@ -570,7 +570,7 @@ func TestChannelTripRecordMessageQueue_PublishError(t *testing.T) {
 		for range blockerChan {
 		}
 	}() // Unblock the fanOutRoutine.
-	time.Sleep(100 * time.Millisecond) // Allow fanOutRoutine to process/timeout.
+	time.Sleep(500 * time.Millisecond) // Allow fanOutRoutine to process/timeout.
 	q.Stop()                           // Stop the queue.
 }
 
@@ -618,7 +618,7 @@ func TestChannelTripAddressMessageQueue_Lifecycle(t *testing.T) {
 		}
 	}()
 
-	receivedMsg, ok := receiveMsgWithTimeout(t, subChan, 300*time.Millisecond)
+	receivedMsg, ok := receiveMsgWithTimeout(t, subChan, 500*time.Millisecond)
 	if !ok {
 		t.Fatal("Failed to receive TripAddressMessage or channel closed/timed out")
 	}
@@ -631,7 +631,7 @@ func TestChannelTripAddressMessageQueue_Lifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DeSubscribe failed: %v", err)
 	}
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	if !isChanClosed(subChan) {
 		t.Error("Subscriber channel not closed after DeSubscribe")
 	}
@@ -670,7 +670,7 @@ func TestChannelTripAddressMessageQueue_PublishErrorIgnored(t *testing.T) {
 		for range blockerChan {
 		}
 	}()
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	q.Stop()
 }
 

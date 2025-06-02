@@ -159,26 +159,26 @@ func (db *inMemoryTripDBWrapper) UpdateTripInfo(info *dbt.TripInfo) error {
 
 // UpdateTripRecord updates a specific record within a trip.
 // This function updates both the RecordInfo and RecordData parts.
-func (db *inMemoryTripDBWrapper) UpdateTripRecord(recordInfo dbt.RecordInfo) error {
+func (db *inMemoryTripDBWrapper) UpdateTripRecord(record *dbt.Record) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
 	// Update the RecordInfo in trip data
 	for _, tripData := range db.tripsData {
 		foundIdx := -1
-		for i, record := range tripData.Records {
-			if record.ID == recordInfo.ID {
+		for i, rec := range tripData.Records {
+			if rec.ID == record.ID {
 				foundIdx = i
 				break
 			}
 		}
 		if foundIdx != -1 {
 			// Update the record in the trip data
-			tripData.Records[foundIdx].RecordInfo = recordInfo
+			tripData.Records[foundIdx] = *record
 			return nil // Record found and updated, exit early
 		}
 	}
-	return fmt.Errorf("record with ID %s not found in any trip for update", recordInfo.ID)
+	return fmt.Errorf("record with ID %s not found in any trip for update", record.ID)
 }
 
 // TripAddressListAdd adds an address to a trip's address list.

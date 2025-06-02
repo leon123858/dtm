@@ -123,19 +123,42 @@ func (p *pgDBWrapper) UpdateTripInfo(info *db.TripInfo) error {
 	return p.db.Model(&TripInfoModel{}).Where("id = ?", info.ID).Updates(tripModel).Error
 }
 
-func (p *pgDBWrapper) UpdateTripRecord(record db.RecordInfo) error {
-	recordModel := RecordModel{
-		ID:            record.ID,
-		Name:          record.Name,
-		Amount:        record.Amount,
-		PrePayAddress: string(record.PrePayAddress),
-	}
-	// Note: This only updates fields in RecordModel.
-	// If RecordData.ShouldPayAddress needs updating, that's a separate, more complex operation:
-	// 1. Delete existing RecordShouldPayAddressListModel entries for this record.
-	// 2. Create new RecordShouldPayAddressListModel entries.
-	// This would typically be handled in a transaction.
-	return p.db.Model(&RecordModel{}).Where("id = ?", record.ID).Updates(recordModel).Error
+func (p *pgDBWrapper) UpdateTripRecord(record *db.Record) error {
+	// use transaction to update info and data
+	return p.db.Transaction(func(tx *gorm.DB) error {
+		// read recordModel.TripId and update recordModel
+		var recordModel RecordModel
+		if err := tx.First(&recordModel, "id = ?", record.RecordInfo.ID).Error; err != nil {
+			return err
+		}
+
+		recordModel.Name = record.RecordInfo.Name
+		recordModel.Amount = record.RecordInfo.Amount
+		recordModel.PrePayAddress = string(record.RecordInfo.PrePayAddress)
+		if err := tx.Model(&RecordModel{}).Where("id = ?", record.RecordInfo.ID).Updates(recordModel).Error; err != nil {
+			return err
+		}
+
+		// Update RecordShouldPayAddressListModel
+		if err := tx.Where("record_id = ?", record.RecordInfo.ID).Delete(&RecordShouldPayAddressListModel{}).Error; err != nil {
+			return err
+		}
+
+		// insert batch
+		models := make([]RecordShouldPayAddressListModel, 0, len(record.RecordData.ShouldPayAddress))
+		for _, addr := range record.RecordData.ShouldPayAddress {
+			shouldPayModel := RecordShouldPayAddressListModel{
+				RecordID: record.RecordInfo.ID,
+				TripID:   recordModel.TripID, // Link to the trip
+				Address:  string(addr),
+			}
+			models = append(models, shouldPayModel)
+		}
+		if err := tx.Create(&models).Error; err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 func (p *pgDBWrapper) TripAddressListAdd(id uuid.UUID, address db.Address) error {

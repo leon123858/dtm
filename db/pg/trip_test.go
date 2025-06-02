@@ -262,7 +262,16 @@ func TestUpdateTripRecord(t *testing.T) {
 	require.NoError(t, err)
 
 	updatedRecordInfo := db.RecordInfo{ID: recordID, Name: "Updated Record", Amount: 75.25, PrePayAddress: prePayAddr}
-	err = wrapper.UpdateTripRecord(updatedRecordInfo)
+	updatedRecord := db.Record{
+		RecordInfo: updatedRecordInfo,
+		RecordData: db.RecordData{ShouldPayAddress: []db.Address{"shouldpay_for_update_test_utr"}},
+	}
+	// should err as db constrain
+	err = wrapper.UpdateTripRecord(&updatedRecord)
+	require.Error(t, err)
+	// should success as insert address
+	require.NoError(t, wrapper.TripAddressListAdd(tripID, db.Address("shouldpay_for_update_test_utr"))) // Add a should pay address
+	err = wrapper.UpdateTripRecord(&updatedRecord)
 	require.NoError(t, err)
 
 	fetchedRecords, err := wrapper.GetTripRecords(tripID)
@@ -271,6 +280,10 @@ func TestUpdateTripRecord(t *testing.T) {
 	assert.Equal(t, updatedRecordInfo.Name, fetchedRecords[0].Name)
 	assert.Equal(t, updatedRecordInfo.Amount, fetchedRecords[0].Amount)
 	assert.Equal(t, updatedRecordInfo.PrePayAddress, fetchedRecords[0].PrePayAddress)
+
+	shouldPayAddresses, err := wrapper.GetRecordAddressList(recordID)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []db.Address{"shouldpay_for_update_test_utr"}, shouldPayAddresses)
 }
 
 func TestDeleteTripRecord(t *testing.T) {

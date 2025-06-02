@@ -29,12 +29,9 @@ func Serve() {
 	executableSchema := graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{
 		TripDB:                  dbDep,
 		TripMessageQueueWrapper: goch.NewGoChanTripMessageQueueWrapper(), // Use in-memory message queue
-		// TripDataLoader: loader.TripDataLoader{
-		// 	RecordLoader: dataloadgen.NewMappedLoader(dbDep.DataLoaderGetTripRecordList),
-		// },
 	}})
-	r.POST("/query", GraphQLHandler(executableSchema))
-	r.GET("/query", GraphQLHandler(executableSchema))
+	r.POST("/query", TripDataLoaderInjectionMiddleware(dbDep), GraphQLHandler(executableSchema))
+	r.GET("/query", TripDataLoaderInjectionMiddleware(dbDep), GraphQLHandler(executableSchema))
 	r.GET("/", GraphQLPlaygroundHandler("DTM", "/query"))
 	r.Run()
 }

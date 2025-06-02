@@ -8,3 +8,10 @@ type Trip struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 }
+
+type Record struct {
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	Amount        float64 `json:"amount"`
+	PrePayAddress string  `json:"prePayAddress"`
+}
