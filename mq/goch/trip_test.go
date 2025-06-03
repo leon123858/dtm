@@ -486,7 +486,7 @@ func TestNewChannelTripRecordMessageQueue(t *testing.T) {
 
 func TestChannelTripRecordMessageQueue_Lifecycle(t *testing.T) {
 	t.Parallel()
-	q := NewChannelTripRecordMessageQueue(mq.ActionUpdate, 0) // unbuffered core publishChan
+	q := NewChannelTripRecordMessageQueue(mq.ActionUpdate, 5)
 	defer q.Stop()
 
 	if q.GetAction() != mq.ActionUpdate {
@@ -505,11 +505,9 @@ func TestChannelTripRecordMessageQueue_Lifecycle(t *testing.T) {
 		PrePayAddress: testAddress,
 	}
 
-	go func() {
-		if pubErr := q.Publish(msg); pubErr != nil {
-			t.Errorf("Publish failed: %v", pubErr)
-		}
-	}()
+	if pubErr := q.Publish(msg); pubErr != nil {
+		t.Errorf("Publish failed: %v", pubErr)
+	}
 
 	receivedMsg, ok := receiveMsgWithTimeout(t, subChan, 500*time.Millisecond)
 	if !ok {
@@ -597,7 +595,7 @@ func TestNewChannelTripAddressMessageQueue(t *testing.T) {
 
 func TestChannelTripAddressMessageQueue_Lifecycle(t *testing.T) {
 	t.Parallel()
-	q := NewChannelTripAddressMessageQueue(mq.ActionCreate, 0) // unbuffered core publishChan
+	q := NewChannelTripAddressMessageQueue(mq.ActionCreate, 1)
 	defer q.Stop()
 
 	if q.GetAction() != mq.ActionCreate {
@@ -611,16 +609,14 @@ func TestChannelTripAddressMessageQueue_Lifecycle(t *testing.T) {
 
 	msg := mq.TripAddressMessage{Address: testAddress}
 
-	go func() {
-		// Note: ChannelTripAddressMessageQueue.Publish ignores errors from core.Publish.
-		if pubErr := q.Publish(msg); pubErr != nil {
-			t.Errorf("Publish for TripAddressMessage unexpectedly returned error: %v", pubErr)
-		}
-	}()
+	// Note: ChannelTripAddressMessageQueue.Publish ignores errors from core.Publish.
+	if pubErr := q.Publish(msg); pubErr != nil {
+		t.Errorf("Publish for TripAddressMessage unexpectedly returned error: %v", pubErr)
+	}
 
 	receivedMsg, ok := receiveMsgWithTimeout(t, subChan, 500*time.Millisecond)
 	if !ok {
-		t.Fatal("Failed to receive TripAddressMessage or channel closed/timed out")
+		t.Error("Failed to receive TripAddressMessage or channel closed/timed out")
 	}
 
 	if !reflect.DeepEqual(receivedMsg, msg) {

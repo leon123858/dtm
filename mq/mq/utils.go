@@ -36,7 +36,7 @@ func SubscribeProcessor[S Subscriber[M], M any, O any](
 			if err := service.DeSubscribe(uid); err != nil {
 				fmt.Printf("Error de-subscribing %s: %v\n", uid, err)
 			} else {
-				fmt.Printf("De-subscribed %s successfully.\n", uid)
+				// fmt.Printf("De-subscribed %s successfully.\n", uid)
 			}
 			close(outputStream) // 如果每個訂閱者獨佔 outputStream，可以考慮在這裡關閉
 		}()
@@ -51,7 +51,7 @@ func SubscribeProcessor[S Subscriber[M], M any, O any](
 
 				output, skip, err := transformFunc(msg)
 				if err != nil {
-					fmt.Printf("Error transforming message for ID %s: %v. Skipping.\n", uid, err)
+					// fmt.Printf("Error transforming message for ID %s: %v. Skipping.\n", uid, err)
 					continue
 				}
 				if skip {
@@ -63,12 +63,12 @@ func SubscribeProcessor[S Subscriber[M], M any, O any](
 				case outputStream <- output:
 					// Message sent successfully
 				case <-ctx.Done():
-					fmt.Printf("Context cancelled while sending message to outputStream for ID %s. Cleaning up.\n", uid)
+					// fmt.Printf("Context cancelled while sending message to outputStream for ID %s. Cleaning up.\n", uid)
 					return
 				}
 
 			case <-ctx.Done():
-				fmt.Printf("Context for subscription ID %s cancelled. Cleaning up.\n", uid)
+				// fmt.Printf("Context for subscription ID %s cancelled. Cleaning up.\n", uid)
 				return
 			}
 		}

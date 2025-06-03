@@ -1,9 +1,10 @@
 package web
 
 import (
-	"dtm/db/mem"
 	"dtm/graph"
 	"dtm/mq/goch"
+
+	"dtm/db/pg"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,14 +18,14 @@ func Serve() {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 	// setup db service
-	// db, err := pg.InitPostgresGORM(pg.CreateDSN())
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// defer pg.CloseGORM(db)
+	db, err := pg.InitPostgresGORM(pg.CreateDSN())
+	if err != nil {
+		panic(err)
+	}
+	defer pg.CloseGORM(db)
 	// GraphQL endpoint
-	dbDep := mem.NewInMemoryTripDBWrapper()
-	// dbDep := pg.NewGORMTripDBWrapper(db)
+	// dbDep := mem.NewInMemoryTripDBWrapper()
+	dbDep := pg.NewPgDBWrapper(db)
 	executableSchema := graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{
 		TripDB:                  dbDep,
 		TripMessageQueueWrapper: goch.NewGoChanTripMessageQueueWrapper(), // Use in-memory message queue

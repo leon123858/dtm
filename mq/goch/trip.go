@@ -70,7 +70,7 @@ func (f *fanOutQueueCore[T]) Subscribe() (uuid.UUID, <-chan T, error) {
 	defer f.mu.Unlock()
 
 	f.subscribers[subscriberID] = subChan
-	fmt.Printf("goch: New subscriber with ID '%s' added.\n", subscriberID)
+	// fmt.Printf("goch: New subscriber with ID '%s' added.\n", subscriberID)
 	return subscriberID, subChan, nil
 }
 
@@ -82,7 +82,7 @@ func (f *fanOutQueueCore[T]) DeSubscribe(subscriberID uuid.UUID) error {
 	if ch, ok := f.subscribers[subscriberID]; ok {
 		delete(f.subscribers, subscriberID)
 		close(ch) // Important: Close the subscriber's channel
-		fmt.Printf("goch: Subscriber with ID '%s' removed and its channel closed.\n", subscriberID)
+		// fmt.Printf("goch: Subscriber with ID '%s' removed and its channel closed.\n", subscriberID)
 		return nil
 	}
 	return fmt.Errorf("goch: subscriber with ID '%s' not found", subscriberID)
@@ -92,7 +92,7 @@ func (f *fanOutQueueCore[T]) DeSubscribe(subscriberID uuid.UUID) error {
 func (f *fanOutQueueCore[T]) Stop() {
 	close(f.publishChan) // Closing the publish channel will end the fan-out routine's loop
 	f.wg.Wait()          // Wait for the fan-out routine to finish
-	fmt.Println("goch: Fan-out queue stopped.")
+	// fmt.Println("goch: Fan-out queue stopped.")
 }
 
 // startFanOutRoutine handles fanning out messages from the publishChan to subscribers.
@@ -115,11 +115,11 @@ func (f *fanOutQueueCore[T]) startFanOutRoutine() {
 			case subChan <- msg:
 				// Message sent successfully
 			case <-time.After(50 * time.Millisecond): // Optional: Add a timeout for slow consumers
-				fmt.Printf("goch: Warning: Timed out sending message to subscriber ID '%s'. Channel might be blocked.\n", id)
+				// fmt.Printf("goch: Warning: Timed out sending message to subscriber ID '%s'. Channel might be blocked.\n", id)
 				failedSubscribers = append(failedSubscribers, id)
 			default:
 				// Channel is blocked or closed (sending to a closed channel with select default won't panic, it just goes to default)
-				fmt.Printf("goch: Warning: Failed to send message to subscriber ID '%s'. Channel is full or closed.\n", id)
+				// fmt.Printf("goch: Warning: Failed to send message to subscriber ID '%s'. Channel is full or closed.\n", id)
 				failedSubscribers = append(failedSubscribers, id)
 			}
 		}
@@ -131,7 +131,7 @@ func (f *fanOutQueueCore[T]) startFanOutRoutine() {
 			}
 		}
 	}
-	fmt.Println("goch: Fan-out routine exiting.")
+	// fmt.Println("goch: Fan-out routine exiting.")
 }
 
 // --- Specific Message Queue Implementations ---
