@@ -179,6 +179,7 @@ describe('GraphQL API End-to-End Tests', () => {
 	let tripId; // 用於儲存測試流程中建立的 Trip ID
 	let recordId; // 用於儲存測試流程中建立的 Record ID (用於非 subscription 測試)
 	const testTripName = `Test Trip - ${Date.now()}`;
+	let nenExistTripId = '0b4d17a1-7db3-4686-aae2-2120f7919d50';
 
 	// 在所有測試開始前，先建立一個共用的旅程
 	beforeAll(async () => {
@@ -405,6 +406,42 @@ describe('GraphQL API End-to-End Tests', () => {
 			const { data: subData, errors: subErrors } = await subscriptionPromise;
 			expect(subErrors).toBeUndefined();
 			expect(subData.subAddressCreate).toBe(newAddressName);
+
+			// 清理
+			await client.mutate({
+				mutation: DELETE_ADDRESS,
+				variables: { tripId, address: newAddressName },
+			});
+		});
+
+		it('should not receive a notification when a new address is created (because not tripId)', async () => {
+			const newAddressName = `SubAddr-${Date.now()}`;
+
+			const subObservable = client.subscribe({
+				query: SUB_ADDRESS_CREATE,
+				variables: { tripId: nenExistTripId },
+			});
+			const subscriptionPromise = waitForSubscription(subObservable);
+
+			// sleep to wait subscript trigger
+			await sleep(1000);
+
+			// 觸發 mutation
+			const { data: mutationData, error: mutationError } = await client.mutate({
+				mutation: CREATE_ADDRESS,
+				variables: { tripId, address: newAddressName },
+			});
+
+			expect(mutationError).toBeUndefined();
+			expect(mutationData.createAddress).toBe(newAddressName);
+
+			// 等待並驗證 subscription 結果
+			try {
+				await subscriptionPromise;
+				throw 'should not receive here as tripID not map';
+			} catch (err) {
+				expect(err).not.toBe('should not receive here as tripID not map');
+			}
 
 			// 清理
 			await client.mutate({

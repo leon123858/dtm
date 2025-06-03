@@ -29,4 +29,5 @@ cli:
 
 dev-docker:
 	docker run -d --name dtm-pg -e POSTGRES_HOST_AUTH_METHOD=trust -p 5432:5432 postgres
-	go run dtm.go migrate -u 
+	docker run -p 5672:5672 -d --hostname dtm-rabbit --name dtm-rabbit rabbitmq:3
+	go run dtm.go migrate -u

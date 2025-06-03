@@ -223,7 +223,7 @@ func (r *queryResolver) Trip(ctx context.Context, tripID string) (*model.Trip, e
 	if !ok {
 		return nil, fmt.Errorf("data loader is not available")
 	}
-	
+
 	id, err := uuid.Parse(tripID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
