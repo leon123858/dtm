@@ -215,15 +215,26 @@ func (r *mutationResolver) DeleteAddress(ctx context.Context, tripID string, add
 
 // Trip is the resolver for the trip field.
 func (r *queryResolver) Trip(ctx context.Context, tripID string) (*model.Trip, error) {
-	dbTripInfo := r.TripDB
+	ginCtx, err := utils.GinContextFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dataLoader, ok := ginCtx.Value(string(db.DataLoaderKeyTripData)).(*db.TripDataLoader)
+	if !ok {
+		return nil, fmt.Errorf("data loader is not available")
+	}
+	
 	id, err := uuid.Parse(tripID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
 	}
 
-	tripInfo, err := dbTripInfo.GetTripInfo(id)
+	tripInfo, err := dataLoader.GetTripInfoList.Load(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get trip info: %w", err)
+	}
+	if tripInfo == nil {
+		return nil, fmt.Errorf("trip not found with ID: %s", tripID)
 	}
 
 	return &model.Trip{
@@ -352,13 +363,21 @@ func (r *subscriptionResolver) SubAddressDelete(ctx context.Context, tripID stri
 
 // Records is the resolver for the records field.
 func (r *tripResolver) Records(ctx context.Context, obj *model.Trip) ([]*model.Record, error) {
-	dbTripInfo := r.TripDB
+	ginCtx, err := utils.GinContextFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dataLoader, ok := ginCtx.Value(string(db.DataLoaderKeyTripData)).(*db.TripDataLoader)
+	if !ok {
+		return nil, fmt.Errorf("data loader is not available")
+	}
+
 	tripID, err := uuid.Parse(obj.ID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
 	}
 
-	records, err := dbTripInfo.GetTripRecords(tripID)
+	records, err := dataLoader.GetRecordInfoList.Load(ctx, tripID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get trip records: %w", err)
 	}
@@ -377,7 +396,6 @@ func (r *tripResolver) Records(ctx context.Context, obj *model.Trip) ([]*model.R
 
 // MoneyShare is the resolver for the moneyShare field.
 func (r *tripResolver) MoneyShare(ctx context.Context, obj *model.Trip) ([]*model.Tx, error) {
-	dbTripInfo := r.TripDB
 	ginCtx, err := utils.GinContextFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -392,7 +410,7 @@ func (r *tripResolver) MoneyShare(ctx context.Context, obj *model.Trip) ([]*mode
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
 	}
 
-	records, err := dbTripInfo.GetTripRecords(tripID)
+	records, err := dataLoader.GetRecordInfoList.Load(ctx, tripID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get trip records: %w", err)
 	}
@@ -452,13 +470,21 @@ func (r *tripResolver) MoneyShare(ctx context.Context, obj *model.Trip) ([]*mode
 
 // AddressList is the resolver for the addressList field.
 func (r *tripResolver) AddressList(ctx context.Context, obj *model.Trip) ([]string, error) {
-	dbTripInfo := r.TripDB
+	ginCtx, err := utils.GinContextFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dataLoader, ok := ginCtx.Value(string(db.DataLoaderKeyTripData)).(*db.TripDataLoader)
+	if !ok {
+		return nil, fmt.Errorf("data loader is not available")
+	}
+
 	tripID, err := uuid.Parse(obj.ID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
 	}
 
-	addresses, err := dbTripInfo.GetTripAddressList(tripID)
+	addresses, err := dataLoader.GetTripAddressList.Load(ctx, tripID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get trip addresses: %w", err)
 	}

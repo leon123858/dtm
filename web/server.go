@@ -4,6 +4,7 @@ import (
 	"dtm/graph"
 	"dtm/mq/goch"
 
+	"dtm/db/mem"
 	"dtm/db/pg"
 
 	"github.com/gin-gonic/gin"
@@ -24,8 +25,8 @@ func Serve() {
 	}
 	defer pg.CloseGORM(db)
 	// GraphQL endpoint
-	// dbDep := mem.NewInMemoryTripDBWrapper()
-	dbDep := pg.NewPgDBWrapper(db)
+	dbDep := mem.NewInMemoryTripDBWrapper()
+	// dbDep := pg.NewPgDBWrapper(db)
 	executableSchema := graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{
 		TripDB:                  dbDep,
 		TripMessageQueueWrapper: goch.NewGoChanTripMessageQueueWrapper(), // Use in-memory message queue
