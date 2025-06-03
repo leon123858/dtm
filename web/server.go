@@ -2,7 +2,6 @@ package web
 
 import (
 	"dtm/db/mem"
-	"dtm/db/pg"
 	"dtm/graph"
 	"dtm/mq/goch"
 
@@ -18,11 +17,11 @@ func Serve() {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 	// setup db service
-	db, err := pg.InitPostgresGORM(pg.CreateDSN())
-	if err != nil {
-		panic(err)
-	}
-	defer pg.CloseGORM(db)
+	// db, err := pg.InitPostgresGORM(pg.CreateDSN())
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// defer pg.CloseGORM(db)
 	// GraphQL endpoint
 	dbDep := mem.NewInMemoryTripDBWrapper()
 	// dbDep := pg.NewGORMTripDBWrapper(db)
@@ -30,6 +29,7 @@ func Serve() {
 		TripDB:                  dbDep,
 		TripMessageQueueWrapper: goch.NewGoChanTripMessageQueueWrapper(), // Use in-memory message queue
 	}})
+
 	r.POST("/query", TripDataLoaderInjectionMiddleware(dbDep), GraphQLHandler(executableSchema))
 	r.GET("/query", TripDataLoaderInjectionMiddleware(dbDep), GraphQLHandler(executableSchema))
 	r.GET("/", GraphQLPlaygroundHandler("DTM", "/query"))

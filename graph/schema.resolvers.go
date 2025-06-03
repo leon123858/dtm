@@ -234,10 +234,15 @@ func (r *queryResolver) Trip(ctx context.Context, tripID string) (*model.Trip, e
 
 // ShouldPayAddress is the resolver for the shouldPayAddress field.
 func (r *recordResolver) ShouldPayAddress(ctx context.Context, obj *model.Record) ([]string, error) {
-	dataLoader, ok := ctx.Value(db.DataLoaderKeyTripData).(db.TripDataLoader)
+	ginCtx, err := utils.GinContextFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dataLoader, ok := ginCtx.Value(string(db.DataLoaderKeyTripData)).(*db.TripDataLoader)
 	if !ok {
 		return nil, fmt.Errorf("data loader is not available")
 	}
+
 	recordID, err := uuid.Parse(obj.ID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid record ID: %w", err)
@@ -373,7 +378,11 @@ func (r *tripResolver) Records(ctx context.Context, obj *model.Trip) ([]*model.R
 // MoneyShare is the resolver for the moneyShare field.
 func (r *tripResolver) MoneyShare(ctx context.Context, obj *model.Trip) ([]*model.Tx, error) {
 	dbTripInfo := r.TripDB
-	dataLoader, ok := ctx.Value(db.DataLoaderKeyTripData).(db.TripDataLoader)
+	ginCtx, err := utils.GinContextFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dataLoader, ok := ginCtx.Value(string(db.DataLoaderKeyTripData)).(*db.TripDataLoader)
 	if !ok {
 		return nil, fmt.Errorf("data loader is not available")
 	}

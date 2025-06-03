@@ -67,8 +67,8 @@ const CREATE_RECORD = gql`
 `;
 
 const UPDATE_RECORD = gql`
-	mutation UpdateRecord($tripId: ID!, $recordId: ID!, $input: NewRecord!) {
-		updateRecord(tripId: $tripId, recordId: $recordId, input: $input) {
+	mutation UpdateRecord($recordId: ID!, $input: NewRecord!) {
+		updateRecord(recordId: $recordId, input: $input) {
 			id
 			name
 			amount
@@ -308,7 +308,6 @@ describe('GraphQL API End-to-End Tests', () => {
 			const { data, error } = await client.mutate({
 				mutation: UPDATE_RECORD,
 				variables: {
-					tripId,
 					recordId,
 					input: updatedRecord,
 				},
@@ -476,7 +475,6 @@ describe('GraphQL API End-to-End Tests', () => {
 			const { data: mutationData, error: mutationError } = await client.mutate({
 				mutation: UPDATE_RECORD,
 				variables: {
-					tripId,
 					recordId: recordIdForSubTests,
 					input: updatedRecordPayload,
 				},

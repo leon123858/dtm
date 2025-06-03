@@ -1,7 +1,9 @@
 package web
 
 import (
+	"context"
 	"dtm/db/db"
+	"dtm/graph/utils"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -35,9 +37,18 @@ func limiterMiddleWare() gin.HandlerFunc {
 	return middleware
 }
 
+func GinContextToContextMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := context.WithValue(c.Request.Context(), utils.GinContextKeyValue, c)
+		c.Request = c.Request.WithContext(ctx)
+		c.Next()
+	}
+}
+
 func TripDataLoaderInjectionMiddleware(wrapper db.TripDBWrapper) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Set(string(db.DataLoaderKeyTripData), db.NewTripDataLoader(wrapper))
+		DBTripDataLoader := *db.NewTripDataLoader(wrapper)
+		c.Set(string(db.DataLoaderKeyTripData), &DBTripDataLoader)
 		c.Next()
 	}
 }
@@ -57,4 +68,5 @@ func setupMiddlewares(r *gin.Engine) {
 		// ContentSecurityPolicy: "default-src 'self'", // Customize as needed
 		ReferrerPolicy: "strict-origin-when-cross-origin",
 	}))
+	r.Use(GinContextToContextMiddleware())
 }
