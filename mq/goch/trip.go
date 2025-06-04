@@ -11,18 +11,13 @@ import (
 
 // --- Generic Fan-Out Queue Core ---
 
-// TopicProvider 定義了一個可以提供 Topic ID 的介面
-type TopicProvider interface {
-	GetTopic() uuid.UUID
-}
-
 type Subscriber[T any] struct {
 	TripID  uuid.UUID
 	Channel chan T
 }
 
 // fanOutQueueCore provides the generic fan-out logic for any message type.
-type fanOutQueueCore[T TopicProvider] struct {
+type fanOutQueueCore[T mq.TopicProvider] struct {
 	publishChan chan T                      // Main channel for incoming messages
 	subscribers map[uuid.UUID]Subscriber[T] // Map of subscriberID to subscriber channel
 	mu          sync.RWMutex                // Protects the subscribers map
@@ -32,7 +27,7 @@ type fanOutQueueCore[T TopicProvider] struct {
 }
 
 // newFanOutQueueCore creates a new instance of fanOutQueueCore.
-func newFanOutQueueCore[T TopicProvider](bufferSize int) *fanOutQueueCore[T] {
+func newFanOutQueueCore[T mq.TopicProvider](bufferSize int) *fanOutQueueCore[T] {
 	var pubChan chan T
 	if bufferSize > 0 {
 		pubChan = make(chan T, bufferSize)
