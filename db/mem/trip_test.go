@@ -305,8 +305,9 @@ func TestUpdateTripRecord(t *testing.T) {
 			},
 		}
 
-		err := db.UpdateTripRecord(&updatedRecord)
+		tripId, err := db.UpdateTripRecord(&updatedRecord)
 		assert.NoError(t, err)
+		assert.Equal(t, tripInfo.ID, tripId, "Trip ID should match the original trip")
 
 		// Retrieve records and verify
 		retrievedRecords, err := db.GetTripRecords(tripInfo.ID)
@@ -336,13 +337,14 @@ func TestUpdateTripRecord(t *testing.T) {
 			ID:   uuid.New(),
 			Name: "Non-existent Record",
 		}
-		err := db.UpdateTripRecord(&dbt.Record{
+		tripId, err := db.UpdateTripRecord(&dbt.Record{
 			RecordInfo: nonExistentRecordInfo,
 			RecordData: dbt.RecordData{
 				ShouldPayAddress: []dbt.Address{"PayX"},
 			},
 		})
 		assert.Error(t, err)
+		assert.Equal(t, uuid.Nil, tripId, "Trip ID should be nil for non-existent record")
 		assert.Contains(t, err.Error(), "not found")
 	})
 }
@@ -472,8 +474,9 @@ func TestDeleteTripRecord(t *testing.T) {
 	_ = db.CreateTripRecords(tripInfo.ID, []dbt.Record{record1, record2, record3})
 
 	t.Run("Successfully delete an existing record", func(t *testing.T) {
-		err := db.DeleteTripRecord(record2.ID)
+		tripId, err := db.DeleteTripRecord(record2.ID)
 		assert.NoError(t, err)
+		assert.Equal(t, tripInfo.ID, tripId, "Trip ID should match the original trip")
 
 		retrievedRecords, err := db.GetTripRecords(tripInfo.ID)
 		assert.NoError(t, err)
@@ -490,9 +493,10 @@ func TestDeleteTripRecord(t *testing.T) {
 
 	t.Run("Fail to delete non-existent record", func(t *testing.T) {
 		nonExistentID := uuid.New()
-		err := db.DeleteTripRecord(nonExistentID)
+		tripId, err := db.DeleteTripRecord(nonExistentID)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "not found in any trip")
+		assert.Empty(t, tripId)
+		assert.Contains(t, err.Error(), "not found")
 	})
 }
 

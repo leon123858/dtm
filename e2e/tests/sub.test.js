@@ -421,7 +421,7 @@ describe('GraphQL API End-to-End Tests', () => {
 				query: SUB_ADDRESS_CREATE,
 				variables: { tripId: nenExistTripId },
 			});
-			const subscriptionPromise = waitForSubscription(subObservable);
+			const subscriptionPromise = waitForSubscription(subObservable, 1500);
 
 			// sleep to wait subscript trigger
 			await sleep(1000);

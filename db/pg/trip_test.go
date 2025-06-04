@@ -267,12 +267,14 @@ func TestUpdateTripRecord(t *testing.T) {
 		RecordData: db.RecordData{ShouldPayAddress: []db.Address{"shouldpay_for_update_test_utr"}},
 	}
 	// should err as db constrain
-	err = wrapper.UpdateTripRecord(&updatedRecord)
+	tripId, err := wrapper.UpdateTripRecord(&updatedRecord)
 	require.Error(t, err)
+	assert.Empty(t, tripId)
 	// should success as insert address
 	require.NoError(t, wrapper.TripAddressListAdd(tripID, db.Address("shouldpay_for_update_test_utr"))) // Add a should pay address
-	err = wrapper.UpdateTripRecord(&updatedRecord)
+	tripId, err = wrapper.UpdateTripRecord(&updatedRecord)
 	require.NoError(t, err)
+	assert.Equal(t, tripID, tripId)
 
 	fetchedRecords, err := wrapper.GetTripRecords(tripID)
 	require.NoError(t, err)
@@ -309,8 +311,9 @@ func TestDeleteTripRecord(t *testing.T) {
 	err = wrapper.CreateTripRecords(tripID, records)
 	require.NoError(t, err)
 
-	err = wrapper.DeleteTripRecord(recordID)
+	tripId, err := wrapper.DeleteTripRecord(recordID)
 	require.NoError(t, err)
+	assert.Equal(t, tripID, tripId)
 
 	fetchedRecords, err := wrapper.GetTripRecords(tripID)
 	require.NoError(t, err)

@@ -17,11 +17,21 @@ const (
 
 type TripRecordMessage struct {
 	ID            uuid.UUID
+	TripID        uuid.UUID
 	Name          string
 	Amount        float64
 	PrePayAddress db.Address
 }
 
+func (m TripRecordMessage) GetTopic() uuid.UUID {
+	return m.TripID
+}
+
 type TripAddressMessage struct {
+	TripID  uuid.UUID
 	Address db.Address
+}
+
+func (m TripAddressMessage) GetTopic() uuid.UUID {
+	return m.TripID
 }

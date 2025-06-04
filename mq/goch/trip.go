@@ -11,18 +11,28 @@ import (
 
 // --- Generic Fan-Out Queue Core ---
 
+// TopicProvider 定義了一個可以提供 Topic ID 的介面
+type TopicProvider interface {
+	GetTopic() uuid.UUID
+}
+
+type Subscriber[T any] struct {
+	TripID  uuid.UUID
+	Channel chan T
+}
+
 // fanOutQueueCore provides the generic fan-out logic for any message type.
-type fanOutQueueCore[T any] struct {
-	publishChan chan T               // Main channel for incoming messages
-	subscribers map[uuid.UUID]chan T // Map of subscriberID to subscriber channel
-	mu          sync.RWMutex         // Protects the subscribers map
-	quit        chan struct{}        // Signal to stop the fan-out goroutine
-	wg          sync.WaitGroup       // WaitGroup for the fan-out goroutine
-	bufferSize  int                  // Buffer size for the main publish channel
+type fanOutQueueCore[T TopicProvider] struct {
+	publishChan chan T                      // Main channel for incoming messages
+	subscribers map[uuid.UUID]Subscriber[T] // Map of subscriberID to subscriber channel
+	mu          sync.RWMutex                // Protects the subscribers map
+	quit        chan struct{}               // Signal to stop the fan-out goroutine
+	wg          sync.WaitGroup              // WaitGroup for the fan-out goroutine
+	bufferSize  int                         // Buffer size for the main publish channel
 }
 
 // newFanOutQueueCore creates a new instance of fanOutQueueCore.
-func newFanOutQueueCore[T any](bufferSize int) *fanOutQueueCore[T] {
+func newFanOutQueueCore[T TopicProvider](bufferSize int) *fanOutQueueCore[T] {
 	var pubChan chan T
 	if bufferSize > 0 {
 		pubChan = make(chan T, bufferSize)
@@ -32,7 +42,7 @@ func newFanOutQueueCore[T any](bufferSize int) *fanOutQueueCore[T] {
 
 	core := &fanOutQueueCore[T]{
 		publishChan: pubChan,
-		subscribers: make(map[uuid.UUID]chan T),
+		subscribers: make(map[uuid.UUID]Subscriber[T]),
 		quit:        make(chan struct{}),
 		bufferSize:  bufferSize,
 		mu:          sync.RWMutex{},
@@ -57,7 +67,7 @@ func (f *fanOutQueueCore[T]) Publish(msg T) error {
 }
 
 // Subscribe adds a new subscriber and returns its channel and ID.
-func (f *fanOutQueueCore[T]) Subscribe() (uuid.UUID, <-chan T, error) {
+func (f *fanOutQueueCore[T]) Subscribe(tripId uuid.UUID) (uuid.UUID, <-chan T, error) {
 	var subChan chan T
 	if f.bufferSize > 0 {
 		subChan = make(chan T, f.bufferSize)
@@ -69,7 +79,10 @@ func (f *fanOutQueueCore[T]) Subscribe() (uuid.UUID, <-chan T, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.subscribers[subscriberID] = subChan
+	f.subscribers[subscriberID] = Subscriber[T]{
+		TripID:  tripId,
+		Channel: subChan,
+	}
 	// fmt.Printf("goch: New subscriber with ID '%s' added.\n", subscriberID)
 	return subscriberID, subChan, nil
 }
@@ -81,7 +94,7 @@ func (f *fanOutQueueCore[T]) DeSubscribe(subscriberID uuid.UUID) error {
 
 	if ch, ok := f.subscribers[subscriberID]; ok {
 		delete(f.subscribers, subscriberID)
-		close(ch) // Important: Close the subscriber's channel
+		close(ch.Channel) // Important: Close the subscriber's channel
 		// fmt.Printf("goch: Subscriber with ID '%s' removed and its channel closed.\n", subscriberID)
 		return nil
 	}
@@ -102,9 +115,11 @@ func (f *fanOutQueueCore[T]) startFanOutRoutine() {
 	for msg := range f.publishChan { // Loop exits when publishChan is closed
 		f.mu.RLock() // Acquire read lock to safely read the subscribers map
 
-		subscribersSnapshot := make(map[uuid.UUID]chan T, len(f.subscribers))
+		subscribersSnapshot := make(map[uuid.UUID]chan T)
 		for id, ch := range f.subscribers {
-			subscribersSnapshot[id] = ch
+			if ch.TripID == msg.GetTopic() { // Only include subscribers for the specific trip ID
+				subscribersSnapshot[id] = ch.Channel // Copy the channel to avoid holding the lock while sending
+			}
 		}
 		f.mu.RUnlock() // Release read lock
 
@@ -161,8 +176,8 @@ func (q *ChannelTripRecordMessageQueue) Publish(msg mq.TripRecordMessage) error 
 }
 
 // Subscribe returns a read-only channel for TripRecordMessages.
-func (q *ChannelTripRecordMessageQueue) Subscribe() (uuid.UUID, <-chan mq.TripRecordMessage, error) {
-	uid, subChan, err := q.core.Subscribe() // Delegate to the core's Subscribe
+func (q *ChannelTripRecordMessageQueue) Subscribe(tripId uuid.UUID) (uuid.UUID, <-chan mq.TripRecordMessage, error) {
+	uid, subChan, err := q.core.Subscribe(tripId) // Delegate to the core's Subscribe
 	return uid, subChan, err
 }
 
@@ -201,8 +216,8 @@ func (q *ChannelTripAddressMessageQueue) Publish(msg mq.TripAddressMessage) erro
 }
 
 // Subscribe returns a read-only channel for TripAddressMessages.
-func (q *ChannelTripAddressMessageQueue) Subscribe() (uuid.UUID, <-chan mq.TripAddressMessage, error) {
-	uid, subChan, err := q.core.Subscribe() // Delegate to the core's Subscribe
+func (q *ChannelTripAddressMessageQueue) Subscribe(tripId uuid.UUID) (uuid.UUID, <-chan mq.TripAddressMessage, error) {
+	uid, subChan, err := q.core.Subscribe(tripId) // Delegate to the core's Subscribe
 	return uid, subChan, err
 }
 

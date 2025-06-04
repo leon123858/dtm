@@ -42,6 +42,15 @@ func isChanClosed[T any](ch <-chan T) bool {
 	}
 }
 
+type MockItem struct {
+	Value   int
+	TopicID uuid.UUID
+}
+
+func (item MockItem) GetTopic() uuid.UUID {
+	return item.TopicID
+}
+
 // --- fanOutQueueCore Tests ---
 
 func TestNewFanOutQueueCore(t *testing.T) {
@@ -49,7 +58,7 @@ func TestNewFanOutQueueCore(t *testing.T) {
 
 	t.Run("Unbuffered", func(t *testing.T) {
 		t.Parallel()
-		core := newFanOutQueueCore[int](0)
+		core := newFanOutQueueCore[MockItem](0)
 		if core == nil {
 			t.Fatal("newFanOutQueueCore returned nil for unbuffered")
 		}
@@ -75,7 +84,7 @@ func TestNewFanOutQueueCore(t *testing.T) {
 	t.Run("Buffered", func(t *testing.T) {
 		t.Parallel()
 		bufferSize := 10
-		core := newFanOutQueueCore[int](bufferSize)
+		core := newFanOutQueueCore[MockItem](bufferSize)
 		if core == nil {
 			t.Fatal("newFanOutQueueCore returned nil for buffered")
 		}
@@ -95,10 +104,10 @@ func TestNewFanOutQueueCore(t *testing.T) {
 
 func TestFanOutQueueCore_PublishSubscribeDeSubscribe_Simple(t *testing.T) {
 	t.Parallel()
-	core := newFanOutQueueCore[int](0) // Unbuffered publishChan
+	core := newFanOutQueueCore[MockItem](0) // Unbuffered publishChan
 	defer core.Stop()
-
-	id1, subChan1, err := core.Subscribe()
+	topic := uuid.New()
+	id1, subChan1, err := core.Subscribe(topic)
 	if err != nil {
 		t.Fatalf("Subscribe failed: %v", err)
 	}
@@ -109,7 +118,7 @@ func TestFanOutQueueCore_PublishSubscribeDeSubscribe_Simple(t *testing.T) {
 	testMsg := 42
 	// Publish in a goroutine because an unbuffered publishChan requires a ready receiver (the fanOutRoutine)
 	go func() {
-		if pubErr := core.Publish(testMsg); pubErr != nil {
+		if pubErr := core.Publish(MockItem{Value: testMsg, TopicID: topic}); pubErr != nil {
 			// Use t.Errorf in goroutines as t.Fatal/Fatalf will only stop the goroutine
 			t.Errorf("Publish failed: %v", pubErr)
 		}
@@ -119,8 +128,8 @@ func TestFanOutQueueCore_PublishSubscribeDeSubscribe_Simple(t *testing.T) {
 	if !ok {
 		t.Errorf("Failed to receive message or channel closed/timed out")
 	}
-	if receivedMsg != testMsg {
-		t.Errorf("Expected message %d, got %d", testMsg, receivedMsg)
+	if receivedMsg.Value != testMsg {
+		t.Errorf("Expected message %d, got %d", testMsg, receivedMsg.Value)
 	}
 
 	time.Sleep(500 * time.Millisecond)
@@ -144,7 +153,7 @@ func TestFanOutQueueCore_PublishSubscribeDeSubscribe_Simple(t *testing.T) {
 
 	// Publish another message; the desubscribed channel should not receive it.
 	msgAfterDeSub := 100
-	if pubErr := core.Publish(msgAfterDeSub); pubErr != nil {
+	if pubErr := core.Publish(MockItem{Value: msgAfterDeSub, TopicID: topic}); pubErr != nil {
 		t.Errorf("Publish after de-subscribe failed: %v", pubErr)
 	}
 
@@ -163,15 +172,15 @@ func TestFanOutQueueCore_PublishSubscribeDeSubscribe_Simple(t *testing.T) {
 
 func TestFanOutQueueCore_MultipleSubscribers(t *testing.T) {
 	t.Parallel()
-	core := newFanOutQueueCore[string](10)
+	core := newFanOutQueueCore[MockItem](10)
 	defer core.Stop()
 
 	numSubscribers := 3
-	subChans := make(map[uuid.UUID]<-chan string)
+	subChans := make(map[uuid.UUID]<-chan MockItem)
 	subIDs := make([]uuid.UUID, numSubscribers)
-
+	topic := uuid.New()
 	for i := 0; i < numSubscribers; i++ {
-		id, ch, err := core.Subscribe()
+		id, ch, err := core.Subscribe(topic)
 		if err != nil {
 			t.Fatalf("Subscribe failed for subscriber %d: %v", i, err)
 		}
@@ -179,7 +188,7 @@ func TestFanOutQueueCore_MultipleSubscribers(t *testing.T) {
 		subIDs[i] = id
 	}
 
-	testMsg := "hello multiple subscribers"
+	testMsg := MockItem{Value: 333, TopicID: topic}
 
 	if err := core.Publish(testMsg); err != nil {
 		t.Fatalf("Publish failed: %v", err)
@@ -192,7 +201,7 @@ func TestFanOutQueueCore_MultipleSubscribers(t *testing.T) {
 			return
 		}
 		if msg != testMsg {
-			t.Errorf("Subscriber %s expected message '%s', got '%s'", id, testMsg, msg)
+			t.Errorf("Subscriber %s expected message '%v', got '%v'", id, testMsg, msg)
 		}
 	}
 
@@ -213,7 +222,7 @@ func TestFanOutQueueCore_MultipleSubscribers(t *testing.T) {
 	}
 
 	// Publish another message
-	testMsg2 := "hello again to remaining"
+	testMsg2 := MockItem{Value: 444, TopicID: topic}
 	if err := core.Publish(testMsg2); err != nil {
 		t.Fatalf("Publish (2) failed: %v", err)
 	}
@@ -222,11 +231,11 @@ func TestFanOutQueueCore_MultipleSubscribers(t *testing.T) {
 	for id, ch := range subChans {
 		msg, ok := receiveMsgWithTimeout(t, ch, 500*time.Millisecond)
 		if !ok {
-			t.Errorf("Subscriber %s failed to receive message '%s' or timed out", id, testMsg2)
+			t.Errorf("Subscriber %s failed to receive message '%v' or timed out", id, testMsg2)
 			return
 		}
 		if msg != testMsg2 {
-			t.Errorf("Subscriber %s expected message '%s', got '%s'", id, testMsg2, msg)
+			t.Errorf("Subscriber %s expected message '%v', got '%v'", id, testMsg2, msg)
 		}
 	}
 
@@ -234,7 +243,7 @@ func TestFanOutQueueCore_MultipleSubscribers(t *testing.T) {
 	select {
 	case msg, open := <-chanToClose:
 		if open {
-			t.Errorf("Desubscribed channel %s received message '%s'", idToDeSub, msg)
+			t.Errorf("Desubscribed channel %s received message '%v'", idToDeSub, msg)
 		}
 	default:
 		// Expected path for a closed and empty channel
@@ -243,7 +252,7 @@ func TestFanOutQueueCore_MultipleSubscribers(t *testing.T) {
 
 func TestFanOutQueueCore_DeSubscribeNonExistent(t *testing.T) {
 	t.Parallel()
-	core := newFanOutQueueCore[int](0)
+	core := newFanOutQueueCore[MockItem](0)
 	defer core.Stop()
 
 	nonExistentID := uuid.New()
@@ -260,18 +269,21 @@ func TestFanOutQueueCore_DeSubscribeNonExistent(t *testing.T) {
 
 func TestFanOutQueueCore_Stop(t *testing.T) {
 	t.Parallel()
-	core := newFanOutQueueCore[int](5) // Buffered publishChan
+	core := newFanOutQueueCore[MockItem](5) // Buffered publishChan
 
-	id1, subChan1, _ := core.Subscribe()
-	id2, subChan2, _ := core.Subscribe()
+	topic1 := uuid.New()
+	topic2 := uuid.New()
 
-	var receivedMessages1 []int
-	var receivedMessages2 []int
+	id1, subChan1, _ := core.Subscribe(topic1)
+	id2, subChan2, _ := core.Subscribe(topic2)
+
+	var receivedMessages1 []MockItem
+	var receivedMessages2 []MockItem
 	doneReceiving := make(chan bool)
 
-	core.Publish(1)
-	core.Publish(2)
-	core.Publish(3)
+	core.Publish(MockItem{Value: 1, TopicID: topic1})
+	core.Publish(MockItem{Value: 2, TopicID: topic2})
+	core.Publish(MockItem{Value: 3, TopicID: uuid.New()})
 
 	go func() {
 		for {
@@ -297,12 +309,11 @@ func TestFanOutQueueCore_Stop(t *testing.T) {
 	<-doneReceiving
 	<-doneReceiving
 
-	expectedMessages := []int{1, 2, 3}
-	if !reflect.DeepEqual(receivedMessages1, expectedMessages) {
-		t.Errorf("Sub1: Expected messages %v, got %v after Stop", expectedMessages, receivedMessages1)
+	if !reflect.DeepEqual(receivedMessages1, []MockItem{{Value: 1, TopicID: topic1}}) {
+		t.Errorf("Sub1: Expected messages %v, got %v after Stop", []MockItem{{Value: 1, TopicID: topic1}}, receivedMessages1)
 	}
-	if !reflect.DeepEqual(receivedMessages2, expectedMessages) {
-		t.Errorf("Sub2: Expected messages %v, got %v after Stop", expectedMessages, receivedMessages2)
+	if !reflect.DeepEqual(receivedMessages2, []MockItem{{Value: 2, TopicID: topic2}}) {
+		t.Errorf("Sub2: Expected messages %v, got %v after Stop", []MockItem{{Value: 2, TopicID: topic2}}, receivedMessages2)
 	}
 
 	stopDone := make(chan struct{})
@@ -336,17 +347,17 @@ func TestFanOutQueueCore_BlockedSubscriberWillRemove(t *testing.T) {
 	t.Parallel()
 
 	// check will break subscriber when target is block
-	core := newFanOutQueueCore[int](1) // publishChan needs to accept message
-
-	id, subChan, err := core.Subscribe()
+	core := newFanOutQueueCore[MockItem](1) // publishChan needs to accept message
+	topic := uuid.New()
+	id, subChan, err := core.Subscribe(topic)
 	if err != nil {
 		t.Fatalf("Subscribe failed: %v", err)
 	}
 
-	if pubErr := core.Publish(456); pubErr != nil {
+	if pubErr := core.Publish(MockItem{Value: 456, TopicID: topic}); pubErr != nil {
 		t.Fatalf("Publish failed: %v", pubErr)
 	}
-	if pubErr := core.Publish(789); pubErr != nil {
+	if pubErr := core.Publish(MockItem{Value: 789, TopicID: topic}); pubErr != nil {
 		t.Fatalf("Publish failed: %v", pubErr)
 	}
 
@@ -372,11 +383,11 @@ func TestFanOutQueueCore_BlockedSubscriberWillRemove(t *testing.T) {
 func TestFanOutQueueCore_PublishToFullPublishChan_ReturnsError(t *testing.T) {
 	t.Parallel()
 	bufferSize := 1
-	core := newFanOutQueueCore[int](bufferSize)
+	core := newFanOutQueueCore[MockItem](bufferSize)
 	// No defer core.Stop() here.
-
+	topic := uuid.New()
 	// Create a subscriber whose channel will block, causing startFanOutRoutine to block.
-	blockerSubID, blockerChan, _ := core.Subscribe() // blockerChan is unbuffered.
+	blockerSubID, blockerChan, _ := core.Subscribe(topic) // blockerChan is unbuffered.
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -387,14 +398,14 @@ func TestFanOutQueueCore_PublishToFullPublishChan_ReturnsError(t *testing.T) {
 		// Publish first message.
 		// Goes into publishChan (size 1). FanOut routine picks it up.
 		// FanOut tries to send to blockerChan and blocks. publishChan is now empty.
-		firstPublishErr = core.Publish(1)
+		firstPublishErr = core.Publish(MockItem{Value: 1, TopicID: topic})
 
 		// Publish second message. This should fill the publishChan (now size 1/1).
-		secondPublishErr = core.Publish(2)
+		secondPublishErr = core.Publish(MockItem{Value: 2, TopicID: topic})
 
 		// Publish third message. publishChan is full (1/1).
 		// core.Publish should hit the default case in its select and return FullQueueError.
-		thirdPublishErr = core.Publish(3)
+		thirdPublishErr = core.Publish(MockItem{Value: 3, TopicID: topic})
 	}()
 
 	wg.Wait() // Wait for the publishes to complete.
@@ -433,12 +444,12 @@ func TestFanOutQueueCore_PublishNoSubscribers(t *testing.T) {
 	t.Parallel()
 	t.Run("UnbufferedPublishChan", func(t *testing.T) {
 		t.Parallel()
-		core := newFanOutQueueCore[int](0) // Unbuffered publishChan
+		core := newFanOutQueueCore[MockItem](0) // Unbuffered publishChan
 		defer core.Stop()
 		// Publish should succeed. fanOutRoutine consumes from publishChan.
 		// If no subscribers, message is effectively dropped by fanOutRoutine.
 		// Publish() has a default case, so it won't block indefinitely.
-		err := core.Publish(123)
+		err := core.Publish(MockItem{Value: 123, TopicID: uuid.New()})
 		if err != nil {
 			t.Errorf("Publish to unbuffered core with no subscribers failed: %v", err)
 		}
@@ -446,12 +457,12 @@ func TestFanOutQueueCore_PublishNoSubscribers(t *testing.T) {
 
 	t.Run("BufferedPublishChan", func(t *testing.T) {
 		t.Parallel()
-		core := newFanOutQueueCore[int](5) // Buffered publishChan
+		core := newFanOutQueueCore[MockItem](5) // Buffered publishChan
 		defer core.Stop()
 		// Publish should succeed and message goes into the buffer.
 		// fanOutRoutine will consume it and drop it.
 		for i := 0; i < 5; i++ {
-			if err := core.Publish(i); err != nil {
+			if err := core.Publish(MockItem{Value: i, TopicID: uuid.New()}); err != nil {
 				t.Errorf("Publish %d to buffered core with no subscribers failed: %v", i, err)
 			}
 		}
@@ -488,17 +499,18 @@ func TestChannelTripRecordMessageQueue_Lifecycle(t *testing.T) {
 	t.Parallel()
 	q := NewChannelTripRecordMessageQueue(mq.ActionUpdate, 5)
 	defer q.Stop()
-
+	topic := uuid.New()
 	if q.GetAction() != mq.ActionUpdate {
 		t.Fatalf("Expected action %v, got %v", mq.ActionUpdate, q.GetAction())
 	}
 
-	id, subChan, err := q.Subscribe()
+	id, subChan, err := q.Subscribe(topic)
 	if err != nil {
 		t.Fatalf("Subscribe failed: %v", err)
 	}
 
 	msg := mq.TripRecordMessage{
+		TripID:        topic,
 		ID:            uuid.New(),
 		Name:          "Test Trip Record",
 		Amount:        199.99,
@@ -532,13 +544,13 @@ func TestChannelTripRecordMessageQueue_PublishError(t *testing.T) {
 	t.Parallel()
 	q := NewChannelTripRecordMessageQueue(mq.ActionCreate, 1) // Core publishChan buffer size 1
 	// No Stop via defer, explicit control for this test structure.
-
+	topic := uuid.New()
 	// Block the underlying core's fanOutRoutine by having a subscriber that doesn't read.
-	_, blockerChan, _ := q.core.Subscribe() // This is the fanOutQueueCore's subscriber channel.
+	_, blockerChan, _ := q.core.Subscribe(topic) // This is the fanOutQueueCore's subscriber channel.
 
-	msg1 := mq.TripRecordMessage{ID: uuid.New(), Name: "TR_Msg1", PrePayAddress: testAddress}
-	msg2 := mq.TripRecordMessage{ID: uuid.New(), Name: "TR_Msg2", PrePayAddress: testAddress}
-	msg3 := mq.TripRecordMessage{ID: uuid.New(), Name: "TR_Msg3", PrePayAddress: testAddress}
+	msg1 := mq.TripRecordMessage{ID: uuid.New(), Name: "TR_Msg1", PrePayAddress: testAddress, TripID: topic}
+	msg2 := mq.TripRecordMessage{ID: uuid.New(), Name: "TR_Msg2", PrePayAddress: testAddress, TripID: topic}
+	msg3 := mq.TripRecordMessage{ID: uuid.New(), Name: "TR_Msg3", PrePayAddress: testAddress, TripID: topic}
 
 	// Publish msg1: Goes to core.publishChan. FanOut takes it, tries to send to blockerChan, blocks.
 	// core.publishChan becomes empty.
@@ -601,13 +613,13 @@ func TestChannelTripAddressMessageQueue_Lifecycle(t *testing.T) {
 	if q.GetAction() != mq.ActionCreate {
 		t.Fatalf("Expected action %v, got %v", mq.ActionCreate, q.GetAction())
 	}
-
-	id, subChan, err := q.Subscribe()
+	topic := uuid.New()
+	id, subChan, err := q.Subscribe(topic)
 	if err != nil {
 		t.Fatalf("Subscribe failed: %v", err)
 	}
 
-	msg := mq.TripAddressMessage{Address: testAddress}
+	msg := mq.TripAddressMessage{Address: testAddress, TripID: topic}
 
 	// Note: ChannelTripAddressMessageQueue.Publish ignores errors from core.Publish.
 	if pubErr := q.Publish(msg); pubErr != nil {
@@ -638,12 +650,12 @@ func TestChannelTripAddressMessageQueue_PublishErrorIgnored(t *testing.T) {
 	// This test verifies that ChannelTripAddressMessageQueue.Publish returns nil
 	// even if the underlying core.Publish method returns an error.
 	q := NewChannelTripAddressMessageQueue(mq.ActionDelete, 1) // Core publishChan buffer size 1
+	topic := uuid.New()
+	_, blockerChan, _ := q.core.Subscribe(topic) // Block the core's fanOutRoutine.
 
-	_, blockerChan, _ := q.core.Subscribe() // Block the core's fanOutRoutine.
-
-	msg1 := mq.TripAddressMessage{Address: db.Address("testAddress1")}
-	msg2 := mq.TripAddressMessage{Address: db.Address("testAddress2")}
-	msg3 := mq.TripAddressMessage{Address: db.Address("testAddress3")}
+	msg1 := mq.TripAddressMessage{TripID: topic, Address: db.Address("testAddress1")}
+	msg2 := mq.TripAddressMessage{TripID: topic, Address: db.Address("testAddress2")}
+	msg3 := mq.TripAddressMessage{TripID: topic, Address: db.Address("testAddress3")}
 
 	// Publish msg1 -> core.publishChan, fanOut takes it, blocks. core.publishChan empty.
 	if err := q.Publish(msg1); err != nil { // Expected nil

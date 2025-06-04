@@ -159,12 +159,13 @@ func (db *inMemoryTripDBWrapper) UpdateTripInfo(info *dbt.TripInfo) error {
 
 // UpdateTripRecord updates a specific record within a trip.
 // This function updates both the RecordInfo and RecordData parts.
-func (db *inMemoryTripDBWrapper) UpdateTripRecord(record *dbt.Record) error {
+// Return trip ID if the record was found and updated, or an error if not found.
+func (db *inMemoryTripDBWrapper) UpdateTripRecord(record *dbt.Record) (uuid.UUID, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
 	// Update the RecordInfo in trip data
-	for _, tripData := range db.tripsData {
+	for tripID, tripData := range db.tripsData {
 		foundIdx := -1
 		for i, rec := range tripData.Records {
 			if rec.ID == record.ID {
@@ -175,10 +176,10 @@ func (db *inMemoryTripDBWrapper) UpdateTripRecord(record *dbt.Record) error {
 		if foundIdx != -1 {
 			// Update the record in the trip data
 			tripData.Records[foundIdx] = *record
-			return nil // Record found and updated, exit early
+			return tripID, nil // Record found and updated, exit early
 		}
 	}
-	return fmt.Errorf("record with ID %s not found in any trip for update", record.ID)
+	return uuid.Nil, fmt.Errorf("record with ID %s not found in any trip for update", record.ID)
 }
 
 // TripAddressListAdd adds an address to a trip's address list.
@@ -251,16 +252,18 @@ func (db *inMemoryTripDBWrapper) DeleteTrip(id uuid.UUID) error {
 }
 
 // DeleteTripRecord deletes a specific record from a trip.
-func (db *inMemoryTripDBWrapper) DeleteTripRecord(recordID uuid.UUID) error {
+func (db *inMemoryTripDBWrapper) DeleteTripRecord(recordID uuid.UUID) (uuid.UUID, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
 	found := false
-	for _, tripData := range db.tripsData {
+	tripId := uuid.Nil // Initialize trip ID to return
+	for id, tripData := range db.tripsData {
 		foundIdx := -1
 		for i, record := range tripData.Records {
 			if record.ID == recordID {
 				foundIdx = i
+				tripId = id // Store the trip ID for return
 				break
 			}
 		}
@@ -274,10 +277,10 @@ func (db *inMemoryTripDBWrapper) DeleteTripRecord(recordID uuid.UUID) error {
 	}
 
 	if !found {
-		return fmt.Errorf("record with ID %s not found in any trip for deletion", recordID)
+		return uuid.Nil, fmt.Errorf("record with ID %s not found for deletion", recordID)
 	}
 
-	return nil
+	return tripId, nil
 }
 
 // --- Data Loader Operations ---

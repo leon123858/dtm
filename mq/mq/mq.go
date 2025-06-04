@@ -10,20 +10,20 @@ type TripMessageQueueWrapper interface {
 type TripMessageQueue interface {
 	GetAction() Action
 	Publish(msg interface{}) error
-	Subscribe() (uuid.UUID, <-chan interface{}, error)
+	Subscribe(tripId uuid.UUID) (uuid.UUID, <-chan interface{}, error)
 	DeSubscribe(id uuid.UUID) error
 }
 
 type TripRecordMessageQueue interface {
 	GetAction() Action
 	Publish(msg TripRecordMessage) error
-	Subscribe() (uuid.UUID, <-chan TripRecordMessage, error)
+	Subscribe(tripId uuid.UUID) (uuid.UUID, <-chan TripRecordMessage, error)
 	DeSubscribe(id uuid.UUID) error
 }
 
 type TripAddressMessageQueue interface {
 	GetAction() Action
 	Publish(msg TripAddressMessage) error
-	Subscribe() (uuid.UUID, <-chan TripAddressMessage, error)
+	Subscribe(tripId uuid.UUID) (uuid.UUID, <-chan TripAddressMessage, error)
 	DeSubscribe(id uuid.UUID) error
 }

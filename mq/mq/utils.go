@@ -10,7 +10,7 @@ import (
 // Subscriber 介面定義了任何可被訂閱和取消訂閱的服務所需的方法。
 // 這是一個泛型介面，`M` 代表其訂閱的訊息型別。
 type Subscriber[M any] interface {
-	Subscribe() (uuid.UUID, <-chan M, error)
+	Subscribe(uuid.UUID) (uuid.UUID, <-chan M, error)
 	DeSubscribe(id uuid.UUID) error
 }
 
@@ -19,6 +19,7 @@ type Subscriber[M any] interface {
 // M 是該服務訂閱的訊息類型。
 // O 是輸出結果的型別。
 func SubscribeProcessor[S Subscriber[M], M any, O any](
+	topicId uuid.UUID, // 訂閱的主題 ID
 	ctx context.Context,
 	service S, // 傳入實現 Subscriber 介面的服務實例
 	transformFunc func(msg M) (O, bool, error),
@@ -26,7 +27,7 @@ func SubscribeProcessor[S Subscriber[M], M any, O any](
 ) {
 	go func() {
 		// 1. 執行訂閱
-		uid, inputCh, err := service.Subscribe()
+		uid, inputCh, err := service.Subscribe(topicId)
 		if err != nil {
 			return
 		}

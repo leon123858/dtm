@@ -85,6 +85,7 @@ func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, inpu
 
 	tripMQ := r.TripMessageQueueWrapper.GetTripRecordMessageQueue(mq.ActionCreate)
 	if tripMQ.Publish(mq.TripRecordMessage{
+		TripID:        tripUUID,
 		ID:            record.ID,
 		Name:          record.Name,
 		Amount:        record.Amount,
@@ -123,12 +124,15 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, in
 	for i, addr := range input.ShouldPayAddress {
 		record.ShouldPayAddress[i] = db.Address(addr)
 	}
-	if err := dbTripInfo.UpdateTripRecord(record); err != nil {
+
+	var tripId uuid.UUID
+	if tripId, err = dbTripInfo.UpdateTripRecord(record); err != nil {
 		return nil, fmt.Errorf("failed to update record: %w", err)
 	}
 
 	tripMQ := r.TripMessageQueueWrapper.GetTripRecordMessageQueue(mq.ActionUpdate)
 	if tripMQ.Publish(mq.TripRecordMessage{
+		TripID:        tripId,
 		ID:            record.ID,
 		Name:          record.Name,
 		Amount:        record.Amount,
@@ -152,14 +156,15 @@ func (r *mutationResolver) RemoveRecord(ctx context.Context, recordID string) (s
 	if err != nil {
 		return "", fmt.Errorf("invalid record ID: %w", err)
 	}
-
-	if err := dbTripInfo.DeleteTripRecord(recordUID); err != nil {
+	var tripId uuid.UUID
+	if tripId, err = dbTripInfo.DeleteTripRecord(recordUID); err != nil {
 		return "", fmt.Errorf("failed to delete record: %w", err)
 	}
 
 	tripMQ := r.TripMessageQueueWrapper.GetTripRecordMessageQueue(mq.ActionDelete)
 	if tripMQ.Publish(mq.TripRecordMessage{
-		ID: recordUID,
+		TripID: tripId,
+		ID:     recordUID,
 	}) != nil {
 		fmt.Println("Warning: fail to notice event")
 	}
@@ -181,6 +186,7 @@ func (r *mutationResolver) CreateAddress(ctx context.Context, tripID string, add
 
 	tripMQ := r.TripMessageQueueWrapper.GetTripAddressMessageQueue(mq.ActionCreate)
 	if tripMQ.Publish(mq.TripAddressMessage{
+		TripID:  tripUUID,
 		Address: db.Address(address),
 	}) != nil {
 		fmt.Println("Warning: fail to notice event")
@@ -204,6 +210,7 @@ func (r *mutationResolver) DeleteAddress(ctx context.Context, tripID string, add
 
 	tripMQ := r.TripMessageQueueWrapper.GetTripAddressMessageQueue(mq.ActionDelete)
 	if tripMQ.Publish(mq.TripAddressMessage{
+		TripID:  tripUUID,
 		Address: db.Address(address),
 	}) != nil {
 		fmt.Println("Warning: fail to notice event")
@@ -277,10 +284,15 @@ func (r *subscriptionResolver) SubRecordCreate(ctx context.Context, tripID strin
 	if tripMQ == nil {
 		return nil, fmt.Errorf("can not get target message MQ")
 	}
+	tripUUID, err := uuid.Parse(tripID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid trip ID: %w", err)
+	}
 
 	recordStream := make(chan *model.Record)
 
 	mq.SubscribeProcessor(
+		tripUUID,
 		ctx,
 		tripMQ,
 		utils.TripRecordMQ2GQL,
@@ -295,10 +307,15 @@ func (r *subscriptionResolver) SubRecordDelete(ctx context.Context, tripID strin
 	if tripMQ == nil {
 		return nil, fmt.Errorf("can not get target message MQ")
 	}
+	tripUUID, err := uuid.Parse(tripID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid trip ID: %w", err)
+	}
 
 	recordStream := make(chan string)
 
 	mq.SubscribeProcessor(
+		tripUUID,
 		ctx,
 		tripMQ,
 		utils.TripRecordIdMQ2GQL,
@@ -313,10 +330,15 @@ func (r *subscriptionResolver) SubRecordUpdate(ctx context.Context, tripID strin
 	if tripMQ == nil {
 		return nil, fmt.Errorf("can not get target message MQ")
 	}
+	tripUUID, err := uuid.Parse(tripID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid trip ID: %w", err)
+	}
 
 	recordStream := make(chan *model.Record)
 
 	mq.SubscribeProcessor(
+		tripUUID,
 		ctx,
 		tripMQ,
 		utils.TripRecordMQ2GQL,
@@ -331,10 +353,15 @@ func (r *subscriptionResolver) SubAddressCreate(ctx context.Context, tripID stri
 	if tripMQ == nil {
 		return nil, fmt.Errorf("can not get target message MQ")
 	}
+	tripUUID, err := uuid.Parse(tripID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid trip ID: %w", err)
+	}
 
 	recordStream := make(chan string)
 
 	mq.SubscribeProcessor(
+		tripUUID,
 		ctx,
 		tripMQ,
 		utils.TripAddressMQ2GQL,
@@ -349,10 +376,14 @@ func (r *subscriptionResolver) SubAddressDelete(ctx context.Context, tripID stri
 	if tripMQ == nil {
 		return nil, fmt.Errorf("can not get target message MQ")
 	}
+	tripUUID, err := uuid.Parse(tripID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid trip ID: %w", err)
+	}
 
 	recordStream := make(chan string)
-
 	mq.SubscribeProcessor(
+		tripUUID,
 		ctx,
 		tripMQ,
 		utils.TripAddressMQ2GQL,

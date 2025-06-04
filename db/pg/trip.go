@@ -123,9 +123,10 @@ func (p *pgDBWrapper) UpdateTripInfo(info *db.TripInfo) error {
 	return p.db.Model(&TripInfoModel{}).Where("id = ?", info.ID).Updates(tripModel).Error
 }
 
-func (p *pgDBWrapper) UpdateTripRecord(record *db.Record) error {
+func (p *pgDBWrapper) UpdateTripRecord(record *db.Record) (uuid.UUID, error) {
 	// use transaction to update info and data
-	return p.db.Transaction(func(tx *gorm.DB) error {
+	tripId := uuid.Nil
+	ret := p.db.Transaction(func(tx *gorm.DB) error {
 		// read recordModel.TripId and update recordModel
 		var recordModel RecordModel
 		if err := tx.First(&recordModel, "id = ?", record.RecordInfo.ID).Error; err != nil {
@@ -157,8 +158,14 @@ func (p *pgDBWrapper) UpdateTripRecord(record *db.Record) error {
 		if err := tx.Create(&models).Error; err != nil {
 			return err
 		}
+		tripId = recordModel.TripID // Store the trip ID for return
+		// If everything is successful, return nil to commit the transaction
 		return nil
 	})
+	if ret != nil {
+		return uuid.Nil, ret
+	}
+	return tripId, nil
 }
 
 func (p *pgDBWrapper) TripAddressListAdd(id uuid.UUID, address db.Address) error {
@@ -181,10 +188,19 @@ func (p *pgDBWrapper) DeleteTrip(id uuid.UUID) error {
 	return p.db.Delete(&TripInfoModel{}, "id = ?", id).Error
 }
 
-func (p *pgDBWrapper) DeleteTripRecord(recordID uuid.UUID) error {
+func (p *pgDBWrapper) DeleteTripRecord(recordID uuid.UUID) (uuid.UUID, error) {
+	// first fetch the trip ID for the record
+	var recordModel RecordModel
+	if err := p.db.First(&recordModel, "id = ?", recordID).Error; err != nil {
+		return uuid.Nil, err // Record not found or other error
+	}
+
 	// GORM's CASCADE constraint on RecordModel should handle deleting associated
 	// record_should_pay_address_lists.
-	return p.db.Delete(&RecordModel{}, "id = ?", recordID).Error
+	if err := p.db.Delete(&RecordModel{}, "id = ?", recordID).Error; err != nil {
+		return uuid.Nil, err
+	}
+	return recordModel.TripID, nil
 }
 
 // Data Loader
