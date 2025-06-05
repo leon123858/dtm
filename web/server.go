@@ -2,7 +2,7 @@ package web
 
 import (
 	"dtm/graph"
-	"dtm/mq/goch"
+	"dtm/mq/rabbit"
 
 	"dtm/db/mem"
 	"dtm/db/pg"
@@ -24,12 +24,20 @@ func Serve() {
 		panic(err)
 	}
 	defer pg.CloseGORM(db)
-	// GraphQL endpoint
+	mqc := rabbit.NewRabbitConnection(rabbit.CreateAmqpURL())
+	if mqc == nil {
+		panic("Failed to connect to RabbitMQ")
+	}
 	dbDep := mem.NewInMemoryTripDBWrapper()
+	mqDep, err := rabbit.NewRabbitTripMessageQueueWrapper(mqc)
+	if err != nil {
+		panic("Failed to create RabbitMQ trip message queue wrapper: " + err.Error())
+	}
+	// GraphQL endpoint
 	// dbDep := pg.NewPgDBWrapper(db)
 	executableSchema := graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{
 		TripDB:                  dbDep,
-		TripMessageQueueWrapper: goch.NewGoChanTripMessageQueueWrapper(),
+		TripMessageQueueWrapper: mqDep,
 	}})
 
 	r.POST("/query", TripDataLoaderInjectionMiddleware(dbDep), GraphQLHandler(executableSchema))

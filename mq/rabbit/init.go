@@ -17,15 +17,6 @@ func NewRabbitConnection(addr string) *amqp.Connection {
 	return conn
 }
 
-func Close(channel *amqp.Channel) error {
-	if err := channel.Close(); err != nil {
-		log.Printf("Error closing channel: %v", err)
-		return err
-	}
-	log.Println("Channel closed")
-	return nil
-}
-
 func CreateAmqpURL() string {
 	amqpURL := "amqp://guest:guest@localhost:5672/"
 	if url := os.Getenv("RABBITMQ_URL"); url != "" {
