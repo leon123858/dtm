@@ -49,8 +49,8 @@ jobs:
       - name: Upload executable artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dtm
-          path: ./bin/dtm
+          name: my-app-executable
+          path: ./bin/app
 
       - name: Run Database Migration
         run: go run dtm.go migrate -u migrate postgres database
@@ -114,7 +114,7 @@ jobs:
           name: my-app-executable
 
       - name: Make executable
-        run: chmod +x my-app
+        run: chmod +x my-app-executable
 
       - name: Run Database Migration
         run: go run dtm.go migrate -u migrate postgres database
@@ -123,7 +123,7 @@ jobs:
         run: cd e2e && yarn
 
       - name: Run Go application in background
-        run: ./my-app ${{ matrix.start_command }} &
+        run: ./my-app-executable ${{ matrix.start_command }} &
 
       - name: Run E2E tests
         run: make testE2E
