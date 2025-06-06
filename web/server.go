@@ -14,20 +14,21 @@ import (
 )
 
 type WebServiceConfig struct {
-	IsDev bool
+	IsDev    bool
+	Port     string
 }
 
 func Serve(config WebServiceConfig) {
-	// Setting up Gin
-	r := gin.Default()
 	// set by config
 	if config.IsDev {
 		gin.SetMode(gin.DebugMode)
 	} else {
 		gin.SetMode(gin.ReleaseMode)
 	}
+	// Setting up Gin
+	r := gin.Default()
 	// middle ware
-	setupMiddlewares(r)
+	setupMiddlewares(r, config)
 	// Setting up health check endpoint
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
@@ -65,5 +66,5 @@ func Serve(config WebServiceConfig) {
 	}
 	r.POST("/query", TripDataLoaderInjectionMiddleware(dbDep), GraphQLHandler(executableSchema))
 	r.GET("/query", TripDataLoaderInjectionMiddleware(dbDep), GraphQLHandler(executableSchema))
-	r.Run()
+	r.Run("0.0.0.0:" + config.Port)
 }

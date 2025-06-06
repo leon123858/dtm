@@ -4,6 +4,7 @@ import (
 	"context"
 	"dtm/db/db"
 	"dtm/graph/utils"
+	"os"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -15,11 +16,20 @@ import (
 	"github.com/ulule/limiter/v3/drivers/store/memory"
 )
 
-func CorsConfig() cors.Config {
+func CorsConfig(webConfig WebServiceConfig) cors.Config {
 	corsConf := cors.DefaultConfig()
-	corsConf.AllowAllOrigins = true
-	corsConf.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
-	corsConf.AllowHeaders = []string{"Origin", "Content-Type", "Authorization", "X-Requested-With"}
+	if webConfig.IsDev {
+		corsConf.AllowAllOrigins = true
+	} else {
+		var frontend string = "http://localhost:3000" // Default frontend URL
+		if os.Getenv("FRONTEND_URL") != "" {
+			frontend = os.Getenv("FRONTEND_URL")
+		}
+		corsConf.AllowAllOrigins = false
+		corsConf.AllowOrigins = []string{frontend}
+	}
+	corsConf.AllowMethods = []string{"GET", "POST"}
+	corsConf.AllowHeaders = []string{"Origin", "Content-Type", "X-Requested-With"}
 	corsConf.AllowCredentials = true
 	corsConf.MaxAge = 1 * 3600 // 1 hours
 	return corsConf
@@ -53,14 +63,14 @@ func TripDataLoaderInjectionMiddleware(wrapper db.TripDBWrapper) gin.HandlerFunc
 	}
 }
 
-func setupMiddlewares(r *gin.Engine) {
+func setupMiddlewares(r *gin.Engine, webConfig WebServiceConfig) {
 	r.Use(limiterMiddleWare())
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
-	r.Use(cors.New(CorsConfig()))
+	r.Use(cors.New(CorsConfig(webConfig)))
 	r.Use(gzip.Gzip(gzip.DefaultCompression))
 	r.Use(secure.New(secure.Config{
-		STSSeconds:           31536000, // 1 year
+		STSSeconds:           2592000, // 1 month
 		STSIncludeSubdomains: true,
 		FrameDeny:            true,
 		ContentTypeNosniff:   true,

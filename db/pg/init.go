@@ -56,6 +56,6 @@ func InitPostgresGORM(dsn string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	log.Println("PostgreSQL GORM connection initialized successfully!")
+	// log.Println("PostgreSQL GORM connection initialized successfully!")
 	return db, nil
 }
