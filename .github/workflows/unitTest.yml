@@ -8,27 +8,23 @@ name: unit-test
 # ===================================================================
 on:
   push:
-    branches: [ "main" ]
+    branches: ['main']
   pull_request:
-    branches: [ "main" ]
-  
+    branches: ['main']
+
   workflow_dispatch:
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
 
-    # 此區塊會為這個 job 啟動 PostgreSQL 和 RabbitMQ 容器
-    # 你的步驟可以透過 localhost 連接到這些服務
     services:
-      # PostgreSQL 服務
       postgres:
         image: postgres:latest
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
         ports:
           - 5432:5432
-        # 健康檢查選項，確保 postgres 完全啟動後再執行後續步驟
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -40,7 +36,6 @@ jobs:
         image: rabbitmq:3
         ports:
           - 5672:5672
-        # 健康檢查選項，確保 RabbitMQ 完全啟動後再執行後續步驟
         options: >-
           --health-cmd "rabbitmq-diagnostics -q ping"
           --health-interval 10s
@@ -48,16 +43,16 @@ jobs:
           --health-retries 5
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.23' # 你可以根據需求調整 Go 版本
-
-    - name: Test
-      # 為測試步驟新增環境變數
-      env:
-        DATABASE_URL: "host=localhost user=postgres dbname=postgres port=5432 sslmode=disable TimeZone=Asia/Taipei"
-        RABBITMQ_URL: "amqp://guest:guest@localhost:5672/"
-      run: go test -v ./...
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23' # 你可以根據需求調整 Go 版本
+      - name: Run Database Migration
+        run: go run dtm.go migrate -u migrate postgres database
+      - name: Test
+        env:
+          DATABASE_URL: 'host=localhost user=postgres dbname=postgres port=5432 sslmode=disable TimeZone=Asia/Taipei'
+          RABBITMQ_URL: 'amqp://guest:guest@localhost:5672/'
+        run: go test -v ./...
