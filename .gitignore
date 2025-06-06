@@ -2,6 +2,9 @@
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
 
+# bin
+/bin
+
 # Mac
 .DS_Store
 
