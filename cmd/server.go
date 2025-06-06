@@ -14,8 +14,8 @@ func serverCommand() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			// Start the web server
 			web.Serve(web.WebServiceConfig{
-				IsDev:    cmd.Flags().Lookup("dev").Value.String() == "true",
-				Port:     cmd.Flags().Lookup("port").Value.String(),
+				IsDev: cmd.Flags().Lookup("dev").Value.String() == "true",
+				Port:  cmd.Flags().Lookup("port").Value.String(),
 			})
 		},
 	}

@@ -14,8 +14,8 @@ import (
 )
 
 type WebServiceConfig struct {
-	IsDev    bool
-	Port     string
+	IsDev bool
+	Port  string
 }
 
 func Serve(config WebServiceConfig) {
