@@ -22,11 +22,10 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 WORKDIR /home/appuser
 
-ENV APP_PORT="8080"
-ENV GIN_MODE="release"
-ENV DATABASE_URL="host=localhost user=postgres dbname=postgres port=5432 sslmode=disable TimeZone=Asia/Taipei"
-ENV RABBITMQ_URL="amqp://guest:guest@localhost:5672/"
-ENV FRONTEND_URL="http://localhost:3000"
+# can be set by infra
+# ENV DATABASE_URL="host=localhost user=postgres dbname=postgres port=5432 sslmode=disable TimeZone=Asia/Taipei"
+# ENV RABBITMQ_URL="amqp://guest:guest@localhost:5672/"
+# ENV FRONTEND_URL="http://localhost:3000"
 
 COPY --from=builder /app/bin/app .
 
