@@ -222,6 +222,46 @@ func TestMQInterfacesWithRabbitMQ(t *testing.T) {
 			}
 		})
 
+		t.Run("Receive_2_Messages_BySameSubscription", func(t *testing.T) {
+			topicID := uuid.New()
+			msg1 := mq.TripRecordMessage{ID: uuid.New(), TripID: topicID, Name: "TR Multi-Receive 1"}
+			msg2 := mq.TripRecordMessage{ID: uuid.New(), TripID: topicID, Name: "TR Multi-Receive 2"}
+
+			subID, rcvChan, err := trq.Subscribe(topicID)
+			if err != nil {
+				t.Fatalf("Subscribe failed: %v", err)
+			}
+			defer trq.DeSubscribe(subID)
+
+			time.Sleep(200 * time.Millisecond) // Allow consumer to start
+			if err := trq.Publish(msg1); err != nil {
+				t.Fatalf("Publish msg1 failed: %v", err)
+			}
+			if err := trq.Publish(msg2); err != nil {
+				t.Fatalf("Publish msg2 failed: %v", err)
+			}
+
+			receivedMsg1, ok1 := receiveMsgWithTimeout(t, rcvChan, 3*time.Second)
+			if !ok1 {
+				t.Fatal("Timeout or channel closed while waiting for first message on TripRecordMessageQueue")
+			}
+			if !reflect.DeepEqual(receivedMsg1, msg1) {
+				t.Errorf("Received first TR message\n%+v\ndoes not match published message\n%+v", receivedMsg1, msg1)
+			}
+			receivedMsg2, ok2 := receiveMsgWithTimeout(t, rcvChan, 3*time.Second)
+			if !ok2 {
+				t.Fatal("Timeout or channel closed while waiting for second message on TripRecordMessageQueue")
+			}
+			if !reflect.DeepEqual(receivedMsg2, msg2) {
+				t.Errorf("Received second TR message\n%+v\ndoes not match published message\n%+v", receivedMsg2, msg2)
+			}
+			// Ensure no more messages are left in the channel
+			_, ok3 := receiveMsgWithTimeout(t, rcvChan, 100*time.Millisecond) // Short timeout
+			if ok3 {
+				t.Error("Received unexpected third message on TripRecordMessageQueue after two publishes")
+			}
+		})
+
 		t.Run("Publish_NoSubscribers", func(t *testing.T) {
 			topicID := uuid.New()
 			msg := mq.TripRecordMessage{ID: uuid.New(), TripID: topicID, Name: "TR No-Sub Test"}

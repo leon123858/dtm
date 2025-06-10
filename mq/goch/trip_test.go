@@ -380,6 +380,46 @@ func TestFanOutQueueCore_BlockedSubscriberWillRemove(t *testing.T) {
 	core.Stop()
 }
 
+func TestFanOutQueueCore_Rec2PublishWithSameConnection(t *testing.T) {
+	t.Parallel()
+
+	// check will break subscriber when target is block
+	core := newFanOutQueueCore[MockItem](2) // publishChan needs to accept message
+	topic := uuid.New()
+	_, subChan, err := core.Subscribe(topic)
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
+
+	if pubErr := core.Publish(MockItem{Value: 456, TopicID: topic}); pubErr != nil {
+		t.Fatalf("Publish failed: %v", pubErr)
+	}
+	if pubErr := core.Publish(MockItem{Value: 789, TopicID: topic}); pubErr != nil {
+		t.Fatalf("Publish failed: %v", pubErr)
+	}
+
+	// expect the result
+	ret := <-subChan
+	if ret == (MockItem{}) {
+		t.Fatal("Expected subscriber channel to be closed, got nil")
+	}
+	if ret.Value != 456 {
+		t.Errorf("Expected first message value 456, got %d", ret.Value)
+	}
+
+	ret = <-subChan
+	if ret == (MockItem{}) {
+		t.Fatal("Expected subscriber channel to be closed, got nil")
+	}
+	if ret.Value != 789 {
+		t.Errorf("Expected first message value 789, got %d", ret.Value)
+	}
+
+	time.Sleep(500 * time.Millisecond) // Give ample time for either default or timeout.
+
+	core.Stop()
+}
+
 func TestFanOutQueueCore_PublishToFullPublishChan_ReturnsError(t *testing.T) {
 	t.Parallel()
 	bufferSize := 1
