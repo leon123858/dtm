@@ -36,8 +36,8 @@ func CorsConfig(webConfig WebServiceConfig) cors.Config {
 
 func limiterMiddleWare() gin.HandlerFunc {
 	rate := limiter.Rate{
-		Period: 1 * time.Hour,
-		Limit:  1000, // 1000 requests per hour,
+		Period: 5 * time.Minute,
+		Limit:  1000, // 1000 requests per 5 minutes
 	}
 	store := memory.NewStore()
 	instance := limiter.New(store, rate)
