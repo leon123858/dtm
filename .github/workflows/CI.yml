@@ -71,8 +71,10 @@ jobs:
       matrix:
         # 定義後端應用程式的啟動命令
         start_command:
-          - 'serve'
-          - 'serve --dev=false'
+          - 'serve --dev=true --mq="gochan"'
+          - 'serve --dev=true --mq="rabbitmq"'
+          - 'serve --dev=false --mq="gochan"'
+          - 'serve --dev=false --mq="rabbitmq"'
 
     env:
       DATABASE_URL: 'host=localhost user=postgres dbname=postgres port=5432 sslmode=disable TimeZone=Asia/Taipei'

@@ -7,7 +7,6 @@ import (
 	"dtm/mq/goch"
 	"dtm/mq/mq"
 	"dtm/mq/rabbit"
-	"os"
 
 	"dtm/db/db"
 	"dtm/db/mem"
@@ -18,9 +17,9 @@ import (
 )
 
 type WebServiceConfig struct {
-	IsDev    bool
-	Port     string
-	IsPubsub bool
+	IsDev  bool
+	Port   string
+	MqMode mq.MqMode
 }
 
 func Serve(config WebServiceConfig) {
@@ -43,10 +42,6 @@ func Serve(config WebServiceConfig) {
 	var mqDep mq.TripMessageQueueWrapper
 	if config.IsDev {
 		dbDep = mem.NewInMemoryTripDBWrapper()
-		mqDep = goch.NewGoChanTripMessageQueueWrapper()
-		if config.IsPubsub {
-			panic("GCP Pub/Sub is not supported in development mode")
-		}
 	} else {
 		db, err := pg.InitPostgresGORM(pg.CreateDSN())
 		if err != nil {
@@ -54,24 +49,30 @@ func Serve(config WebServiceConfig) {
 		}
 		defer pg.CloseGORM(db)
 		dbDep = pg.NewPgDBWrapper(db)
-		if config.IsPubsub {
-			os.Setenv("GCP_PROJECT_ID", "gcp-exercise-434714")
-			mqc, err := gcppubsub.NewGCPTripMessageQueueWrapper(context.Background(), gcppubsub.GetGCPProjectID())
-			if err != nil {
-				panic("Failed to create GCP Pub/Sub trip message queue wrapper: " + err.Error())
-			}
-			mqDep = mqc
-		} else {
-			mqc := rabbit.NewRabbitConnection(rabbit.CreateAmqpURL())
-			if mqc == nil {
-				panic("Failed to connect to RabbitMQ")
-			}
-			defer mqc.Close()
-			mqDep, err = rabbit.NewRabbitTripMessageQueueWrapper(mqc)
-			if err != nil {
-				panic("Failed to create RabbitMQ trip message queue wrapper: " + err.Error())
-			}
+	}
+	switch config.MqMode {
+	case mq.MqModeGoChan:
+		mqDep = goch.NewGoChanTripMessageQueueWrapper()
+	case mq.MqModeRabbitMQ:
+		mqc := rabbit.NewRabbitConnection(rabbit.CreateAmqpURL())
+		if mqc == nil {
+			panic("Failed to connect to RabbitMQ")
 		}
+		defer mqc.Close()
+		var err error
+		mqDep, err = rabbit.NewRabbitTripMessageQueueWrapper(mqc)
+		if err != nil {
+			panic("Failed to create RabbitMQ trip message queue wrapper: " + err.Error())
+		}
+	case mq.MqModeGCPPubSub:
+		// os.Setenv("GCP_PROJECT_ID", "gcp-exercise-434714")
+		mqc, err := gcppubsub.NewGCPTripMessageQueueWrapper(context.Background(), gcppubsub.GetGCPProjectID())
+		if err != nil {
+			panic("Failed to create GCP Pub/Sub trip message queue wrapper: " + err.Error())
+		}
+		mqDep = mqc
+	default:
+		panic("Unsupported message queue mode: " + string(config.MqMode))
 	}
 	// GraphQL endpoint
 	executableSchema := graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{

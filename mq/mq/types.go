@@ -6,6 +6,14 @@ import (
 	"github.com/google/uuid"
 )
 
+type MqMode string
+
+const (
+	MqModeGoChan    MqMode = "gochan"
+	MqModeRabbitMQ  MqMode = "rabbitmq"
+	MqModeGCPPubSub MqMode = "gcppubsub"
+)
+
 type Action int
 
 const (

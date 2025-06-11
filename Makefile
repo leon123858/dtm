@@ -36,7 +36,7 @@ cli:
 	go run dtm.go share -i "sampleInput.csv" -o "sampleOutput.txt"
 
 dev-docker:
-	@set local dev environment
+	@echo local dev environment
 	docker run -d --name dtm-pg -e POSTGRES_HOST_AUTH_METHOD=trust -p 5432:5432 postgres
 	docker run -p 5672:5672 -d --hostname dtm-rabbit --name dtm-rabbit rabbitmq:3
 	go run dtm.go migrate -u
