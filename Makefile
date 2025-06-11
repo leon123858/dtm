@@ -41,5 +41,11 @@ dev-docker:
 	docker run -p 5672:5672 -d --hostname dtm-rabbit --name dtm-rabbit rabbitmq:3
 	go run dtm.go migrate -u
 
+dev-gcp:
+	# gcloud auth application-default login
+	# gcloud components install pubsub-emulator
+	# gcloud components install beta
+	gcloud beta emulators pubsub start --project=test-project
+
 docker-build:
 	docker build -t dtm .

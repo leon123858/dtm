@@ -70,7 +70,7 @@ func Serve(config WebServiceConfig) {
 	r.GET("/query", gzip.Gzip(gzip.DefaultCompression), TripDataLoaderInjectionMiddleware(dbDep), GraphQLHandler(executableSchema))
 	// Subscriptions endpoint
 	r.GET("/subscription", TripDataLoaderInjectionMiddleware(dbDep), GraphQLHandler(executableSchema))
-	
+
 	// Start the server
 	r.Run("0.0.0.0:" + config.Port)
 }

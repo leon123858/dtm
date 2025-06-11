@@ -15,6 +15,20 @@ const (
 	ActionCnt
 )
 
+// String makes Action compliant with the Stringer interface for cleaner topic names.
+func (a Action) String() string {
+	switch a {
+	case ActionCreate:
+		return "create"
+	case ActionUpdate:
+		return "update"
+	case ActionDelete:
+		return "delete"
+	default:
+		return "unknown"
+	}
+}
+
 type TripRecordMessage struct {
 	ID            uuid.UUID
 	TripID        uuid.UUID
