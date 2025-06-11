@@ -10,6 +10,7 @@ import (
 	"dtm/db/mem"
 	"dtm/db/pg"
 
+	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 )
 
@@ -64,7 +65,12 @@ func Serve(config WebServiceConfig) {
 	if config.IsDev {
 		r.GET("/", GraphQLPlaygroundHandler("DTM", "/query"))
 	}
-	r.POST("/query", TripDataLoaderInjectionMiddleware(dbDep), GraphQLHandler(executableSchema))
-	r.GET("/query", TripDataLoaderInjectionMiddleware(dbDep), GraphQLHandler(executableSchema))
+	// query and mutation endpoints
+	r.POST("/query", gzip.Gzip(gzip.DefaultCompression), TripDataLoaderInjectionMiddleware(dbDep), GraphQLHandler(executableSchema))
+	r.GET("/query", gzip.Gzip(gzip.DefaultCompression), TripDataLoaderInjectionMiddleware(dbDep), GraphQLHandler(executableSchema))
+	// Subscriptions endpoint
+	r.GET("/subscription", TripDataLoaderInjectionMiddleware(dbDep), GraphQLHandler(executableSchema))
+	
+	// Start the server
 	r.Run("0.0.0.0:" + config.Port)
 }

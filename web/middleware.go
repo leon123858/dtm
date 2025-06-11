@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/gin-contrib/cors"
-	"github.com/gin-contrib/gzip"
 	"github.com/gin-contrib/secure"
 	"github.com/gin-gonic/gin"
 	"github.com/ulule/limiter/v3"
@@ -68,7 +67,6 @@ func setupMiddlewares(r *gin.Engine, webConfig WebServiceConfig) {
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
 	r.Use(cors.New(CorsConfig(webConfig)))
-	r.Use(gzip.Gzip(gzip.DefaultCompression))
 	r.Use(secure.New(secure.Config{
 		STSSeconds:           2592000, // 1 month
 		STSIncludeSubdomains: true,

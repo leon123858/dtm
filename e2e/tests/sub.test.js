@@ -175,6 +175,35 @@ const waitForSubscription = (observable, timeout = 7000) => {
 	});
 };
 
+// Helper function to wait for a multi emission from an Apollo Observable
+const waitForMultiSubscription = (observable, count, timeout = 7000) => {
+	return new Promise((resolve, reject) => {
+		let receivedCount = 0;
+		const results = [];
+		const timer = setTimeout(() => {
+			if (receivedCount < count) {
+				reject(new Error(`Subscription timed out after ${timeout}ms`));
+			}
+		}, timeout);
+
+		const observer = observable.subscribe({
+			next: (data) => {
+				results.push(data);
+				receivedCount++;
+				if (receivedCount === count) {
+					clearTimeout(timer);
+					observer.unsubscribe();
+					resolve(results);
+				}
+			},
+			error: (err) => {
+				clearTimeout(timer);
+				reject(err);
+			},
+		});
+	});
+};
+
 describe('GraphQL API End-to-End Tests', () => {
 	let tripId; // 用於儲存測試流程中建立的 Trip ID
 	let recordId; // 用於儲存測試流程中建立的 Record ID (用於非 subscription 測試)
@@ -412,6 +441,50 @@ describe('GraphQL API End-to-End Tests', () => {
 				mutation: DELETE_ADDRESS,
 				variables: { tripId, address: newAddressName },
 			});
+		});
+
+		it('should receive multiple notifications when multiple addresses are created (subAddressCreate)', async () => {
+			const newAddressNames = [
+				`SubAddr1-${Date.now()}`,
+				`SubAddr2-${Date.now()}`,
+			];
+			const subObservable = client.subscribe({
+				query: SUB_ADDRESS_CREATE,
+				variables: { tripId },
+			});
+
+			const subscriptionPromise = waitForMultiSubscription(subObservable, 2);
+			// sleep to wait subscript trigger
+			await sleep(1000);
+
+			// 觸發多個 mutation
+			const mutationPromises = newAddressNames.map((address) =>
+				client.mutate({
+					mutation: CREATE_ADDRESS,
+					variables: { tripId, address },
+				})
+			);
+			const mutationResults = await Promise.all(mutationPromises);
+			mutationResults.forEach((result, index) => {
+				expect(result.error).toBeUndefined();
+				expect(result.data.createAddress).toBe(newAddressNames[index]);
+			});
+			// 等待並驗證 subscription 結果
+			const subscriptionResults = await subscriptionPromise;
+			expect(subscriptionResults.length).toBe(2);
+			// just check include
+			expect(subscriptionResults.map((r) => r.data.subAddressCreate)).toEqual(
+				expect.arrayContaining(newAddressNames)
+			);
+			// 清理
+			await Promise.all(
+				newAddressNames.map((address) =>
+					client.mutate({
+						mutation: DELETE_ADDRESS,
+						variables: { tripId, address },
+					})
+				)
+			);
 		});
 
 		it('should not receive a notification when a new address is created (because not tripId)', async () => {
