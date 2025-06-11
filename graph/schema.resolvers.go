@@ -84,14 +84,14 @@ func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, inpu
 	}
 
 	tripMQ := r.TripMessageQueueWrapper.GetTripRecordMessageQueue(mq.ActionCreate)
-	if tripMQ.Publish(mq.TripRecordMessage{
+	if err := tripMQ.Publish(mq.TripRecordMessage{
 		TripID:        tripUUID,
 		ID:            record.ID,
 		Name:          record.Name,
 		Amount:        record.Amount,
 		PrePayAddress: record.PrePayAddress,
-	}) != nil {
-		fmt.Println("Warning: fail to notice event")
+	}); err != nil {
+		fmt.Println("Warning: fail to notice event: " + err.Error())
 	}
 
 	return &model.Record{
@@ -131,14 +131,14 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, in
 	}
 
 	tripMQ := r.TripMessageQueueWrapper.GetTripRecordMessageQueue(mq.ActionUpdate)
-	if tripMQ.Publish(mq.TripRecordMessage{
+	if err := tripMQ.Publish(mq.TripRecordMessage{
 		TripID:        tripId,
 		ID:            record.ID,
 		Name:          record.Name,
 		Amount:        record.Amount,
 		PrePayAddress: record.PrePayAddress,
-	}) != nil {
-		fmt.Println("Warning: fail to notice event")
+	}); err != nil {
+		fmt.Println("Warning: fail to notice event: " + err.Error())
 	}
 
 	return &model.Record{
@@ -162,11 +162,11 @@ func (r *mutationResolver) RemoveRecord(ctx context.Context, recordID string) (s
 	}
 
 	tripMQ := r.TripMessageQueueWrapper.GetTripRecordMessageQueue(mq.ActionDelete)
-	if tripMQ.Publish(mq.TripRecordMessage{
+	if err := tripMQ.Publish(mq.TripRecordMessage{
 		TripID: tripId,
 		ID:     recordUID,
-	}) != nil {
-		fmt.Println("Warning: fail to notice event")
+	}); err != nil {
+		fmt.Println("Warning: fail to notice event: " + err.Error())
 	}
 
 	return recordID, nil
@@ -185,11 +185,11 @@ func (r *mutationResolver) CreateAddress(ctx context.Context, tripID string, add
 	}
 
 	tripMQ := r.TripMessageQueueWrapper.GetTripAddressMessageQueue(mq.ActionCreate)
-	if tripMQ.Publish(mq.TripAddressMessage{
+	if err := tripMQ.Publish(mq.TripAddressMessage{
 		TripID:  tripUUID,
 		Address: db.Address(address),
-	}) != nil {
-		fmt.Println("Warning: fail to notice event")
+	}); err != nil {
+		fmt.Println("Warning: fail to notice event: " + err.Error())
 		return address, nil
 	}
 
@@ -209,11 +209,11 @@ func (r *mutationResolver) DeleteAddress(ctx context.Context, tripID string, add
 	}
 
 	tripMQ := r.TripMessageQueueWrapper.GetTripAddressMessageQueue(mq.ActionDelete)
-	if tripMQ.Publish(mq.TripAddressMessage{
+	if err := tripMQ.Publish(mq.TripAddressMessage{
 		TripID:  tripUUID,
 		Address: db.Address(address),
-	}) != nil {
-		fmt.Println("Warning: fail to notice event")
+	}); err != nil {
+		fmt.Println("Warning: fail to notice event: " + err.Error())
 		return address, nil
 	}
 

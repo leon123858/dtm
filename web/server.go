@@ -1,10 +1,13 @@
 package web
 
 import (
+	"context"
 	"dtm/graph"
+	"dtm/mq/gcppubsub"
 	"dtm/mq/goch"
 	"dtm/mq/mq"
 	"dtm/mq/rabbit"
+	"os"
 
 	"dtm/db/db"
 	"dtm/db/mem"
@@ -15,8 +18,9 @@ import (
 )
 
 type WebServiceConfig struct {
-	IsDev bool
-	Port  string
+	IsDev    bool
+	Port     string
+	IsPubsub bool
 }
 
 func Serve(config WebServiceConfig) {
@@ -40,6 +44,9 @@ func Serve(config WebServiceConfig) {
 	if config.IsDev {
 		dbDep = mem.NewInMemoryTripDBWrapper()
 		mqDep = goch.NewGoChanTripMessageQueueWrapper()
+		if config.IsPubsub {
+			panic("GCP Pub/Sub is not supported in development mode")
+		}
 	} else {
 		db, err := pg.InitPostgresGORM(pg.CreateDSN())
 		if err != nil {
@@ -47,14 +54,23 @@ func Serve(config WebServiceConfig) {
 		}
 		defer pg.CloseGORM(db)
 		dbDep = pg.NewPgDBWrapper(db)
-		mqc := rabbit.NewRabbitConnection(rabbit.CreateAmqpURL())
-		if mqc == nil {
-			panic("Failed to connect to RabbitMQ")
-		}
-		defer mqc.Close()
-		mqDep, err = rabbit.NewRabbitTripMessageQueueWrapper(mqc)
-		if err != nil {
-			panic("Failed to create RabbitMQ trip message queue wrapper: " + err.Error())
+		if config.IsPubsub {
+			os.Setenv("GCP_PROJECT_ID", "gcp-exercise-434714")
+			mqc, err := gcppubsub.NewGCPTripMessageQueueWrapper(context.Background(), gcppubsub.GetGCPProjectID())
+			if err != nil {
+				panic("Failed to create GCP Pub/Sub trip message queue wrapper: " + err.Error())
+			}
+			mqDep = mqc
+		} else {
+			mqc := rabbit.NewRabbitConnection(rabbit.CreateAmqpURL())
+			if mqc == nil {
+				panic("Failed to connect to RabbitMQ")
+			}
+			defer mqc.Close()
+			mqDep, err = rabbit.NewRabbitTripMessageQueueWrapper(mqc)
+			if err != nil {
+				panic("Failed to create RabbitMQ trip message queue wrapper: " + err.Error())
+			}
 		}
 	}
 	// GraphQL endpoint
@@ -72,5 +88,6 @@ func Serve(config WebServiceConfig) {
 	r.GET("/subscription", TripDataLoaderInjectionMiddleware(dbDep), GraphQLHandler(executableSchema))
 
 	// Start the server
+	println("Starting web server on port " + config.Port)
 	r.Run("0.0.0.0:" + config.Port)
 }
