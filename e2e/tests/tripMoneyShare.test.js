@@ -101,7 +101,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 		expect(fetchedTripData.trip.addressList).toEqual(
 			expect.arrayContaining([addressAlice, addressBob, addressCharlie])
 		);
-		console.log('Setup complete. Trip ID:', tripId);
+		// console.log('Setup complete. Trip ID:', tripId);
 	});
 
 	// --- 測試 Record 和 Money Share ---
