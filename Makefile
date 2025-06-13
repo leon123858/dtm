@@ -41,6 +41,11 @@ dev-docker:
 	docker run -p 5672:5672 -d --hostname dtm-rabbit --name dtm-rabbit rabbitmq:3
 	go run dtm.go migrate -u
 
+remote-migration:
+	@echo migrate db in cloud sql, please set local ip as auth network in cloud when use this cmd
+	@echo not that when include special char in pwd, please use '\' to escape
+	go run dtm.go migrate -u -i='<your ip>' -p='<your pwd>'
+
 dev-gcp:
 	# gcloud auth application-default login
 	# gcloud components install pubsub-emulator

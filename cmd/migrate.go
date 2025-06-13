@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -24,7 +25,10 @@ func migrateCommand() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			up, _ := cmd.Flags().GetBool("up")
 			down, _ := cmd.Flags().GetBool("down")
-
+			// custom connection string
+			connectionIp, _ := cmd.Flags().GetString("ip")
+			connectionPwd, _ := cmd.Flags().GetString("pwd")
+			
 			if up && down {
 				cmd.Help()
 				return
@@ -35,6 +39,9 @@ func migrateCommand() *cobra.Command {
 			if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
 				connStr = dbURL
 				log.Printf("Using DATABASE_URL: %s", connStr)
+			} else if connectionIp != "" && connectionPwd != "" {
+				connStr = fmt.Sprintf("host=%s user=postgres dbname=postgres password=%s port=5432 sslmode=disable TimeZone=Asia/Taipei", connectionIp, connectionPwd)
+				log.Printf("Using provided connection string: %s", connStr)
 			} else {
 				log.Printf("Using default connection string: %s", connStr)
 			}
@@ -81,6 +88,9 @@ func migrateCommand() *cobra.Command {
 
 	cmd.Flags().BoolP("up", "u", true, "up the version of db")
 	cmd.Flags().BoolP("down", "d", false, "down the version of db")
+
+	cmd.Flags().StringP("ip", "i", "", "database ip")
+	cmd.Flags().StringP("pwd", "p", "", "database password")
 
 	return cmd
 }
