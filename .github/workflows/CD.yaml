@@ -64,6 +64,11 @@ jobs:
       contents: read
       id-token: write
 
+    # should set secrets in github repository
+    # GCP_SA_KEY: Google Cloud Service Account Key (JSON format)
+    # REGISTER_NAME: GCP Artifact Registry URL (e.g., asia-east1-docker.pkg.dev)
+    # GCP_PROJECT_ID: Your Google Cloud Project ID
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
