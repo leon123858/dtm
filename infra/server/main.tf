@@ -72,10 +72,10 @@ resource "google_service_account" "frontend_app_runtime" {
 }
 
 resource "google_cloud_run_v2_service" "dtm_backend" {
-  name     = "dtm"
-  location = local.region
+  name                = "dtm"
+  location            = local.region
   deletion_protection = false
-  
+
   template {
     # 後端服務使用 "有權限" 的服務帳戶
     service_account = google_service_account.backend_app_runtime.email
@@ -104,8 +104,8 @@ resource "google_cloud_run_v2_service" "dtm_backend" {
 }
 
 resource "google_cloud_run_v2_service" "dtmf_frontend" {
-  name     = "dtmf"
-  location = local.region
+  name                = "dtmf"
+  location            = local.region
   deletion_protection = false
 
   template {
