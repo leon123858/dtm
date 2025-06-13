@@ -92,6 +92,13 @@ resource "google_cloud_run_v2_service" "dtm_backend" {
         name       = "cloudsql"
         mount_path = "/cloudsql"
       }
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "256Mi"
+        }
+      }
     }
 
     volumes {
@@ -119,6 +126,13 @@ resource "google_cloud_run_v2_service" "dtmf_frontend" {
 
     containers {
       image = "us-docker.pkg.dev/cloudrun/container/hello:latest" # Image to deploy
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "256Mi"
+        }
+      }
     }
   }
 }
