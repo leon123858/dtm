@@ -17,7 +17,6 @@ locals {
   project_id = "division-trip-money"
   region     = "asia-east1"
   zone       = "asia-east1-b"
-  init_image  = "nginx" 
 }
 
 provider "google" {
@@ -30,47 +29,6 @@ provider "google-beta" {
   project = local.project_id
   region  = local.region
   zone    = local.zone
-}
-
-resource "google_project_service" "apis" {
-  for_each = toset([
-    "run.googleapis.com", "sqladmin.googleapis.com", "pubsub.googleapis.com",
-    "compute.googleapis.com", "secretmanager.googleapis.com", "iamcredentials.googleapis.com"
-  ])
-  project            = local.project_id
-  service            = each.key
-  disable_on_destroy = true
-  disable_dependent_services=true
-}
-
-resource "google_artifact_registry_repository" "backend_repo" {
-  provider      = google-beta
-  location      = local.region
-  repository_id = "backend"
-  description   = "Repository for backend Docker images"
-  format        = "DOCKER"
-  depends_on    = [google_project_service.apis]
-}
-
-resource "google_artifact_registry_repository" "frontend_repo" {
-  provider      = google-beta
-  location      = local.region
-  repository_id = "frontend"
-  description   = "Repository for frontend Docker images"
-  format        = "DOCKER"
-  depends_on    = [google_project_service.apis]
-}
-
-resource "google_service_account" "github_actions_builder" {
-  account_id   = "github-actions-builder"
-  display_name = "GitHub Actions Builder SA"
-  description  = "Service account for GitHub Actions to build and push Docker images"
-}
-
-resource "google_project_iam_member" "artifact_writer_binding" {
-  project = local.project_id
-  role    = "roles/artifactregistry.writer"
-  member  = google_service_account.github_actions_builder.member
 }
 
 # --- Backend 服務帳戶 (有權限) ---
@@ -98,6 +56,14 @@ resource "google_project_iam_member" "pubsub_subscriber_binding" {
   member  = google_service_account.backend_app_runtime.member
 }
 
+# auth proxy setting
+# should also set it in cloud sql flag: "cloudsql.iam_authentication" = "on"
+resource "google_project_iam_member" "sql_instance_user_binding" {
+  project = local.project_id
+  role    = "roles/cloudsql.instanceUser"
+  member  = google_service_account.backend_app_runtime.member
+}
+
 # --- Frontend 服務帳戶 (無權限) ---
 resource "google_service_account" "frontend_app_runtime" {
   account_id   = "dtmf-frontend-runtime"
@@ -120,13 +86,21 @@ resource "google_cloud_run_v2_service" "dtm_backend" {
     }
 
     containers {
-      image   = local.init_image
-      ports {
-        container_port = 80
+      image = "us-docker.pkg.dev/cloudrun/container/hello:latest" # Image to deploy
+
+      volume_mounts {
+        name       = "cloudsql"
+        mount_path = "/cloudsql"
+      }
+    }
+
+    volumes {
+      name = "cloudsql"
+      cloud_sql_instance {
+        instances = [var.dtm-backend-db-name]
       }
     }
   }
-  depends_on = [google_project_service.apis]
 }
 
 resource "google_cloud_run_v2_service" "dtmf_frontend" {
@@ -144,13 +118,9 @@ resource "google_cloud_run_v2_service" "dtmf_frontend" {
     }
 
     containers {
-      image = local.init_image
-      ports {
-        container_port = 80
-      }
+      image = "us-docker.pkg.dev/cloudrun/container/hello:latest" # Image to deploy
     }
   }
-  depends_on = [google_project_service.apis]
 }
 
 resource "google_cloud_run_v2_service_iam_member" "dtm_backend_public_access" {
@@ -169,14 +139,6 @@ resource "google_cloud_run_v2_service_iam_member" "dtmf_frontend_public_access" 
   member   = "allUsers"
 }
 
-output "artifact_registry_repositories" {
-  description = "The created Artifact Registry repository names."
-  value = {
-    backend  = google_artifact_registry_repository.backend_repo.name
-    frontend = google_artifact_registry_repository.frontend_repo.name
-  }
-}
-
 output "cloud_run_urls" {
   description = "The URLs of the deployed Cloud Run services."
   value = {
@@ -188,7 +150,6 @@ output "cloud_run_urls" {
 output "service_account_emails" {
   description = "Emails of the created service accounts."
   value = {
-    github_actions_builder   = google_service_account.github_actions_builder.email
     backend_application_runtime  = google_service_account.backend_app_runtime.email
     frontend_application_runtime = google_service_account.frontend_app_runtime.email
   }
