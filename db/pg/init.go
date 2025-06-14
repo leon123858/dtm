@@ -25,7 +25,7 @@ func CreateDSN() string {
 		if os.Getenv("DATABASE_REGION") != "" {
 			region = os.Getenv("DATABASE_REGION")
 		}
-		host := "localhost"
+		host := "127.0.0.1"
 		if os.Getenv("DATABASE_HOST") != "" {
 			host = os.Getenv("DATABASE_HOST")
 		}
