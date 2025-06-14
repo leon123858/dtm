@@ -15,6 +15,31 @@ func CreateDSN() string {
 	connStr := "host=localhost user=postgres dbname=postgres port=5432 sslmode=disable TimeZone=Asia/Taipei"
 	if os.Getenv("DATABASE_URL") != "" {
 		connStr = os.Getenv("DATABASE_URL")
+		log.Printf("Using DATABASE_URL: *")
+	} else if os.Getenv("DATABASE_PASSWORD") != "" {
+		dbUser := "postgres"
+		if os.Getenv("DATABASE_USER") != "" {
+			dbUser = os.Getenv("DATABASE_USER")
+		}
+		region := "Asia/Taipei"
+		if os.Getenv("DATABASE_REGION") != "" {
+			region = os.Getenv("DATABASE_REGION")
+		}
+		host := "localhost"
+		if os.Getenv("DATABASE_HOST") != "" {
+			host = os.Getenv("DATABASE_HOST")
+		}
+		connStr = fmt.Sprintf("host=%s user=%s dbname=postgres password=%s port=5432 sslmode=disable TimeZone=%s", host, dbUser, os.Getenv("DATABASE_PASSWORD"), region)
+		log.Printf("Using DATABASE_PASSWORD: *")
+	} else if os.Getenv("CLOUD_SQL_SA_EMAIL") != "" {
+		email := os.Getenv("CLOUD_SQL_SA_EMAIL")
+		region := "Asia/Taipei"
+		if os.Getenv("DATABASE_REGION") != "" {
+			region = os.Getenv("DATABASE_REGION")
+		}
+		connStr = fmt.Sprintf("host=127.0.0.1 user=%s dbname=postgres port=5432 sslmode=disable TimeZone=%s", email, region)
+	} else {
+		log.Printf("Using default connection string: %s", connStr)
 	}
 	return connStr
 }

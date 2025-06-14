@@ -28,7 +28,7 @@ func migrateCommand() *cobra.Command {
 			// custom connection string
 			connectionIp, _ := cmd.Flags().GetString("ip")
 			connectionPwd, _ := cmd.Flags().GetString("pwd")
-			
+
 			if up && down {
 				cmd.Help()
 				return
