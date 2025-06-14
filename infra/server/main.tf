@@ -125,6 +125,10 @@ resource "google_cloud_run_v2_service" "dtm_backend" {
         name  = "DATABASE_HOST"
         value = "/cloudsql/" + var.dtm-backend-db-connection-name
       }
+      env {
+        name = "FRONTEND_URL"
+        value = google_cloud_run_v2_service.dtmf_frontend.uri
+      }
     }
 
     volumes {
