@@ -21,15 +21,11 @@ func CreateDSN() string {
 		if os.Getenv("DATABASE_USER") != "" {
 			dbUser = os.Getenv("DATABASE_USER")
 		}
-		region := "Asia/Taipei"
-		if os.Getenv("DATABASE_REGION") != "" {
-			region = os.Getenv("DATABASE_REGION")
-		}
 		host := "127.0.0.1"
 		if os.Getenv("DATABASE_HOST") != "" {
 			host = os.Getenv("DATABASE_HOST")
 		}
-		connStr = fmt.Sprintf("host=%s user=%s dbname=postgres password=%s port=5432 sslmode=disable TimeZone=%s", host, dbUser, os.Getenv("DATABASE_PASSWORD"), region)
+		connStr = fmt.Sprintf("host=%s user=%s dbname=postgres password=%s port=5432 sslmode=disable", host, dbUser, os.Getenv("DATABASE_PASSWORD"))
 		log.Printf("Using DATABASE_PASSWORD: *")
 	} else {
 		log.Printf("Using default connection string: %s", connStr)

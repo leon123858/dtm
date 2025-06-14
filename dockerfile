@@ -28,6 +28,7 @@ WORKDIR /home/appuser
 # ENV FRONTEND_URL="http://localhost:3000"
 # ENV DATABASE_PASSWORD="<db pwd>"
 # ENV DATABASE_USER="postgres"
+# ENV DATABASE_HOST="cloud sql connection string"
 
 COPY --from=builder /app/bin/app .
 
