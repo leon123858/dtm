@@ -33,11 +33,11 @@ Setting Project
 - use `make remote-migration` to migrate DB with public IP and password
 - turn off WAF for SQL in cloud SQL (0.0.0.0/0)
 - set github action secret var in frontend and backend
-  - `gh secret set GCP_PROJECT_ID --repos leon123858/dtm,leon123858/dtmf`
+  - `gh secret set GCP_PROJECT_ID`
     - `gcloud config get-value project`
-  - `gh secret set REGISTER_NAME --repos leon123858/dtm,leon123858/dtmf`
+  - `gh secret set REGISTER_NAME`
     - `gcloud artifacts repositories list`
-  - `gh secret set GCP_SA_KEY --repos leon123858/dtm,leon123858/dtmf`
+  - `gh secret set GCP_SA_KEY`
     - download key from `https://console.cloud.google.com/iam-admin/serviceaccounts`
 - trigger frontend and backend github action CD to push image
 - set backend server url into frontend docker build image's ENV
