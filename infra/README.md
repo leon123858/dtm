@@ -7,6 +7,7 @@ create bucket
 ```bash
 gcloud storage buckets create gs://my-terraform-state-division-trip-money-20250614 --project=division-trip-money --location=ASIA-EAST1 --uniform-bucket-level-access
 ```
+
 use bucket (my-terraform-state-division-trip-money-20250614) into terraform backend
 
 ## apply
