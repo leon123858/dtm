@@ -85,8 +85,24 @@ resource "google_cloud_run_v2_service" "dtm_backend" {
       min_instance_count = 0
     }
 
+
+
     containers {
       image = "us-docker.pkg.dev/cloudrun/container/hello:latest" # Image to deploy
+
+      # startup_probe {
+      #   initial_delay_seconds = 0
+      #   period_seconds        = 0
+      #   timeout_seconds       = 0
+      #   failure_threshold     = 0
+      # }
+
+      # liveness_probe {
+      #   initial_delay_seconds = 0
+      #   period_seconds        = 0
+      #   timeout_seconds       = 0
+      #   failure_threshold     = 0
+      # }
 
       volume_mounts {
         name       = "cloudsql"
@@ -98,13 +114,23 @@ resource "google_cloud_run_v2_service" "dtm_backend" {
           cpu    = "1"
           memory = "256Mi"
         }
+        cpu_idle = "true"
+      }
+
+      env {
+        name  = "DATABASE_PASSWORD"
+        value = var.dtm-backend-db-password
+      }
+      env {
+        name  = "DATABASE_HOST"
+        value = "/cloudsql/" + var.dtm-backend-db-connection-name
       }
     }
 
     volumes {
       name = "cloudsql"
       cloud_sql_instance {
-        instances = [var.dtm-backend-db-name]
+        instances = [var.dtm-backend-db-connection-name]
       }
     }
   }
@@ -127,11 +153,27 @@ resource "google_cloud_run_v2_service" "dtmf_frontend" {
     containers {
       image = "us-docker.pkg.dev/cloudrun/container/hello:latest" # Image to deploy
 
+      # startup_probe {
+      #   initial_delay_seconds = 0
+      #   period_seconds = 0
+      #   timeout_seconds = 0
+      #   failure_threshold = 0
+      # }
+
+      # liveness_probe {
+      #   initial_delay_seconds = 0
+      #   period_seconds = 0
+      #   timeout_seconds = 0
+      #   failure_threshold = 0
+      # }
+
       resources {
         limits = {
           cpu    = "1"
           memory = "256Mi"
         }
+
+        cpu_idle = "true"
       }
     }
   }

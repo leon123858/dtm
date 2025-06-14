@@ -17,6 +17,12 @@ PLAN_FILE := tfplan.out
 # 預設指令，執行 `make` 時會顯示幫助訊息。
 default: help
 
+## deploy candy cmd
+deploy:
+	make init
+	make plan
+	make apply
+
 ## help: 顯示所有可用的指令與說明
 help:
 	@echo "----------------------------------------------------"
@@ -63,6 +69,9 @@ destroy:
 plan-destroy:
 	@echo "==> Creating plan to DESTROY all managed infrastructure..."
 	@terraform plan -destroy
+
+secrets:
+	terraform output -raw generated_db_password
 
 ## clean: 清理產生的暫存檔案
 clean:

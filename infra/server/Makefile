@@ -17,6 +17,12 @@ PLAN_FILE := tfplan.out
 # 預設指令，執行 `make` 時會顯示幫助訊息。
 default: help
 
+## deploy candy cmd
+deploy:
+	make init
+	make plan
+	make apply
+
 ## help: 顯示所有可用的指令與說明
 help:
 	@echo "----------------------------------------------------"
