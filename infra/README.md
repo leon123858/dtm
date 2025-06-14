@@ -42,6 +42,7 @@ Setting Project
 - trigger frontend and backend github action CD to push image
 - set backend server url into frontend docker build image's ENV
   - `https://github.com/leon123858/dtmf/blob/main/dockerfile#L18`
+- update ENV: `FRONTEND_URL` in backend env with cloud run
 - set cloud run to new reversion
 
 ## destroy

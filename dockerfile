@@ -29,6 +29,7 @@ WORKDIR /home/appuser
 # ENV DATABASE_PASSWORD="<db pwd>"
 # ENV DATABASE_USER="postgres"
 # ENV DATABASE_HOST="cloud sql connection string"
+# ENV ADMIN_KEY="<LB Key>"
 
 COPY --from=builder /app/bin/app .
 

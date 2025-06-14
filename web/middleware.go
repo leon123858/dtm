@@ -4,6 +4,7 @@ import (
 	"context"
 	"dtm/db/db"
 	"dtm/graph/utils"
+	"net/http"
 	"os"
 	"time"
 
@@ -14,6 +15,27 @@ import (
 	mgin "github.com/ulule/limiter/v3/drivers/middleware/gin"
 	"github.com/ulule/limiter/v3/drivers/store/memory"
 )
+
+func AdminKeyMiddleware() gin.HandlerFunc {
+	adminKey := os.Getenv("ADMIN_KEY") // Retrieve from env variable
+
+	if adminKey == "" {
+		return func(c *gin.Context) {
+			c.Next()
+		}
+	}
+
+	return func(c *gin.Context) {
+		reqKey := c.GetHeader("X-Admin-Key")
+
+		if reqKey == adminKey {
+			c.Next()
+			return
+		}
+
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+	}
+}
 
 func CorsConfig(webConfig WebServiceConfig) cors.Config {
 	corsConf := cors.DefaultConfig()
@@ -66,6 +88,7 @@ func setupMiddlewares(r *gin.Engine, webConfig WebServiceConfig) {
 	r.Use(limiterMiddleWare())
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
+	r.Use(AdminKeyMiddleware())
 	r.Use(cors.New(CorsConfig(webConfig)))
 	r.Use(secure.New(secure.Config{
 		STSSeconds:           2592000, // 1 month
