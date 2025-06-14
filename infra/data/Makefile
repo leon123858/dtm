@@ -63,12 +63,14 @@ apply:
 ## destroy: 銷毀所有由 Terraform 管理的資源
 destroy:
 	@echo "WARNING: This will destroy all managed infrastructure!"
-	@terraform destroy
+	make init
+	make plan-destroy
+	make apply
 
 ## plan-destroy: 預覽將要銷毀的資源
 plan-destroy:
 	@echo "==> Creating plan to DESTROY all managed infrastructure..."
-	@terraform plan -destroy
+	@terraform plan -destroy -out=$(PLAN_FILE)
 
 secrets:
 	terraform output -raw generated_db_password

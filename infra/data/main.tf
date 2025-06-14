@@ -1,6 +1,11 @@
 # DTM by LEON LIN
 
 terraform {
+  backend "gcs" {
+    bucket = "my-terraform-state-division-trip-money-20250614"
+    prefix = "terraform/state/data" # 可選：指定 state 文件在 bucket 中的路徑前綴
+  }
+
   required_providers {
     google = {
       source  = "hashicorp/google"

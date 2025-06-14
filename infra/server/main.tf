@@ -1,6 +1,11 @@
 # DTM by LEON LIN
 
 terraform {
+  backend "gcs" {
+    bucket = "my-terraform-state-division-trip-money-20250614"
+    prefix = "terraform/state/server" # 可選：指定 state 文件在 bucket 中的路徑前綴
+  }
+
   required_providers {
     google = {
       source  = "hashicorp/google"
@@ -71,6 +76,49 @@ resource "google_service_account" "frontend_app_runtime" {
   description  = "Service account for the DTM frontend with no permissions"
 }
 
+resource "google_cloud_run_v2_service" "dtmf_frontend" {
+  name                = "dtmf"
+  location            = local.region
+  deletion_protection = false
+
+  template {
+    # 前端服務使用 "無權限" 的服務帳戶
+    service_account = google_service_account.frontend_app_runtime.email
+
+    scaling {
+      max_instance_count = 5
+      min_instance_count = 0
+    }
+
+    containers {
+      image = "us-docker.pkg.dev/cloudrun/container/hello:latest" # Image to deploy
+
+      # startup_probe {
+      #   initial_delay_seconds = 0
+      #   period_seconds = 0
+      #   timeout_seconds = 0
+      #   failure_threshold = 0
+      # }
+
+      # liveness_probe {
+      #   initial_delay_seconds = 0
+      #   period_seconds = 0
+      #   timeout_seconds = 0
+      #   failure_threshold = 0
+      # }
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "256Mi"
+        }
+
+        cpu_idle = "true"
+      }
+    }
+  }
+}
+
 resource "google_cloud_run_v2_service" "dtm_backend" {
   name                = "dtm"
   location            = local.region
@@ -123,10 +171,10 @@ resource "google_cloud_run_v2_service" "dtm_backend" {
       }
       env {
         name  = "DATABASE_HOST"
-        value = "/cloudsql/" + var.dtm-backend-db-connection-name
+        value = format("%s/%s", "/cloudsql", var.dtm-backend-db-connection-name)
       }
       env {
-        name = "FRONTEND_URL"
+        name  = "FRONTEND_URL"
         value = google_cloud_run_v2_service.dtmf_frontend.uri
       }
     }
@@ -138,49 +186,8 @@ resource "google_cloud_run_v2_service" "dtm_backend" {
       }
     }
   }
-}
 
-resource "google_cloud_run_v2_service" "dtmf_frontend" {
-  name                = "dtmf"
-  location            = local.region
-  deletion_protection = false
-
-  template {
-    # 前端服務使用 "無權限" 的服務帳戶
-    service_account = google_service_account.frontend_app_runtime.email
-
-    scaling {
-      max_instance_count = 5
-      min_instance_count = 0
-    }
-
-    containers {
-      image = "us-docker.pkg.dev/cloudrun/container/hello:latest" # Image to deploy
-
-      # startup_probe {
-      #   initial_delay_seconds = 0
-      #   period_seconds = 0
-      #   timeout_seconds = 0
-      #   failure_threshold = 0
-      # }
-
-      # liveness_probe {
-      #   initial_delay_seconds = 0
-      #   period_seconds = 0
-      #   timeout_seconds = 0
-      #   failure_threshold = 0
-      # }
-
-      resources {
-        limits = {
-          cpu    = "1"
-          memory = "256Mi"
-        }
-
-        cpu_idle = "true"
-      }
-    }
-  }
+  depends_on = [google_cloud_run_v2_service.dtmf_frontend]
 }
 
 resource "google_cloud_run_v2_service_iam_member" "dtm_backend_public_access" {
