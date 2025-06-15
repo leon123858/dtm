@@ -23,7 +23,7 @@ locals {
   region     = "asia-east1"
   zone       = "asia-east1-b"
   DN_front   = "powerbunny.page"
-  DN_back    = "dtm.powerbunny.xyz"
+  DN_back    = "powerbunny.xyz"
 }
 
 provider "google" {
@@ -79,11 +79,11 @@ resource "google_service_account" "frontend_app_runtime" {
 }
 
 resource "google_cloud_run_v2_service" "dtmf_frontend" {
-  provider             = google-beta
+  # provider             = google-beta
   name                 = "dtmf"
   location             = local.region
   deletion_protection  = false
-  default_uri_disabled = true
+  # default_uri_disabled = true
 
   template {
     # 前端服務使用 "無權限" 的服務帳戶
@@ -129,11 +129,11 @@ resource "google_cloud_run_v2_service" "dtmf_frontend" {
 }
 
 resource "google_cloud_run_v2_service" "dtm_backend" {
-  provider             = google-beta
+  # provider             = google-beta
   name                 = "dtm"
   location             = local.region
   deletion_protection  = false
-  default_uri_disabled = true
+  # default_uri_disabled = true
 
   template {
     # 後端服務使用 "有權限" 的服務帳戶
