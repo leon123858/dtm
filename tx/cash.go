@@ -68,12 +68,12 @@ func generateQueues(cashList []Cash) (*list.List, *list.List) {
 	}
 
 	// Sort inputSlice from largest InputAmount to smallest
-	sort.Slice(tempInputSlice, func(i, j int) bool {
+	sort.SliceStable(tempInputSlice, func(i, j int) bool {
 		return tempInputSlice[i].InputAmount > tempInputSlice[j].InputAmount // Descending order
 	})
 
 	// Sort outputSlice from largest OutputAmount to smallest
-	sort.Slice(tempOutputSlice, func(i, j int) bool {
+	sort.SliceStable(tempOutputSlice, func(i, j int) bool {
 		return tempOutputSlice[i].OutputAmount > tempOutputSlice[j].OutputAmount // Descending order
 	})
 
