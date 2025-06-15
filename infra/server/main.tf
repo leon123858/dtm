@@ -22,6 +22,8 @@ locals {
   project_id = "division-trip-money"
   region     = "asia-east1"
   zone       = "asia-east1-b"
+  DN_front   = "powerbunny.page"
+  DN_back    = "dtm.powerbunny.xyz"
 }
 
 provider "google" {
@@ -77,9 +79,11 @@ resource "google_service_account" "frontend_app_runtime" {
 }
 
 resource "google_cloud_run_v2_service" "dtmf_frontend" {
-  name                = "dtmf"
-  location            = local.region
-  deletion_protection = false
+  provider             = google-beta
+  name                 = "dtmf"
+  location             = local.region
+  deletion_protection  = false
+  default_uri_disabled = true
 
   template {
     # 前端服務使用 "無權限" 的服務帳戶
@@ -115,14 +119,21 @@ resource "google_cloud_run_v2_service" "dtmf_frontend" {
 
         cpu_idle = "true"
       }
+
+      # env {
+      #   name  = "ADMIN_KEY"
+      #   value = ""
+      # }
     }
   }
 }
 
 resource "google_cloud_run_v2_service" "dtm_backend" {
-  name                = "dtm"
-  location            = local.region
-  deletion_protection = false
+  provider             = google-beta
+  name                 = "dtm"
+  location             = local.region
+  deletion_protection  = false
+  default_uri_disabled = true
 
   template {
     # 後端服務使用 "有權限" 的服務帳戶
@@ -132,8 +143,6 @@ resource "google_cloud_run_v2_service" "dtm_backend" {
       max_instance_count = 5
       min_instance_count = 0
     }
-
-
 
     containers {
       image = "us-docker.pkg.dev/cloudrun/container/hello:latest" # Image to deploy
@@ -175,8 +184,12 @@ resource "google_cloud_run_v2_service" "dtm_backend" {
       }
       env {
         name  = "FRONTEND_URL"
-        value = google_cloud_run_v2_service.dtmf_frontend.uri
+        value = format("%s://%s", "https", local.DN_front)
       }
+      # env {
+      #   name = "ADMIN_KEY"
+      #   value = ""
+      # }
     }
 
     volumes {
@@ -188,6 +201,28 @@ resource "google_cloud_run_v2_service" "dtm_backend" {
   }
 
   depends_on = [google_cloud_run_v2_service.dtmf_frontend]
+}
+
+resource "google_cloud_run_domain_mapping" "backend" {
+  name     = local.DN_back
+  location = google_cloud_run_v2_service.dtm_backend.location
+  metadata {
+    namespace = local.project_id
+  }
+  spec {
+    route_name = google_cloud_run_v2_service.dtm_backend.name
+  }
+}
+
+resource "google_cloud_run_domain_mapping" "frontend" {
+  name     = local.DN_front
+  location = google_cloud_run_v2_service.dtmf_frontend.location
+  metadata {
+    namespace = local.project_id
+  }
+  spec {
+    route_name = google_cloud_run_v2_service.dtmf_frontend.name
+  }
 }
 
 resource "google_cloud_run_v2_service_iam_member" "dtm_backend_public_access" {

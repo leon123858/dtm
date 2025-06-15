@@ -39,10 +39,9 @@ Setting Project
     - `gcloud artifacts repositories list`
   - `gh secret set GCP_SA_KEY`
     - download key from `https://console.cloud.google.com/iam-admin/serviceaccounts`
-- trigger frontend and backend github action CD to push image
 - set backend server url into frontend docker build image's ENV
   - `https://github.com/leon123858/dtmf/blob/main/dockerfile#L18`
-- update ENV: `FRONTEND_URL` in backend env with cloud run
+- trigger frontend and backend github action CD to push image
 - set cloud run to new reversion
 
 ## destroy
