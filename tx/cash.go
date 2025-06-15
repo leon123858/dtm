@@ -67,14 +67,21 @@ func generateQueues(cashList []Cash) (*list.List, *list.List) {
 		// If both are zero or negative, or one is positive and other negative, it's ignored for this process
 	}
 
-	// Sort inputSlice from largest InputAmount to smallest
+	// sort the input slice by InputAmount, descending, and by address for stable sorting
 	sort.SliceStable(tempInputSlice, func(i, j int) bool {
-		return tempInputSlice[i].InputAmount > tempInputSlice[j].InputAmount // Descending order
+		// Sort by address to ensure stable sorting for same InputAmount
+		if tempInputSlice[i].InputAmount == tempInputSlice[j].InputAmount {
+			return tempInputSlice[i].Address < tempInputSlice[j].Address // Ascending order by address
+		}
+		return tempInputSlice[i].InputAmount > tempInputSlice[j].InputAmount // Descending order by InputAmount
 	})
-
-	// Sort outputSlice from largest OutputAmount to smallest
+	// Sort the output slice by OutputAmount, descending, and by address for stable sorting
 	sort.SliceStable(tempOutputSlice, func(i, j int) bool {
-		return tempOutputSlice[i].OutputAmount > tempOutputSlice[j].OutputAmount // Descending order
+		// Sort by address to ensure stable sorting for same OutputAmount
+		if tempOutputSlice[i].OutputAmount == tempOutputSlice[j].OutputAmount {
+			return tempOutputSlice[i].Address < tempOutputSlice[j].Address // Ascending order by address
+		}
+		return tempOutputSlice[i].OutputAmount > tempOutputSlice[j].OutputAmount // Descending order by OutputAmount
 	})
 
 	// Repopulate actual queues from sorted slices
