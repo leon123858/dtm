@@ -18,6 +18,10 @@ import (
 
 // CreateTrip is the resolver for the createTrip field.
 func (r *mutationResolver) CreateTrip(ctx context.Context, input model.NewTrip) (*model.Trip, error) {
+	if !utils.VerifyStringRequest(input.Name) {
+		return nil, fmt.Errorf("invalid trip name")
+	}
+
 	dbTripInfo := r.TripDB
 	id := uuid.New()
 	tripInfo := &db.TripInfo{
@@ -36,6 +40,10 @@ func (r *mutationResolver) CreateTrip(ctx context.Context, input model.NewTrip) 
 
 // UpdateTrip is the resolver for the updateTrip field.
 func (r *mutationResolver) UpdateTrip(ctx context.Context, tripID string, input model.NewTrip) (*model.Trip, error) {
+	if !utils.VerifyStringRequest(input.Name) {
+		return nil, fmt.Errorf("invalid trip name")
+	}
+
 	dbTripInfo := r.TripDB
 	id, err := uuid.Parse(tripID)
 	if err != nil {
@@ -59,6 +67,10 @@ func (r *mutationResolver) UpdateTrip(ctx context.Context, tripID string, input 
 
 // CreateRecord is the resolver for the createRecord field.
 func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, input model.NewRecord) (*model.Record, error) {
+	if !utils.VerifyRecordRequest(input) {
+		return nil, fmt.Errorf("invalid record input")
+	}
+
 	dbTripInfo := r.TripDB
 	tripUUID, err := uuid.Parse(tripID)
 	if err != nil {
@@ -104,6 +116,10 @@ func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, inpu
 
 // UpdateRecord is the resolver for the updateRecord field.
 func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, input model.NewRecord) (*model.Record, error) {
+	if !utils.VerifyRecordRequest(input) {
+		return nil, fmt.Errorf("invalid record input")
+	}
+
 	dbTripInfo := r.TripDB
 	recordUID, err := uuid.Parse(recordID)
 	if err != nil {
@@ -174,6 +190,10 @@ func (r *mutationResolver) RemoveRecord(ctx context.Context, recordID string) (s
 
 // CreateAddress is the resolver for the createAddress field.
 func (r *mutationResolver) CreateAddress(ctx context.Context, tripID string, address string) (string, error) {
+	if !utils.VerifyStringRequest(address) {
+		return "", fmt.Errorf("invalid address")
+	}
+
 	dbTripInfo := r.TripDB
 	tripUUID, err := uuid.Parse(tripID)
 	if err != nil {
