@@ -1,6 +1,32 @@
 package utils
 
-import "dtm/graph/model"
+import (
+	"dtm/graph/model"
+	"unicode"
+)
+
+func IsSecureString(s string) bool {
+	// 定義允許的「安全符號」
+	allowedSafeSymbols := map[rune]bool{
+		'_': true,
+		'-': true,
+		'.': true,
+		'@': true,
+		'#': true,
+		' ': true,
+	}
+
+	for _, r := range s {
+		// 如果不是字母，也不是數字
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			// 進一步檢查它是否在允許的安全符號清單中
+			if _, ok := allowedSafeSymbols[r]; !ok {
+				return false // 發現不允許的特殊字元
+			}
+		}
+	}
+	return true // 所有字元都符合安全規範
+}
 
 func VerifyStringRequest(s string) bool {
 	if len(s) == 0 {
@@ -10,7 +36,7 @@ func VerifyStringRequest(s string) bool {
 		return false
 	}
 	for _, char := range s {
-		if !(('a' <= char && char <= 'z') || ('A' <= char && char <= 'Z') || ('0' <= char && char <= '9') || char == '_' || char == '-') {
+		if !IsSecureString(string(char)) {
 			return false
 		}
 	}
