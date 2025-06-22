@@ -85,7 +85,7 @@ func TripDataLoaderInjectionMiddleware(wrapper db.TripDBWrapper) gin.HandlerFunc
 }
 
 func setupMiddlewares(r *gin.Engine, webConfig WebServiceConfig) {
-	r.Use(limiterMiddleWare())
+	// r.Use(limiterMiddleWare()) // We limit it by cloudflare, so no need to limit here
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
 	r.Use(AdminKeyMiddleware())
