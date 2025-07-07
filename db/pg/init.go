@@ -31,6 +31,11 @@ func CreateDSN() string {
 	} else {
 		log.Printf("Using default connection string: %s", connStr)
 	}
+
+	// dsn should point to target schema for the app
+	appSchema := config.AppName
+	connStr += fmt.Sprintf(" search_path=%s", appSchema)
+
 	return connStr
 }
 
@@ -43,7 +48,6 @@ func CloseGORM(db *gorm.DB) {
 }
 
 // InitPostgresGORM initializes a new GORM DB connection to PostgreSQL.
-// It also performs auto-migration for the defined models.
 func InitPostgresGORM(dsn string) (*gorm.DB, error) {
 	newLogger := logger.New(
 		log.New(os.Stdout, "\r\n", log.LstdFlags), // io writer
@@ -69,12 +73,6 @@ func InitPostgresGORM(dsn string) (*gorm.DB, error) {
 	}
 	if err = sqlDB.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
-	}
-
-	// set search path to the app schema
-	appSchema := config.AppName
-	if err := db.Exec(fmt.Sprintf("SET search_path TO %s", appSchema)).Error; err != nil {
-		return nil, fmt.Errorf("failed to set search path to %s: %w", appSchema, err)
 	}
 
 	// log.Println("PostgreSQL GORM connection initialized successfully!")
