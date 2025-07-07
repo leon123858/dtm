@@ -1,6 +1,7 @@
 package pg
 
 import (
+	"dtm/config"
 	"fmt"
 	"log"
 	"os"
@@ -68,6 +69,12 @@ func InitPostgresGORM(dsn string) (*gorm.DB, error) {
 	}
 	if err = sqlDB.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	// set search path to the app schema
+	appSchema := config.AppName
+	if err := db.Exec(fmt.Sprintf("SET search_path TO %s", appSchema)).Error; err != nil {
+		return nil, fmt.Errorf("failed to set search path to %s: %w", appSchema, err)
 	}
 
 	// log.Println("PostgreSQL GORM connection initialized successfully!")

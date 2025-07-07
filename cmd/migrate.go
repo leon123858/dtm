@@ -15,6 +15,8 @@ import (
 	_ "github.com/lib/pq" // PostgreSQL 驅動程式
 
 	"github.com/pressly/goose/v3"
+
+	"dtm/config"
 )
 
 func migrateCommand() *cobra.Command {
@@ -55,6 +57,16 @@ func migrateCommand() *cobra.Command {
 				log.Fatalf("Failed to open database: %v", err)
 			}
 			defer db.Close()
+
+			// create app schema if not exists
+			if _, err := db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", config.AppName)); err != nil {
+				log.Fatalf("Failed to create schema: %v", err)
+			}
+
+			// set search path to target schema
+			if _, err := db.Exec(fmt.Sprintf("SET search_path TO %s", config.AppName)); err != nil {
+				log.Fatalf("Failed to set search path: %v", err)
+			}
 
 			// Ping 資料庫以確保連接已成功建立
 			pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
