@@ -104,7 +104,7 @@ func TestNewFanOutQueueCore(t *testing.T) {
 
 func TestFanOutQueueCore_PublishSubscribeDeSubscribe_Simple(t *testing.T) {
 	t.Parallel()
-	core := newFanOutQueueCore[MockItem](0) // Unbuffered publishChan
+	core := newFanOutQueueCore[MockItem](10)
 	defer core.Stop()
 	topic := uuid.New()
 	id1, subChan1, err := core.Subscribe(topic)
