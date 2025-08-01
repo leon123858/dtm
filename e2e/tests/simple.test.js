@@ -25,6 +25,7 @@ const GET_TRIP = gql`
 				id
 				name
 				amount
+				time
 				prePayAddress
 				shouldPayAddress
 			}
@@ -50,6 +51,7 @@ const CREATE_RECORD = gql`
 			id
 			name
 			amount
+			time
 		}
 	}
 `;
@@ -60,6 +62,7 @@ const UPDATE_RECORD = gql`
 			id
 			name
 			amount
+			time
 			prePayAddress
 			shouldPayAddress
 		}
@@ -170,6 +173,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			const newRecord = {
 				name: 'Lunch',
 				amount: 150.75,
+				time: '1672531199',
 				prePayAddress: 'Alice',
 				shouldPayAddress: ['Alice'],
 			};
@@ -194,6 +198,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			});
 			expect(tripData.trip.records).toHaveLength(1);
 			expect(tripData.trip.records[0].name).toBe(newRecord.name);
+			expect(tripData.trip.records[0].time).toBe(newRecord.time);
 		});
 
 		it('should update the created record', async () => {

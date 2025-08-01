@@ -36,6 +36,7 @@ func (p *pgDBWrapper) CreateTripRecords(id uuid.UUID, records []db.Record) error
 				TripID:        id, // Link to the trip
 				Name:          rec.RecordInfo.Name,
 				Amount:        rec.RecordInfo.Amount,
+				Time:          rec.RecordInfo.Time, // Use the time from RecordInfo
 				PrePayAddress: string(rec.RecordInfo.PrePayAddress),
 			}
 			if err := tx.Create(&recordModel).Error; err != nil {
@@ -83,6 +84,7 @@ func (p *pgDBWrapper) GetTripRecords(id uuid.UUID) ([]db.RecordInfo, error) {
 			Name:          rm.Name,
 			Amount:        rm.Amount,
 			PrePayAddress: db.Address(rm.PrePayAddress),
+			Time:          rm.Time, // Use the time from RecordModel
 		})
 	}
 	return recordInfos, nil
@@ -136,6 +138,7 @@ func (p *pgDBWrapper) UpdateTripRecord(record *db.Record) (uuid.UUID, error) {
 		recordModel.Name = record.RecordInfo.Name
 		recordModel.Amount = record.RecordInfo.Amount
 		recordModel.PrePayAddress = string(record.RecordInfo.PrePayAddress)
+		recordModel.Time = record.RecordInfo.Time // Update the time field
 		if err := tx.Model(&RecordModel{}).Where("id = ?", record.RecordInfo.ID).Updates(recordModel).Error; err != nil {
 			return err
 		}
@@ -206,7 +209,6 @@ func (p *pgDBWrapper) DeleteTripRecord(recordID uuid.UUID) (uuid.UUID, error) {
 // Data Loader
 // These are more complex and often involve custom SQL or optimized GORM queries
 // to avoid N+1 problems. The implementations below are basic.
-
 func (p *pgDBWrapper) DataLoaderGetRecordInfoList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]db.RecordInfo, error) {
 	var records []RecordModel
 	if err := p.db.WithContext(ctx).Where("trip_id IN ?", tripIds).Find(&records).Error; err != nil {
@@ -219,6 +221,7 @@ func (p *pgDBWrapper) DataLoaderGetRecordInfoList(ctx context.Context, tripIds [
 			ID:            r.ID,
 			Name:          r.Name,
 			Amount:        r.Amount,
+			Time:          r.Time, // Use the time from RecordModel
 			PrePayAddress: db.Address(r.PrePayAddress),
 		})
 	}

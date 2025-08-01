@@ -9,6 +9,7 @@ type NewRecord struct {
 	Name             string   `json:"name"`
 	Amount           float64  `json:"amount"`
 	PrePayAddress    string   `json:"prePayAddress"`
+	Time             *string  `json:"time,omitempty"`
 	ShouldPayAddress []string `json:"shouldPayAddress"`
 }
 

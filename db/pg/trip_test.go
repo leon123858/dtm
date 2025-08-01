@@ -5,6 +5,7 @@ import (
 	"dtm/db/db"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -111,6 +112,8 @@ func TestCreateTripRecords(t *testing.T) {
 
 	recordID1 := uuid.New()
 	recordID2 := uuid.New()
+	time1 := time.Now()
+	time2 := time.Now().Add(time.Hour)
 	recordsToCreate := []db.Record{
 		{
 			RecordInfo: db.RecordInfo{
@@ -118,6 +121,7 @@ func TestCreateTripRecords(t *testing.T) {
 				Name:          "Record 1",
 				Amount:        100.50,
 				PrePayAddress: prePayAddr1,
+				Time:          time1,
 			},
 			RecordData: db.RecordData{
 				ShouldPayAddress: []db.Address{shouldPayAddrA, shouldPayAddrB},
@@ -129,6 +133,7 @@ func TestCreateTripRecords(t *testing.T) {
 				Name:          "Record 2",
 				Amount:        200.75,
 				PrePayAddress: prePayAddr1,
+				Time:          time2,
 			},
 			RecordData: db.RecordData{
 				ShouldPayAddress: []db.Address{shouldPayAddrC},
@@ -156,6 +161,7 @@ func TestCreateTripRecords(t *testing.T) {
 	assert.Equal(t, "Record 1", r1.Name)
 	assert.Equal(t, 100.50, r1.Amount)
 	assert.Equal(t, prePayAddr1, r1.PrePayAddress)
+	assert.Equal(t, time1.UnixMilli(), r1.Time.UnixMilli())
 	shouldPay1, err := wrapper.GetRecordAddressList(recordID1)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []db.Address{shouldPayAddrA, shouldPayAddrB}, shouldPay1)
@@ -163,6 +169,8 @@ func TestCreateTripRecords(t *testing.T) {
 	assert.Equal(t, recordID2, r2.ID)
 	assert.Equal(t, "Record 2", r2.Name)
 	assert.Equal(t, 200.75, r2.Amount)
+	assert.Equal(t, prePayAddr1, r2.PrePayAddress)
+	assert.Equal(t, time2.UnixMilli(), r2.Time.UnixMilli())
 	shouldPay2, err := wrapper.GetRecordAddressList(recordID2)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []db.Address{shouldPayAddrC}, shouldPay2)
@@ -261,7 +269,8 @@ func TestUpdateTripRecord(t *testing.T) {
 	err = wrapper.CreateTripRecords(tripID, originalRecord)
 	require.NoError(t, err)
 
-	updatedRecordInfo := db.RecordInfo{ID: recordID, Name: "Updated Record", Amount: 75.25, PrePayAddress: prePayAddr}
+	curTime := time.Now()
+	updatedRecordInfo := db.RecordInfo{ID: recordID, Name: "Updated Record", Amount: 75.25, PrePayAddress: prePayAddr, Time: curTime}
 	updatedRecord := db.Record{
 		RecordInfo: updatedRecordInfo,
 		RecordData: db.RecordData{ShouldPayAddress: []db.Address{"shouldpay_for_update_test_utr"}},
@@ -282,6 +291,10 @@ func TestUpdateTripRecord(t *testing.T) {
 	assert.Equal(t, updatedRecordInfo.Name, fetchedRecords[0].Name)
 	assert.Equal(t, updatedRecordInfo.Amount, fetchedRecords[0].Amount)
 	assert.Equal(t, updatedRecordInfo.PrePayAddress, fetchedRecords[0].PrePayAddress)
+
+	// trip record time default is current
+	assert.Equal(t, curTime.UnixMilli(), fetchedRecords[0].Time.UnixMilli())
+	assert.NotEmpty(t, fetchedRecords[0].ID)
 
 	shouldPayAddresses, err := wrapper.GetRecordAddressList(recordID)
 	require.NoError(t, err)
@@ -409,11 +422,12 @@ func TestDataLoaderGetRecordInfoList(t *testing.T) {
 	addrT2 := db.Address("dlrec_t2_addr")
 	require.NoError(t, wrapper.TripAddressListAdd(tripID2, addrT2))
 
-	rec1T1 := db.Record{RecordInfo: db.RecordInfo{ID: uuid.New(), Name: "T1R1", PrePayAddress: addrT1}}
-	rec2T1 := db.Record{RecordInfo: db.RecordInfo{ID: uuid.New(), Name: "T1R2", PrePayAddress: addrT1}}
+	curTime := time.Now()
+	rec1T1 := db.Record{RecordInfo: db.RecordInfo{ID: uuid.New(), Name: "T1R1", PrePayAddress: addrT1, Time: curTime}}
+	rec2T1 := db.Record{RecordInfo: db.RecordInfo{ID: uuid.New(), Name: "T1R2", PrePayAddress: addrT1, Time: curTime}}
 	require.NoError(t, wrapper.CreateTripRecords(tripID1, []db.Record{rec1T1, rec2T1}))
 
-	rec1T2 := db.Record{RecordInfo: db.RecordInfo{ID: uuid.New(), Name: "T2R1", PrePayAddress: addrT2}}
+	rec1T2 := db.Record{RecordInfo: db.RecordInfo{ID: uuid.New(), Name: "T2R1", PrePayAddress: addrT2, Time: curTime}}
 	require.NoError(t, wrapper.CreateTripRecords(tripID2, []db.Record{rec1T2}))
 
 	resultMap, err := wrapper.DataLoaderGetRecordInfoList(ctx, []uuid.UUID{tripID1, tripID2, tripID3})

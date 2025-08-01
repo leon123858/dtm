@@ -2,6 +2,9 @@ package utils
 
 import (
 	"dtm/graph/model"
+	"fmt"
+	"strconv"
+	"time"
 	"unicode"
 )
 
@@ -69,4 +72,15 @@ func VerifyRecordRequest(r model.NewRecord) bool {
 		return false
 	}
 	return true
+}
+
+// ParseJSTimestampString parses a JavaScript Date.now() string (milliseconds since epoch)
+// into a Go time.Time object.
+func ParseJSTimestampString(jsTimestampStr string) (time.Time, error) {
+	unixMilli, err := strconv.ParseInt(jsTimestampStr, 10, 64)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to parse timestamp string '%s' to int64: %w", jsTimestampStr, err)
+	}
+
+	return time.UnixMilli(unixMilli), nil
 }

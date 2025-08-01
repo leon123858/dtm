@@ -26,6 +26,7 @@ type RecordModel struct {
 	TripID        uuid.UUID `gorm:"type:uuid;not null"`
 	Name          string    `gorm:"size:255;not null"`
 	Amount        float64   `gorm:"type:numeric(10,2);not null"`
+	Time          time.Time `gorm:"not null"` // Use time.Time to store the timestamp
 	PrePayAddress string    `gorm:"size:255;not null"`
 	// meta data
 	CreatedAt time.Time

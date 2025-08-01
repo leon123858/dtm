@@ -19,6 +19,7 @@ func TripRecordMQ2GQL(msg mq.TripRecordMessage) (*model.Record, bool, error) {
 		ID:            msg.ID.String(), // 將 uuid.UUID 轉換為 string
 		Name:          msg.Name,
 		Amount:        msg.Amount,
+		Time:          msg.Time,
 		PrePayAddress: string(msg.PrePayAddress), // 將 []byte 轉換為 string
 	}
 

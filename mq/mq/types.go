@@ -42,6 +42,7 @@ type TripRecordMessage struct {
 	TripID        uuid.UUID
 	Name          string
 	Amount        float64
+	Time          string // ISO format
 	PrePayAddress db.Address
 }
 

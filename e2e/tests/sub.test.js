@@ -25,6 +25,7 @@ const GET_TRIP = gql`
 				id
 				name
 				amount
+				time
 				prePayAddress
 				shouldPayAddress
 			}
@@ -60,6 +61,7 @@ const CREATE_RECORD = gql`
 			id
 			name
 			amount
+			time
 			prePayAddress
 			shouldPayAddress
 		}
@@ -72,6 +74,7 @@ const UPDATE_RECORD = gql`
 			id
 			name
 			amount
+			time
 			prePayAddress
 			shouldPayAddress
 		}
@@ -91,6 +94,7 @@ const SUB_RECORD_CREATE = gql`
 			id
 			name
 			amount
+			time
 			prePayAddress
 			shouldPayAddress
 		}
@@ -103,6 +107,7 @@ const SUB_RECORD_UPDATE = gql`
 			id
 			name
 			amount
+			time
 			prePayAddress
 			shouldPayAddress
 		}
@@ -300,6 +305,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			const newRecord = {
 				name: 'Lunch',
 				amount: 150.75,
+				time: '1672531199',
 				prePayAddress: 'Alice', // 假設 'Alice' 已在 Address Management 測試中建立
 				shouldPayAddress: ['Alice'],
 			};
@@ -323,6 +329,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			});
 			expect(tripData.trip.records).toHaveLength(1);
 			expect(tripData.trip.records[0].name).toBe(newRecord.name);
+			expect(tripData.trip.records[0].time).toBe(newRecord.time);
 		});
 
 		it('should update the created record', async () => {
@@ -331,6 +338,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			const updatedRecord = {
 				name: 'Expensive Dinner',
 				amount: 500,
+				time: '1672531299',
 				prePayAddress: 'Alice',
 				shouldPayAddress: ['Alice'],
 			};
@@ -346,6 +354,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			expect(error).toBeUndefined();
 			expect(data.updateRecord.name).toBe(updatedRecord.name);
 			expect(data.updateRecord.amount).toBe(updatedRecord.amount);
+			expect(data.updateRecord.time).toBe(updatedRecord.time);
 		});
 
 		it('should remove the record', async () => {
@@ -527,6 +536,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			const newRecordPayload = {
 				name: 'Sub Test Record Create',
 				amount: 77.88,
+				time: '1672531399',
 				prePayAddress: commonAddressForSubRecords,
 				shouldPayAddress: [commonAddressForSubRecords],
 			};
@@ -555,6 +565,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			expect(subData.subRecordCreate.id).toBe(recordIdForSubTests);
 			expect(subData.subRecordCreate.name).toBe(newRecordPayload.name);
 			expect(subData.subRecordCreate.amount).toBe(newRecordPayload.amount);
+			expect(subData.subRecordCreate.time).toBe(newRecordPayload.time);
 			expect(subData.subRecordCreate.prePayAddress).toBe(
 				newRecordPayload.prePayAddress
 			);
@@ -569,6 +580,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			const updatedRecordPayload = {
 				name: 'Sub Test Record Updated',
 				amount: 99.55,
+				time: '1672531499',
 				prePayAddress: commonAddressForSubRecords,
 				shouldPayAddress: [commonAddressForSubRecords],
 			};
@@ -599,6 +611,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			expect(subData.subRecordUpdate.id).toBe(recordIdForSubTests);
 			expect(subData.subRecordUpdate.name).toBe(updatedRecordPayload.name);
 			expect(subData.subRecordUpdate.amount).toBe(updatedRecordPayload.amount);
+			expect(subData.subRecordUpdate.time).toBe(updatedRecordPayload.time);
 		});
 
 		it('should receive a notification when a record is deleted (subRecordDelete)', async () => {

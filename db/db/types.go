@@ -1,6 +1,10 @@
 package db
 
-import "github.com/google/uuid"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type Address string
 
@@ -23,6 +27,7 @@ type RecordInfo struct {
 	ID            uuid.UUID
 	Name          string
 	Amount        float64
+	Time          time.Time
 	PrePayAddress Address
 }
 

@@ -12,6 +12,8 @@ import (
 	"dtm/mq/mq"
 	"dtm/tx"
 	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -77,11 +79,22 @@ func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, inpu
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
 	}
 
+	var t time.Time
+	if input.Time != nil {
+		t, err = utils.ParseJSTimestampString(*input.Time)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		t = time.Now()
+	}
+
 	record := &db.Record{
 		RecordInfo: db.RecordInfo{
 			ID:            uuid.New(),
 			Name:          input.Name,
 			Amount:        input.Amount,
+			Time:          t,
 			PrePayAddress: db.Address(input.PrePayAddress),
 		},
 		RecordData: db.RecordData{
@@ -101,6 +114,7 @@ func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, inpu
 		ID:            record.ID,
 		Name:          record.Name,
 		Amount:        record.Amount,
+		Time:          strconv.FormatInt(record.Time.UnixMilli(), 10),
 		PrePayAddress: record.PrePayAddress,
 	}); err != nil {
 		fmt.Println("Warning: fail to notice event: " + err.Error())
@@ -110,6 +124,7 @@ func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, inpu
 		ID:            record.ID.String(),
 		Name:          record.Name,
 		Amount:        record.Amount,
+		Time:          strconv.FormatInt(record.Time.UnixMilli(), 10),
 		PrePayAddress: string(record.PrePayAddress),
 	}, nil
 }
@@ -126,11 +141,22 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, in
 		return nil, fmt.Errorf("invalid record ID: %w", err)
 	}
 
+	var t time.Time
+	if input.Time != nil {
+		t, err = utils.ParseJSTimestampString(*input.Time)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		t = time.Now()
+	}
+
 	record := &db.Record{
 		RecordInfo: db.RecordInfo{
 			ID:            recordUID,
 			Name:          input.Name,
 			Amount:        input.Amount,
+			Time:          t,
 			PrePayAddress: db.Address(input.PrePayAddress),
 		},
 		RecordData: db.RecordData{
@@ -152,6 +178,7 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, in
 		ID:            record.ID,
 		Name:          record.Name,
 		Amount:        record.Amount,
+		Time:          strconv.FormatInt(record.Time.UnixMilli(), 10),
 		PrePayAddress: record.PrePayAddress,
 	}); err != nil {
 		fmt.Println("Warning: fail to notice event: " + err.Error())
@@ -161,6 +188,7 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, in
 		ID:            record.ID.String(),
 		Name:          record.Name,
 		Amount:        record.Amount,
+		Time:          strconv.FormatInt(record.Time.UnixMilli(), 10),
 		PrePayAddress: string(record.PrePayAddress),
 	}, nil
 }
@@ -439,6 +467,7 @@ func (r *tripResolver) Records(ctx context.Context, obj *model.Trip) ([]*model.R
 			ID:            record.ID.String(),
 			Name:          record.Name,
 			Amount:        record.Amount,
+			Time:          strconv.FormatInt(record.Time.UnixMilli(), 10),
 			PrePayAddress: string(record.PrePayAddress),
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -26,6 +27,7 @@ func newRecord(name string, amount float64, prePayAddress dbt.Address, shouldPay
 			ID:            uuid.New(),
 			Name:          name,
 			Amount:        amount,
+			Time:          time.Now(),
 			PrePayAddress: prePayAddress,
 		},
 		RecordData: dbt.RecordData{
@@ -101,6 +103,7 @@ func TestCreateTripRecords(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, retrievedRecords, 3)
 		assert.Contains(t, retrievedRecords, moreRecords[0].RecordInfo)
+		assert.NotEmpty(t, retrievedRecords[2].Time, "Time should be set for new records")
 	})
 
 	t.Run("Fail to add records to non-existent trip", func(t *testing.T) {

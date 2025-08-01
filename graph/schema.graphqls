@@ -7,6 +7,7 @@ type Record {
 	name: String!
 	amount: Float!
 	prePayAddress: String!
+	time: String!
 	shouldPayAddress: [String!]!
 }
 
@@ -44,6 +45,7 @@ input NewRecord {
 	name: String!
 	amount: Float!
 	prePayAddress: String!
+	time: String
 	shouldPayAddress: [String!]!
 }
 

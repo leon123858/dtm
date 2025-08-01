@@ -26,6 +26,7 @@ const GET_TRIP = gql`
 				id
 				name
 				amount
+				time
 				prePayAddress
 				shouldPayAddress
 			}
@@ -56,6 +57,7 @@ const CREATE_RECORD = gql`
 			id
 			name
 			amount
+			time
 			prePayAddress
 			shouldPayAddress
 		}
@@ -111,6 +113,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			const record1 = {
 				name: 'Dinner',
 				amount: 100,
+				time: '1672531199',
 				prePayAddress: addressAlice,
 				shouldPayAddress: [addressAlice, addressBob],
 			};
@@ -123,6 +126,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			const record2 = {
 				name: 'Transport',
 				amount: 60,
+				time: '1672531299',
 				prePayAddress: addressBob,
 				shouldPayAddress: [addressAlice, addressCharlie],
 			};
@@ -135,6 +139,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			const record3 = {
 				name: 'Accommodation',
 				amount: 90,
+				time: '1672531399',
 				prePayAddress: addressCharlie,
 				shouldPayAddress: [addressAlice, addressBob, addressCharlie],
 			};
