@@ -1,136 +1,18 @@
-import { gql } from '@apollo/client/core';
 import { client } from '../src/apolloClient'; // 假設您的 Apollo Client 實例從此處匯出
-
-// 將 GraphQL 操作定義在檔案頂部，方便管理
-const CREATE_TRIP = gql`
-	mutation CreateTrip($input: NewTrip!) {
-		createTrip(input: $input) {
-			id
-			name
-			addressList
-			records {
-				id
-			}
-		}
-	}
-`;
-
-const GET_TRIP = gql`
-	query GetTrip($id: ID!) {
-		trip(tripId: $id) {
-			id
-			name
-			addressList
-			records {
-				id
-				name
-				amount
-				time
-				prePayAddress
-				shouldPayAddress
-			}
-			moneyShare {
-				input {
-					amount
-					address
-				}
-				output {
-					amount
-					address
-				}
-			}
-		}
-	}
-`;
-
-const CREATE_ADDRESS = gql`
-	mutation CreateAddress($tripId: ID!, $address: String!) {
-		createAddress(tripId: $tripId, address: $address)
-	}
-`;
-
-const DELETE_ADDRESS = gql`
-	mutation DeleteAddress($tripId: ID!, $address: String!) {
-		deleteAddress(tripId: $tripId, address: $address)
-	}
-`;
-
-const CREATE_RECORD = gql`
-	mutation CreateRecord($tripId: ID!, $input: NewRecord!) {
-		createRecord(tripId: $tripId, input: $input) {
-			id
-			name
-			amount
-			time
-			prePayAddress
-			shouldPayAddress
-		}
-	}
-`;
-
-const UPDATE_RECORD = gql`
-	mutation UpdateRecord($recordId: ID!, $input: NewRecord!) {
-		updateRecord(recordId: $recordId, input: $input) {
-			id
-			name
-			amount
-			time
-			prePayAddress
-			shouldPayAddress
-		}
-	}
-`;
-
-const REMOVE_RECORD = gql`
-	mutation RemoveRecord($id: ID!) {
-		removeRecord(recordId: $id)
-	}
-`;
-
-// --- Subscription GraphQL Definitions ---
-const SUB_RECORD_CREATE = gql`
-	subscription SubRecordCreate($tripId: ID!) {
-		subRecordCreate(tripId: $tripId) {
-			id
-			name
-			amount
-			time
-			prePayAddress
-			shouldPayAddress
-		}
-	}
-`;
-
-const SUB_RECORD_UPDATE = gql`
-	subscription SubRecordUpdate($tripId: ID!) {
-		subRecordUpdate(tripId: $tripId) {
-			id
-			name
-			amount
-			time
-			prePayAddress
-			shouldPayAddress
-		}
-	}
-`;
-
-const SUB_RECORD_DELETE = gql`
-	subscription SubRecordDelete($tripId: ID!) {
-		subRecordDelete(tripId: $tripId) # Schema: String!
-	}
-`;
-
-const SUB_ADDRESS_CREATE = gql`
-	subscription SubAddressCreate($tripId: ID!) {
-		subAddressCreate(tripId: $tripId) # Schema: String!
-	}
-`;
-
-const SUB_ADDRESS_DELETE = gql`
-	subscription SubAddressDelete($tripId: ID!) {
-		subAddressDelete(tripId: $tripId) # Schema: String!
-	}
-`;
+import {
+	GET_TRIP,
+	CREATE_TRIP,
+	CREATE_ADDRESS,
+	DELETE_ADDRESS,
+	CREATE_RECORD,
+	UPDATE_RECORD,
+	REMOVE_RECORD,
+	SUB_RECORD_CREATE,
+	SUB_RECORD_UPDATE,
+	SUB_RECORD_DELETE,
+	SUB_ADDRESS_CREATE,
+	SUB_ADDRESS_DELETE,
+} from './graphql';
 
 /**
  * 使執行緒暫停指定的毫秒數。
@@ -230,9 +112,8 @@ describe('GraphQL API End-to-End Tests', () => {
 		it('should fetch the created trip correctly', async () => {
 			const { data, error } = await client.query({
 				query: GET_TRIP,
-				variables: { id: tripId },
+				variables: { tripId },
 			});
-
 			expect(error).toBeUndefined();
 			expect(data.trip.id).toBe(tripId);
 			expect(data.trip.name).toBe(testTripName);
@@ -244,7 +125,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			try {
 				await client.query({
 					query: GET_TRIP,
-					variables: { id: '8bc14c40-214d-4c1d-bbd0-ebb4d5a4eee3' }, // 使用一個確保不存在的 ID
+					variables: { tripId: '8bc14c40-214d-4c1d-bbd0-ebb4d5a4eee3' }, // 使用一個確保不存在的 ID
 				});
 				fail('Expected client.query to throw an error, but it did not.');
 			} catch (error) {
@@ -277,7 +158,7 @@ describe('GraphQL API End-to-End Tests', () => {
 
 			const { data } = await client.query({
 				query: GET_TRIP,
-				variables: { id: tripId },
+				variables: { tripId },
 			});
 			expect(data.trip.addressList).toContain(addressAlice);
 			expect(data.trip.addressList).toContain(addressBob);
@@ -292,7 +173,7 @@ describe('GraphQL API End-to-End Tests', () => {
 
 			const { data: queryData } = await client.query({
 				query: GET_TRIP,
-				variables: { id: tripId },
+				variables: { tripId },
 			});
 			expect(queryData.trip.addressList).toContain(addressAlice);
 			expect(queryData.trip.addressList).not.toContain(addressBob);
@@ -325,7 +206,7 @@ describe('GraphQL API End-to-End Tests', () => {
 
 			const { data: tripData } = await client.query({
 				query: GET_TRIP,
-				variables: { id: tripId },
+				variables: { tripId },
 			});
 			expect(tripData.trip.records).toHaveLength(1);
 			expect(tripData.trip.records[0].name).toBe(newRecord.name);
@@ -362,7 +243,7 @@ describe('GraphQL API End-to-End Tests', () => {
 
 			const { data, error } = await client.mutate({
 				mutation: REMOVE_RECORD,
-				variables: { id: recordId },
+				variables: { recordId },
 			});
 
 			expect(error).toBeUndefined();
@@ -370,7 +251,7 @@ describe('GraphQL API End-to-End Tests', () => {
 
 			const { data: tripData } = await client.query({
 				query: GET_TRIP,
-				variables: { id: tripId },
+				variables: { tripId },
 			});
 			expect(tripData.trip.records).toHaveLength(0);
 			recordId = null; // 清除 recordId
@@ -409,7 +290,7 @@ describe('GraphQL API End-to-End Tests', () => {
 				try {
 					await client.mutate({
 						mutation: REMOVE_RECORD,
-						variables: { id: recordIdForSubTests },
+						variables: { recordId: recordIdForSubTests },
 					});
 				} catch (e) {
 					console.warn(
@@ -620,7 +501,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			// 為了驗證 subscription 收到的內容，先查詢一次 record 的完整資訊
 			const { data: recordBeforeDelete } = await client.query({
 				query: GET_TRIP, // 使用GET_TRIP來取得 record 詳細資料
-				variables: { id: tripId },
+				variables: { tripId },
 			});
 			const targetRecord = recordBeforeDelete.trip.records.find(
 				(r) => r.id === recordIdForSubTests
@@ -638,7 +519,7 @@ describe('GraphQL API End-to-End Tests', () => {
 
 			const { data: mutationData, error: mutationError } = await client.mutate({
 				mutation: REMOVE_RECORD,
-				variables: { id: recordIdForSubTests },
+				variables: { recordId: recordIdForSubTests },
 			});
 			expect(mutationError).toBeUndefined();
 			expect(mutationData.removeRecord).toBe(recordIdForSubTests);

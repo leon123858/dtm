@@ -1,68 +1,10 @@
-import { gql } from '@apollo/client/core';
 import { client } from '../src/apolloClient'; // 確保路徑正確
-
-// 將 GraphQL 操作定義在檔案頂部，方便管理
-const CREATE_TRIP = gql`
-	mutation CreateTrip($input: NewTrip!) {
-		createTrip(input: $input) {
-			id
-			name
-			addressList
-			records {
-				id
-			}
-		}
-	}
-`;
-
-// 更新 GET_TRIP 查詢，包含 moneyShare
-const GET_TRIP = gql`
-	query GetTrip($tripId: ID!) {
-		trip(tripId: $tripId) {
-			id
-			name
-			addressList
-			records {
-				id
-				name
-				amount
-				time
-				prePayAddress
-				shouldPayAddress
-			}
-			moneyShare {
-				# 根據您的 schema，欄位名稱為 moneyShare
-				input {
-					amount
-					address
-				}
-				output {
-					amount
-					address
-				}
-			}
-		}
-	}
-`;
-
-const CREATE_ADDRESS = gql`
-	mutation CreateAddress($tripId: ID!, $address: String!) {
-		createAddress(tripId: $tripId, address: $address)
-	}
-`;
-
-const CREATE_RECORD = gql`
-	mutation CreateRecord($tripId: ID!, $input: NewRecord!) {
-		createRecord(tripId: $tripId, input: $input) {
-			id
-			name
-			amount
-			time
-			prePayAddress
-			shouldPayAddress
-		}
-	}
-`;
+import {
+	GET_TRIP,
+	CREATE_TRIP,
+	CREATE_ADDRESS,
+	CREATE_RECORD,
+} from './graphql';
 
 describe('Trip with Money Share Logic End-to-End Tests', () => {
 	let tripId;

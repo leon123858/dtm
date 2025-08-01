@@ -1,79 +1,13 @@
-import { gql } from '@apollo/client/core';
 import { client } from '../src/apolloClient';
-
-// 將 GraphQL 操作定義在檔案頂部，方便管理
-const CREATE_TRIP = gql`
-	mutation CreateTrip($input: NewTrip!) {
-		createTrip(input: $input) {
-			id
-			name
-			addressList
-			records {
-				id
-			}
-		}
-	}
-`;
-
-const GET_TRIP = gql`
-	query GetTrip($tripId: ID!) {
-		trip(tripId: $tripId) {
-			id
-			name
-			addressList
-			records {
-				id
-				name
-				amount
-				time
-				prePayAddress
-				shouldPayAddress
-			}
-		}
-	}
-`;
-
-const CREATE_ADDRESS = gql`
-	mutation CreateAddress($tripId: ID!, $address: String!) {
-		createAddress(tripId: $tripId, address: $address)
-	}
-`;
-
-const DELETE_ADDRESS = gql`
-	mutation DeleteAddress($tripId: ID!, $address: String!) {
-		deleteAddress(tripId: $tripId, address: $address)
-	}
-`;
-
-const CREATE_RECORD = gql`
-	mutation CreateRecord($tripId: ID!, $input: NewRecord!) {
-		createRecord(tripId: $tripId, input: $input) {
-			id
-			name
-			amount
-			time
-		}
-	}
-`;
-
-const UPDATE_RECORD = gql`
-	mutation UpdateRecord($recordId: ID!, $input: NewRecord!) {
-		updateRecord(recordId: $recordId, input: $input) {
-			id
-			name
-			amount
-			time
-			prePayAddress
-			shouldPayAddress
-		}
-	}
-`;
-
-const REMOVE_RECORD = gql`
-	mutation RemoveRecord($recordId: ID!) {
-		removeRecord(recordId: $recordId)
-	}
-`;
+import {
+	GET_TRIP,
+	CREATE_TRIP,
+	CREATE_ADDRESS,
+	DELETE_ADDRESS,
+	CREATE_RECORD,
+	UPDATE_RECORD,
+	REMOVE_RECORD,
+} from './graphql';
 
 describe('GraphQL API End-to-End Tests', () => {
 	let tripId; // 用於儲存測試流程中建立的 Trip ID
