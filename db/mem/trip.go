@@ -121,7 +121,7 @@ func (db *inMemoryTripDBWrapper) GetTripAddressList(id uuid.UUID) ([]dbt.Address
 }
 
 // GetRecordAddressList retrieves the ShouldPayAddress list for a given record ID.
-func (db *inMemoryTripDBWrapper) GetRecordAddressList(recordID uuid.UUID) ([]dbt.Address, error) {
+func (db *inMemoryTripDBWrapper) GetRecordAddressList(recordID uuid.UUID) ([]dbt.ExtendAddress, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
@@ -129,7 +129,7 @@ func (db *inMemoryTripDBWrapper) GetRecordAddressList(recordID uuid.UUID) ([]dbt
 		for _, record := range tripData.Records {
 			if record.ID == recordID {
 				// Return a copy of the ShouldPayAddress list to prevent external modification
-				addressListCopy := make([]dbt.Address, len(record.ShouldPayAddress))
+				addressListCopy := make([]dbt.ExtendAddress, len(record.ShouldPayAddress))
 				copy(addressListCopy, record.ShouldPayAddress)
 				return addressListCopy, nil
 			}
@@ -335,11 +335,11 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetTripAddressList(ctx context.Contex
 }
 
 // DataLoaderGetRecordShouldPayList retrieves a map of ShouldPayAddress lists for given record IDs.
-func (db *inMemoryTripDBWrapper) DataLoaderGetRecordShouldPayList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID][]dbt.Address, error) {
+func (db *inMemoryTripDBWrapper) DataLoaderGetRecordShouldPayList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID][]dbt.ExtendAddress, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
-	result := make(map[uuid.UUID][]dbt.Address)
+	result := make(map[uuid.UUID][]dbt.ExtendAddress)
 	errors := make(map[uuid.UUID]error)
 
 	for _, recordID := range recordIds {
@@ -348,7 +348,7 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetRecordShouldPayList(ctx context.Co
 			for _, record := range tripData.Records {
 				if record.ID == recordID {
 					// Return a copy of the ShouldPayAddress list
-					addressListCopy := make([]dbt.Address, len(record.ShouldPayAddress))
+					addressListCopy := make([]dbt.ExtendAddress, len(record.ShouldPayAddress))
 					copy(addressListCopy, record.ShouldPayAddress)
 					result[recordID] = addressListCopy
 					errors[recordID] = nil // No error for this record ID
@@ -361,7 +361,7 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetRecordShouldPayList(ctx context.Co
 			}
 		}
 		if !found {
-			result[recordID] = []dbt.Address{}
+			result[recordID] = []dbt.ExtendAddress{}
 			errors[recordID] = fmt.Errorf("record with ID %s not found", recordID)
 		}
 	}

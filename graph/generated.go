@@ -72,7 +72,10 @@ type ComplexityRoot struct {
 
 	Record struct {
 		Amount           func(childComplexity int) int
+		Category         func(childComplexity int) int
+		ExtendPayMsg     func(childComplexity int) int
 		ID               func(childComplexity int) int
+		IsValid          func(childComplexity int) int
 		Name             func(childComplexity int) int
 		PrePayAddress    func(childComplexity int) int
 		ShouldPayAddress func(childComplexity int) int
@@ -90,6 +93,7 @@ type ComplexityRoot struct {
 	Trip struct {
 		AddressList func(childComplexity int) int
 		ID          func(childComplexity int) int
+		IsValid     func(childComplexity int) int
 		MoneyShare  func(childComplexity int) int
 		Name        func(childComplexity int) int
 		Records     func(childComplexity int) int
@@ -115,6 +119,9 @@ type QueryResolver interface {
 }
 type RecordResolver interface {
 	ShouldPayAddress(ctx context.Context, obj *model.Record) ([]string, error)
+	ExtendPayMsg(ctx context.Context, obj *model.Record) ([]float64, error)
+
+	IsValid(ctx context.Context, obj *model.Record) (bool, error)
 }
 type SubscriptionResolver interface {
 	SubRecordCreate(ctx context.Context, tripID string) (<-chan *model.Record, error)
@@ -127,6 +134,7 @@ type TripResolver interface {
 	Records(ctx context.Context, obj *model.Trip) ([]*model.Record, error)
 	MoneyShare(ctx context.Context, obj *model.Trip) ([]*model.Tx, error)
 	AddressList(ctx context.Context, obj *model.Trip) ([]string, error)
+	IsValid(ctx context.Context, obj *model.Trip) (bool, error)
 }
 
 type executableSchema struct {
@@ -265,12 +273,33 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Record.Amount(childComplexity), true
 
+	case "Record.category":
+		if e.complexity.Record.Category == nil {
+			break
+		}
+
+		return e.complexity.Record.Category(childComplexity), true
+
+	case "Record.extendPayMsg":
+		if e.complexity.Record.ExtendPayMsg == nil {
+			break
+		}
+
+		return e.complexity.Record.ExtendPayMsg(childComplexity), true
+
 	case "Record.id":
 		if e.complexity.Record.ID == nil {
 			break
 		}
 
 		return e.complexity.Record.ID(childComplexity), true
+
+	case "Record.isValid":
+		if e.complexity.Record.IsValid == nil {
+			break
+		}
+
+		return e.complexity.Record.IsValid(childComplexity), true
 
 	case "Record.name":
 		if e.complexity.Record.Name == nil {
@@ -373,6 +402,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Trip.ID(childComplexity), true
+
+	case "Trip.isValid":
+		if e.complexity.Trip.IsValid == nil {
+			break
+		}
+
+		return e.complexity.Trip.IsValid(childComplexity), true
 
 	case "Trip.moneyShare":
 		if e.complexity.Trip.MoneyShare == nil {
@@ -1113,6 +1149,8 @@ func (ec *executionContext) fieldContext_Mutation_createTrip(ctx context.Context
 				return ec.fieldContext_Trip_moneyShare(ctx, field)
 			case "addressList":
 				return ec.fieldContext_Trip_addressList(ctx, field)
+			case "isValid":
+				return ec.fieldContext_Trip_isValid(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Trip", field.Name)
 		},
@@ -1180,6 +1218,8 @@ func (ec *executionContext) fieldContext_Mutation_updateTrip(ctx context.Context
 				return ec.fieldContext_Trip_moneyShare(ctx, field)
 			case "addressList":
 				return ec.fieldContext_Trip_addressList(ctx, field)
+			case "isValid":
+				return ec.fieldContext_Trip_isValid(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Trip", field.Name)
 		},
@@ -1249,6 +1289,12 @@ func (ec *executionContext) fieldContext_Mutation_createRecord(ctx context.Conte
 				return ec.fieldContext_Record_time(ctx, field)
 			case "shouldPayAddress":
 				return ec.fieldContext_Record_shouldPayAddress(ctx, field)
+			case "extendPayMsg":
+				return ec.fieldContext_Record_extendPayMsg(ctx, field)
+			case "category":
+				return ec.fieldContext_Record_category(ctx, field)
+			case "isValid":
+				return ec.fieldContext_Record_isValid(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Record", field.Name)
 		},
@@ -1318,6 +1364,12 @@ func (ec *executionContext) fieldContext_Mutation_updateRecord(ctx context.Conte
 				return ec.fieldContext_Record_time(ctx, field)
 			case "shouldPayAddress":
 				return ec.fieldContext_Record_shouldPayAddress(ctx, field)
+			case "extendPayMsg":
+				return ec.fieldContext_Record_extendPayMsg(ctx, field)
+			case "category":
+				return ec.fieldContext_Record_category(ctx, field)
+			case "isValid":
+				return ec.fieldContext_Record_isValid(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Record", field.Name)
 		},
@@ -1635,6 +1687,8 @@ func (ec *executionContext) fieldContext_Query_trip(ctx context.Context, field g
 				return ec.fieldContext_Trip_moneyShare(ctx, field)
 			case "addressList":
 				return ec.fieldContext_Trip_addressList(ctx, field)
+			case "isValid":
+				return ec.fieldContext_Trip_isValid(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Trip", field.Name)
 		},
@@ -2048,6 +2102,138 @@ func (ec *executionContext) fieldContext_Record_shouldPayAddress(_ context.Conte
 	return fc, nil
 }
 
+func (ec *executionContext) _Record_extendPayMsg(ctx context.Context, field graphql.CollectedField, obj *model.Record) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Record_extendPayMsg(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Record().ExtendPayMsg(rctx, obj)
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]float64)
+	fc.Result = res
+	return ec.marshalNFloat2ᚕfloat64ᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Record_extendPayMsg(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Record",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Record_category(ctx context.Context, field graphql.CollectedField, obj *model.Record) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Record_category(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Category, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.RecordCategory)
+	fc.Result = res
+	return ec.marshalNRecordCategory2dtmᚋgraphᚋmodelᚐRecordCategory(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Record_category(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Record",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type RecordCategory does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Record_isValid(ctx context.Context, field graphql.CollectedField, obj *model.Record) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Record_isValid(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Record().IsValid(rctx, obj)
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Record_isValid(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Record",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Subscription_subRecordCreate(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
 	fc, err := ec.fieldContext_Subscription_subRecordCreate(ctx, field)
 	if err != nil {
@@ -2113,6 +2299,12 @@ func (ec *executionContext) fieldContext_Subscription_subRecordCreate(ctx contex
 				return ec.fieldContext_Record_time(ctx, field)
 			case "shouldPayAddress":
 				return ec.fieldContext_Record_shouldPayAddress(ctx, field)
+			case "extendPayMsg":
+				return ec.fieldContext_Record_extendPayMsg(ctx, field)
+			case "category":
+				return ec.fieldContext_Record_category(ctx, field)
+			case "isValid":
+				return ec.fieldContext_Record_isValid(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Record", field.Name)
 		},
@@ -2265,6 +2457,12 @@ func (ec *executionContext) fieldContext_Subscription_subRecordUpdate(ctx contex
 				return ec.fieldContext_Record_time(ctx, field)
 			case "shouldPayAddress":
 				return ec.fieldContext_Record_shouldPayAddress(ctx, field)
+			case "extendPayMsg":
+				return ec.fieldContext_Record_extendPayMsg(ctx, field)
+			case "category":
+				return ec.fieldContext_Record_category(ctx, field)
+			case "isValid":
+				return ec.fieldContext_Record_isValid(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Record", field.Name)
 		},
@@ -2560,6 +2758,12 @@ func (ec *executionContext) fieldContext_Trip_records(_ context.Context, field g
 				return ec.fieldContext_Record_time(ctx, field)
 			case "shouldPayAddress":
 				return ec.fieldContext_Record_shouldPayAddress(ctx, field)
+			case "extendPayMsg":
+				return ec.fieldContext_Record_extendPayMsg(ctx, field)
+			case "category":
+				return ec.fieldContext_Record_category(ctx, field)
+			case "isValid":
+				return ec.fieldContext_Record_isValid(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Record", field.Name)
 		},
@@ -2656,6 +2860,50 @@ func (ec *executionContext) fieldContext_Trip_addressList(_ context.Context, fie
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Trip_isValid(ctx context.Context, field graphql.CollectedField, obj *model.Trip) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Trip_isValid(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Trip().IsValid(rctx, obj)
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Trip_isValid(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Trip",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
 		},
 	}
 	return fc, nil
@@ -4719,7 +4967,7 @@ func (ec *executionContext) unmarshalInputNewRecord(ctx context.Context, obj any
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"name", "amount", "prePayAddress", "time", "shouldPayAddress"}
+	fieldsInOrder := [...]string{"name", "amount", "prePayAddress", "time", "shouldPayAddress", "extendPayMsg", "category"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -4761,6 +5009,20 @@ func (ec *executionContext) unmarshalInputNewRecord(ctx context.Context, obj any
 				return it, err
 			}
 			it.ShouldPayAddress = data
+		case "extendPayMsg":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("extendPayMsg"))
+			data, err := ec.unmarshalOFloat2ᚕfloat64ᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ExtendPayMsg = data
+		case "category":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("category"))
+			data, err := ec.unmarshalORecordCategory2ᚖdtmᚋgraphᚋmodelᚐRecordCategory(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Category = data
 		}
 	}
 
@@ -5078,6 +5340,83 @@ func (ec *executionContext) _Record(ctx context.Context, sel ast.SelectionSet, o
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "extendPayMsg":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Record_extendPayMsg(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "category":
+			out.Values[i] = ec._Record_category(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "isValid":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Record_isValid(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -5232,6 +5571,42 @@ func (ec *executionContext) _Trip(ctx context.Context, sel ast.SelectionSet, obj
 					}
 				}()
 				res = ec._Trip_addressList(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "isValid":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Trip_isValid(ctx, field, obj)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -5692,6 +6067,36 @@ func (ec *executionContext) marshalNFloat2float64(ctx context.Context, sel ast.S
 	return graphql.WrapContextMarshaler(ctx, res)
 }
 
+func (ec *executionContext) unmarshalNFloat2ᚕfloat64ᚄ(ctx context.Context, v any) ([]float64, error) {
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]float64, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNFloat2float64(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) marshalNFloat2ᚕfloat64ᚄ(ctx context.Context, sel ast.SelectionSet, v []float64) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	for i := range v {
+		ret[i] = ec.marshalNFloat2float64(ctx, sel, v[i])
+	}
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
 func (ec *executionContext) unmarshalNID2string(ctx context.Context, v any) (string, error) {
 	res, err := graphql.UnmarshalID(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -5828,6 +6233,16 @@ func (ec *executionContext) marshalNRecord2ᚖdtmᚋgraphᚋmodelᚐRecord(ctx c
 		return graphql.Null
 	}
 	return ec._Record(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNRecordCategory2dtmᚋgraphᚋmodelᚐRecordCategory(ctx context.Context, v any) (model.RecordCategory, error) {
+	var res model.RecordCategory
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNRecordCategory2dtmᚋgraphᚋmodelᚐRecordCategory(ctx context.Context, sel ast.SelectionSet, v model.RecordCategory) graphql.Marshaler {
+	return v
 }
 
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v any) (string, error) {
@@ -6225,6 +6640,58 @@ func (ec *executionContext) marshalOBoolean2ᚖbool(ctx context.Context, sel ast
 	_ = ctx
 	res := graphql.MarshalBoolean(*v)
 	return res
+}
+
+func (ec *executionContext) unmarshalOFloat2ᚕfloat64ᚄ(ctx context.Context, v any) ([]float64, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]float64, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNFloat2float64(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) marshalOFloat2ᚕfloat64ᚄ(ctx context.Context, sel ast.SelectionSet, v []float64) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	ret := make(graphql.Array, len(v))
+	for i := range v {
+		ret[i] = ec.marshalNFloat2float64(ctx, sel, v[i])
+	}
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) unmarshalORecordCategory2ᚖdtmᚋgraphᚋmodelᚐRecordCategory(ctx context.Context, v any) (*model.RecordCategory, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var res = new(model.RecordCategory)
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalORecordCategory2ᚖdtmᚋgraphᚋmodelᚐRecordCategory(ctx context.Context, sel ast.SelectionSet, v *model.RecordCategory) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return v
 }
 
 func (ec *executionContext) unmarshalOString2ᚖstring(ctx context.Context, v any) (*string, error) {

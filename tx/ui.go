@@ -25,6 +25,42 @@ func AverageSplitStrategy(up *UserPayment) (Tx, error) {
 	return tx, nil
 }
 
+func FixMoneySplitStrategy(up *UserPayment) (Tx, error) {
+	// Create the transaction
+	tx := Tx{
+		Name:  up.Name,
+		Input: []Payment{},
+		Output: Payment{
+			Amount:  up.Amount,
+			Address: up.PrePayAddress,
+		},
+	}
+
+	// should pay user split output as input
+	for i, u := range up.ShouldPayAddress {
+		if i >= len(up.ExtendPayMsg) {
+			return Tx{}, fmt.Errorf("not enough ExtendPayMsg for address %s", u)
+		}
+		tx.Input = append(tx.Input, Payment{
+			Amount:  up.ExtendPayMsg[i],
+			Address: u,
+		})
+	}
+
+	return tx, nil
+}
+
+func ShareMoneyStrategyFactory(strategyEnum int) UserPaymentToTxStrategy {
+	switch strategyEnum {
+	case 0:
+		return AverageSplitStrategy
+	case 1:
+		return FixMoneySplitStrategy
+	default:
+		return nil
+	}
+}
+
 func (up *UserPayment) ToTx(strategy UserPaymentToTxStrategy) (Tx, error) {
 	if strategy == nil {
 		return Tx{}, fmt.Errorf("conversion strategy cannot be nil")

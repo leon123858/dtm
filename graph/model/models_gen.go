@@ -2,15 +2,24 @@
 
 package model
 
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"strconv"
+)
+
 type Mutation struct {
 }
 
 type NewRecord struct {
-	Name             string   `json:"name"`
-	Amount           float64  `json:"amount"`
-	PrePayAddress    string   `json:"prePayAddress"`
-	Time             *string  `json:"time,omitempty"`
-	ShouldPayAddress []string `json:"shouldPayAddress"`
+	Name             string          `json:"name"`
+	Amount           float64         `json:"amount"`
+	PrePayAddress    string          `json:"prePayAddress"`
+	Time             *string         `json:"time,omitempty"`
+	ShouldPayAddress []string        `json:"shouldPayAddress"`
+	ExtendPayMsg     []float64       `json:"extendPayMsg,omitempty"`
+	Category         *RecordCategory `json:"category,omitempty"`
 }
 
 type NewTrip struct {
@@ -31,4 +40,61 @@ type Subscription struct {
 type Tx struct {
 	Input  []*Payment `json:"input"`
 	Output *Payment   `json:"output"`
+}
+
+type RecordCategory string
+
+const (
+	// average
+	RecordCategoryNormal RecordCategory = "NORMAL"
+	// set fix amount list
+	RecordCategoryFix RecordCategory = "FIX"
+)
+
+var AllRecordCategory = []RecordCategory{
+	RecordCategoryNormal,
+	RecordCategoryFix,
+}
+
+func (e RecordCategory) IsValid() bool {
+	switch e {
+	case RecordCategoryNormal, RecordCategoryFix:
+		return true
+	}
+	return false
+}
+
+func (e RecordCategory) String() string {
+	return string(e)
+}
+
+func (e *RecordCategory) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = RecordCategory(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid RecordCategory", str)
+	}
+	return nil
+}
+
+func (e RecordCategory) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *RecordCategory) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e RecordCategory) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
 }

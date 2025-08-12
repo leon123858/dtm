@@ -2,13 +2,30 @@
 #
 # https://gqlgen.com/getting-started/
 
+enum RecordCategory {
+	"""
+	average
+	"""
+	NORMAL # 均分
+	"""
+	set fix amount list
+	"""
+	FIX # 指定金額
+}
+
 type Record {
 	id: ID!
 	name: String!
 	amount: Float!
 	prePayAddress: String!
+	"""
+	time: by JS Date().getTime().toString()
+	"""
 	time: String!
 	shouldPayAddress: [String!]!
+	extendPayMsg: [Float!]!
+	category: RecordCategory!
+	isValid: Boolean!
 }
 
 type Payment {
@@ -27,6 +44,7 @@ type Trip {
 	records: [Record!]!
 	moneyShare: [Tx!]!
 	addressList: [String!]!
+	isValid: Boolean!
 }
 
 type Subscription {
@@ -45,8 +63,13 @@ input NewRecord {
 	name: String!
 	amount: Float!
 	prePayAddress: String!
+	"""
+	time: by JS Date().getTime().toString()
+	"""
 	time: String
 	shouldPayAddress: [String!]!
+	extendPayMsg: [Float!]
+	category: RecordCategory
 }
 
 input NewTrip {

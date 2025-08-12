@@ -11,15 +11,10 @@ const (
 	DataLoaderKeyTripData dataLoaderKey = "trip_data_loader"
 )
 
-// dataLoader, ok := ctx.Value(db.DataLoaderKeyTripData).(db.TripDataLoader)
-//
-//	if !ok {
-//		return nil, fmt.Errorf("data loader is not available")
-//	}
 type TripDataLoader struct {
 	GetRecordInfoList      *dataloadgen.Loader[uuid.UUID, []RecordInfo]
 	GetTripAddressList     *dataloadgen.Loader[uuid.UUID, []Address]
-	GetRecordShouldPayList *dataloadgen.Loader[uuid.UUID, []Address]
+	GetRecordShouldPayList *dataloadgen.Loader[uuid.UUID, []ExtendAddress]
 	GetTripInfoList        *dataloadgen.Loader[uuid.UUID, *TripInfo]
 }
 

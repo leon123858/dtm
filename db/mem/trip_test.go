@@ -21,7 +21,7 @@ func newTripInfo(name string) *dbt.TripInfo {
 }
 
 // Helper function to create a new Record
-func newRecord(name string, amount float64, prePayAddress dbt.Address, shouldPayAddresses []dbt.Address) dbt.Record {
+func newRecord(name string, amount float64, prePayAddress dbt.Address, shouldPayAddresses []dbt.ExtendAddress) dbt.Record {
 	return dbt.Record{
 		RecordInfo: dbt.RecordInfo{
 			ID:            uuid.New(),
@@ -29,6 +29,7 @@ func newRecord(name string, amount float64, prePayAddress dbt.Address, shouldPay
 			Amount:        amount,
 			Time:          time.Now(),
 			PrePayAddress: prePayAddress,
+			Category:      dbt.CategoryNormal, // Default category
 		},
 		RecordData: dbt.RecordData{
 			ShouldPayAddress: shouldPayAddresses,
@@ -78,8 +79,13 @@ func TestCreateTripRecords(t *testing.T) {
 
 	t.Run("Successfully add records to a trip", func(t *testing.T) {
 		records := []dbt.Record{
-			newRecord("Record 1", 100.0, "Address A", []dbt.Address{"Address X", "Address Y"}),
-			newRecord("Record 2", 50.0, "Address B", []dbt.Address{"Address Z"}),
+			newRecord("Record 1", 100.0, "Address A", []dbt.ExtendAddress{
+				{Address: "Address X", ExtendMsg: 10.0},
+				{Address: "Address Y", ExtendMsg: 20.0},
+			}),
+			newRecord("Record 2", 50.0, "Address B", []dbt.ExtendAddress{
+				{Address: "Address Z", ExtendMsg: 30.0},
+			}),
 		}
 		err := db.CreateTripRecords(tripInfo.ID, records)
 		assert.NoError(t, err)
@@ -92,9 +98,14 @@ func TestCreateTripRecords(t *testing.T) {
 		assert.Contains(t, retrievedRecords, records[0].RecordInfo)
 		assert.Contains(t, retrievedRecords, records[1].RecordInfo)
 
+		assert.Equal(t, records[0].Category, dbt.CategoryNormal, "Category should be normal by default")
+		assert.Equal(t, records[1].Category, dbt.CategoryNormal, "Category should be normal by default")
+
 		// Add more records
 		moreRecords := []dbt.Record{
-			newRecord("Record 3", 75.0, "Address C", []dbt.Address{"Address W"}),
+			newRecord("Record 3", 75.0, "Address C", []dbt.ExtendAddress{
+				{Address: "Address W", ExtendMsg: 15.0},
+			}),
 		}
 		err = db.CreateTripRecords(tripInfo.ID, moreRecords)
 		assert.NoError(t, err)
@@ -145,8 +156,13 @@ func TestGetTripRecords(t *testing.T) {
 	tripInfo := newTripInfo("Trip Zeta")
 	_ = db.CreateTrip(tripInfo)
 
-	record1 := newRecord("Zeta Record 1", 10.0, "Addr1", []dbt.Address{"Pay1"})
-	record2 := newRecord("Zeta Record 2", 20.0, "Addr2", []dbt.Address{"Pay2", "Pay3"})
+	record1 := newRecord("Zeta Record 1", 10.0, "Addr1", []dbt.ExtendAddress{
+		{Address: "Pay1", ExtendMsg: 5.0},
+	})
+	record2 := newRecord("Zeta Record 2", 20.0, "Addr2", []dbt.ExtendAddress{
+		{Address: "Pay2", ExtendMsg: 10.0},
+		{Address: "Pay3", ExtendMsg: 15.0},
+	})
 	_ = db.CreateTripRecords(tripInfo.ID, []dbt.Record{record1, record2})
 
 	t.Run("Successfully retrieve trip records", func(t *testing.T) {
@@ -220,21 +236,26 @@ func TestGetRecordAddressList(t *testing.T) {
 	tripInfo := newTripInfo("Trip Theta")
 	_ = db.CreateTrip(tripInfo)
 
-	record1 := newRecord("Rec Theta 1", 10.0, "PrePay1", []dbt.Address{"ShouldPay1", "ShouldPay2"})
-	record2 := newRecord("Rec Theta 2", 20.0, "PrePay2", []dbt.Address{"ShouldPay3"})
+	record1 := newRecord("Rec Theta 1", 10.0, "PrePay1", []dbt.ExtendAddress{
+		{Address: "ShouldPay1", ExtendMsg: 5.0},
+		{Address: "ShouldPay2", ExtendMsg: 10.0},
+	})
+	record2 := newRecord("Rec Theta 2", 20.0, "PrePay2", []dbt.ExtendAddress{
+		{Address: "ShouldPay3", ExtendMsg: 15.0},
+	})
 	_ = db.CreateTripRecords(tripInfo.ID, []dbt.Record{record1, record2})
 
 	t.Run("Successfully retrieve record's should pay address list", func(t *testing.T) {
 		addressList, err := db.GetRecordAddressList(record1.ID)
 		assert.NoError(t, err)
 		assert.Len(t, addressList, 2)
-		assert.Contains(t, addressList, dbt.Address("ShouldPay1"))
-		assert.Contains(t, addressList, dbt.Address("ShouldPay2"))
+		assert.Contains(t, addressList, dbt.ExtendAddress{Address: "ShouldPay1", ExtendMsg: 5.0})
+		assert.Contains(t, addressList, dbt.ExtendAddress{Address: "ShouldPay2", ExtendMsg: 10.0})
 
 		addressList, err = db.GetRecordAddressList(record2.ID)
 		assert.NoError(t, err)
 		assert.Len(t, addressList, 1)
-		assert.Contains(t, addressList, dbt.Address("ShouldPay3"))
+		assert.Contains(t, addressList, dbt.ExtendAddress{Address: "ShouldPay3", ExtendMsg: 15.0})
 	})
 
 	t.Run("Retrieve should pay address list for record with no should pay addresses", func(t *testing.T) {
@@ -290,8 +311,12 @@ func TestUpdateTripRecord(t *testing.T) {
 	tripInfo := newTripInfo("Trip Iota")
 	_ = db.CreateTrip(tripInfo)
 
-	record1 := newRecord("Rec Iota 1", 10.0, "PrePay1", []dbt.Address{"PayA"})
-	record2 := newRecord("Rec Iota 2", 20.0, "PrePay2", []dbt.Address{"PayB"})
+	record1 := newRecord("Rec Iota 1", 10.0, "PrePay1", []dbt.ExtendAddress{
+		{Address: "PayA"},
+	})
+	record2 := newRecord("Rec Iota 2", 20.0, "PrePay2", []dbt.ExtendAddress{
+		{Address: "PayB"},
+	})
 	_ = db.CreateTripRecords(tripInfo.ID, []dbt.Record{record1, record2})
 
 	t.Run("Successfully update an existing record", func(t *testing.T) {
@@ -300,11 +325,13 @@ func TestUpdateTripRecord(t *testing.T) {
 			Name:          "Updated Rec Iota 1",
 			Amount:        15.0,
 			PrePayAddress: "NewPrePay1",
+			Time:          time.Now(),
+			Category:      dbt.CategoryFix, // Change category to Fix for this test
 		}
 		updatedRecord := dbt.Record{
 			RecordInfo: updatedRecordInfo,
 			RecordData: dbt.RecordData{
-				ShouldPayAddress: []dbt.Address{"PayU"},
+				ShouldPayAddress: []dbt.ExtendAddress{{Address: "PayU"}},
 			},
 		}
 
@@ -323,6 +350,8 @@ func TestUpdateTripRecord(t *testing.T) {
 				assert.Equal(t, updatedRecordInfo.Name, r.Name)
 				assert.Equal(t, updatedRecordInfo.Amount, r.Amount)
 				assert.Equal(t, updatedRecordInfo.PrePayAddress, r.PrePayAddress)
+				assert.Equal(t, updatedRecordInfo.Category, r.Category)
+				assert.LessOrEqual(t, r.Time, time.Now())
 				found = true
 				break
 			}
@@ -332,7 +361,7 @@ func TestUpdateTripRecord(t *testing.T) {
 		// Verify that RecordData (ShouldPayAddress)
 		shouldPayList, err := db.GetRecordAddressList(record1.ID)
 		assert.NoError(t, err)
-		assert.Equal(t, []dbt.Address{"PayU"}, shouldPayList) // Should be updated to "PayU"
+		assert.Equal(t, []dbt.ExtendAddress{{Address: "PayU", ExtendMsg: 0}}, shouldPayList) // Should be updated to "PayU"
 	})
 
 	t.Run("Fail to update non-existent record", func(t *testing.T) {
@@ -343,7 +372,7 @@ func TestUpdateTripRecord(t *testing.T) {
 		tripId, err := db.UpdateTripRecord(&dbt.Record{
 			RecordInfo: nonExistentRecordInfo,
 			RecordData: dbt.RecordData{
-				ShouldPayAddress: []dbt.Address{"PayX"},
+				ShouldPayAddress: []dbt.ExtendAddress{{Address: "PayX"}},
 			},
 		})
 		assert.Error(t, err)
@@ -429,7 +458,7 @@ func TestDeleteTrip(t *testing.T) {
 	db := NewInMemoryTripDBWrapper()
 	trip1 := newTripInfo("Trip Mu")
 	_ = db.CreateTrip(trip1)
-	record1 := newRecord("Rec Mu 1", 10.0, "P1", []dbt.Address{"S1"})
+	record1 := newRecord("Rec Mu 1", 10.0, "P1", []dbt.ExtendAddress{{Address: "S1"}})
 	_ = db.CreateTripRecords(trip1.ID, []dbt.Record{record1})
 	_ = db.TripAddressListAdd(trip1.ID, "AddrM1")
 
@@ -471,9 +500,9 @@ func TestDeleteTripRecord(t *testing.T) {
 	tripInfo := newTripInfo("Trip Xi")
 	_ = db.CreateTrip(tripInfo)
 
-	record1 := newRecord("Rec Xi 1", 10.0, "P1", []dbt.Address{"S1"})
-	record2 := newRecord("Rec Xi 2", 20.0, "P2", []dbt.Address{"S2"})
-	record3 := newRecord("Rec Xi 3", 30.0, "P3", []dbt.Address{"S3"})
+	record1 := newRecord("Rec Xi 1", 10.0, "P1", []dbt.ExtendAddress{{Address: "S1"}})
+	record2 := newRecord("Rec Xi 2", 20.0, "P2", []dbt.ExtendAddress{{Address: "S2"}})
+	record3 := newRecord("Rec Xi 3", 30.0, "P3", []dbt.ExtendAddress{{Address: "S3"}})
 	_ = db.CreateTripRecords(tripInfo.ID, []dbt.Record{record1, record2, record3})
 
 	t.Run("Successfully delete an existing record", func(t *testing.T) {
@@ -596,8 +625,13 @@ func TestDataLoaderGetRecordShouldPayList(t *testing.T) {
 
 	trip1 := newTripInfo("Trip Tau")
 	_ = db.CreateTrip(trip1)
-	rec1 := newRecord("Rec Tau 1", 100.0, "P1", []dbt.Address{"SP1", "SP2"})
-	rec2 := newRecord("Rec Tau 2", 200.0, "P2", []dbt.Address{"SP3"})
+	rec1 := newRecord("Rec Tau 1", 100.0, "P1", []dbt.ExtendAddress{
+		{Address: "SP1", ExtendMsg: 0.5},
+		{Address: "SP2", ExtendMsg: 1.0},
+	})
+	rec2 := newRecord("Rec Tau 2", 200.0, "P2", []dbt.ExtendAddress{
+		{Address: "SP3", ExtendMsg: 2.0},
+	})
 	rec3 := newRecord("Rec Tau 3", 300.0, "P3", nil) // No should pay addresses
 	_ = db.CreateTripRecords(trip1.ID, []dbt.Record{rec1, rec2, rec3})
 
@@ -608,13 +642,16 @@ func TestDataLoaderGetRecordShouldPayList(t *testing.T) {
 		assert.Len(t, result, 3)
 
 		assert.Contains(t, result, rec1.ID)
-		assert.ElementsMatch(t, []dbt.Address{"SP1", "SP2"}, result[rec1.ID])
-
+		assert.ElementsMatch(t, []dbt.ExtendAddress{
+			{Address: "SP1", ExtendMsg: 0.5},
+			{Address: "SP2", ExtendMsg: 1.0},
+		}, result[rec1.ID])
 		assert.Contains(t, result, rec2.ID)
-		assert.ElementsMatch(t, []dbt.Address{"SP3"}, result[rec2.ID])
-
+		assert.ElementsMatch(t, []dbt.ExtendAddress{
+			{Address: "SP3", ExtendMsg: 2.0},
+		}, result[rec2.ID])
 		assert.Contains(t, result, rec3.ID)
-		assert.Empty(t, result[rec3.ID]) // Empty for rec3
+		assert.Empty(t, result[rec3.ID]) // No should pay addresses for this record
 	})
 
 	t.Run("Handle missing record should pay lists", func(t *testing.T) {
@@ -625,10 +662,13 @@ func TestDataLoaderGetRecordShouldPayList(t *testing.T) {
 		assert.Len(t, result, 2)
 
 		assert.Contains(t, result, rec1.ID)
-		assert.ElementsMatch(t, []dbt.Address{"SP1", "SP2"}, result[rec1.ID])
+		assert.ElementsMatch(t, []dbt.ExtendAddress{
+			{Address: "SP1", ExtendMsg: 0.5},
+			{Address: "SP2", ExtendMsg: 1.0},
+		}, result[rec1.ID])
 
 		assert.Contains(t, result, nonExistentID)
-		assert.Equal(t, result[nonExistentID], []dbt.Address{}) // Missing key should have empty slice
+		assert.Equal(t, result[nonExistentID], []dbt.ExtendAddress{}) // Missing key should have empty slice
 		assert.Contains(t, err.Error(), nonExistentID.String()+" not found")
 	})
 }

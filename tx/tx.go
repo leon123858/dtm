@@ -1,6 +1,9 @@
 package tx
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 // Validate calculates the total amount of inputs and outputs,
 // It returns the total input amount, total output amount
@@ -13,6 +16,17 @@ func (t *Tx) Validate() (float64, float64) {
 	totalOutputAmount := t.Output.Amount
 
 	return totalInputAmount, totalOutputAmount
+}
+
+func (t *Tx) BoolValidate() bool {
+	totalInputAmount, totalOutputAmount := t.Validate()
+	if totalInputAmount < epsilon || totalOutputAmount < epsilon {
+		return false // No inputs and outputs, considered invalid
+	}
+	if math.Abs(totalInputAmount-totalOutputAmount) > epsilon {
+		return false // Input and output amounts do not match
+	}
+	return true // Valid transaction
 }
 
 // ProcessTransactions calculates the total input and output amounts for each address
@@ -69,15 +83,26 @@ func (tp *TxPackage) String() string {
 	}
 	return result
 }
-func ShareMoneyEasyNoLog(uiList []UserPayment) (TxPackage, float64, error) {
-	// Convert UserPayment to Tx using the AverageSplitStrategy
+
+func UIList2TxList(uiList []UserPayment) ([]Tx, error) {
 	txList := make([]Tx, 0, len(uiList))
 	for _, up := range uiList {
-		tx, err := up.ToTx(AverageSplitStrategy)
+		tx, err := up.ToTx(up.Strategy)
 		if err != nil {
-			return TxPackage{}, 0, fmt.Errorf("failed to convert UserPayment to Tx: %w", err)
+			return nil, fmt.Errorf("failed to convert UserPayment to Tx: %w", err)
+		}
+		if !tx.BoolValidate() {
+			return nil, fmt.Errorf("invalid transaction: %s", tx.Name)
 		}
 		txList = append(txList, tx)
+	}
+	return txList, nil
+}
+
+func ShareMoneyEasyNoLog(uiList []UserPayment) (TxPackage, float64, error) {
+	txList, err := UIList2TxList(uiList)
+	if err != nil {
+		return TxPackage{}, 0, fmt.Errorf("failed to convert UserPayment to TxList: %w", err)
 	}
 	// Create a TxPackage from the generated transactions
 	txPackage := TxPackage{
@@ -98,14 +123,9 @@ func ShareMoneyEasyNoLog(uiList []UserPayment) (TxPackage, float64, error) {
 }
 
 func ShareMoneyEasy(uiList []UserPayment) (TxPackage, float64, error) {
-	// Convert UserPayment to Tx using the AverageSplitStrategy
-	txList := make([]Tx, 0, len(uiList))
-	for _, up := range uiList {
-		tx, err := up.ToTx(AverageSplitStrategy)
-		if err != nil {
-			return TxPackage{}, 0, fmt.Errorf("failed to convert UserPayment to Tx: %w", err)
-		}
-		txList = append(txList, tx)
+	txList, err := UIList2TxList(uiList)
+	if err != nil {
+		return TxPackage{}, 0, fmt.Errorf("failed to convert UserPayment to TxList: %w", err)
 	}
 	// Create a TxPackage from the generated transactions
 	txPackage := TxPackage{

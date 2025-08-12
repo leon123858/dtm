@@ -14,7 +14,7 @@ type TripDBWrapper interface {
 	GetTripInfo(id uuid.UUID) (*TripInfo, error)
 	GetTripRecords(id uuid.UUID) ([]RecordInfo, error)
 	GetTripAddressList(id uuid.UUID) ([]Address, error)
-	GetRecordAddressList(recordID uuid.UUID) ([]Address, error)
+	GetRecordAddressList(recordID uuid.UUID) ([]ExtendAddress, error)
 	// Update
 	UpdateTripInfo(info *TripInfo) error
 	UpdateTripRecord(record *Record) (uuid.UUID, error)
@@ -26,6 +26,6 @@ type TripDBWrapper interface {
 	// Data Loader
 	DataLoaderGetRecordInfoList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]RecordInfo, error)
 	DataLoaderGetTripAddressList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]Address, error)
-	DataLoaderGetRecordShouldPayList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID][]Address, error)
+	DataLoaderGetRecordShouldPayList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID][]ExtendAddress, error)
 	DataLoaderGetTripInfoList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID]*TripInfo, error)
 }

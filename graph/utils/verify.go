@@ -58,7 +58,19 @@ func VerifyStringListRequest(s []string) bool {
 	return true
 }
 
-func VerifyRecordRequest(r model.NewRecord) bool {
+func VerifyFloatListRequest(floats []float64) bool {
+	if len(floats) > 100 {
+		return false
+	}
+	for _, f := range floats {
+		if f < 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func VerifyRecordRequestAndSetDefault(r *model.NewRecord) bool {
 	if !VerifyStringRequest(r.Name) {
 		return false
 	}
@@ -71,6 +83,21 @@ func VerifyRecordRequest(r model.NewRecord) bool {
 	if !VerifyStringListRequest(r.ShouldPayAddress) {
 		return false
 	}
+	if !VerifyFloatListRequest(r.ExtendPayMsg) {
+		return false
+	}
+	if r.Category != nil && !r.Category.IsValid() {
+		return false
+	}
+
+	/**
+	 * DEFAULT VALUE
+	**/
+	if r.Category == nil {
+		modelCategory := model.RecordCategoryNormal
+		r.Category = &modelCategory
+	}
+
 	return true
 }
 

@@ -6,7 +6,19 @@ import (
 	"github.com/google/uuid"
 )
 
+type RecordCategory int
+
+const (
+	CategoryNormal RecordCategory = iota
+	CategoryFix
+)
+
 type Address string
+
+type ExtendAddress struct {
+	Address   Address
+	ExtendMsg float64
+}
 
 type TripInfo struct {
 	ID   uuid.UUID
@@ -29,10 +41,11 @@ type RecordInfo struct {
 	Amount        float64
 	Time          time.Time
 	PrePayAddress Address
+	Category      RecordCategory
 }
 
 type RecordData struct {
-	ShouldPayAddress []Address
+	ShouldPayAddress []ExtendAddress
 }
 
 type Record struct {

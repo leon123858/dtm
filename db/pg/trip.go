@@ -48,7 +48,7 @@ func (p *pgDBWrapper) CreateTripRecords(id uuid.UUID, records []db.Record) error
 				shouldPayModel := RecordShouldPayAddressListModel{
 					RecordID: rec.RecordInfo.ID,
 					TripID:   id, // Link to the trip
-					Address:  string(addr),
+					Address:  string(addr.Address),
 				}
 				if err := tx.Create(&shouldPayModel).Error; err != nil {
 					return err
@@ -103,7 +103,7 @@ func (p *pgDBWrapper) GetTripAddressList(id uuid.UUID) ([]db.Address, error) {
 	return addresses, nil
 }
 
-func (p *pgDBWrapper) GetRecordAddressList(recordID uuid.UUID) ([]db.Address, error) {
+func (p *pgDBWrapper) GetRecordAddressList(recordID uuid.UUID) ([]db.ExtendAddress, error) {
 	var shouldPayModels []RecordShouldPayAddressListModel
 	if err := p.db.Where("record_id = ?", recordID).Find(&shouldPayModels).Error; err != nil {
 		return nil, err
@@ -113,7 +113,7 @@ func (p *pgDBWrapper) GetRecordAddressList(recordID uuid.UUID) ([]db.Address, er
 	for _, spm := range shouldPayModels {
 		addresses = append(addresses, db.Address(spm.Address))
 	}
-	return addresses, nil
+	return nil, nil
 }
 
 // Update
@@ -154,7 +154,7 @@ func (p *pgDBWrapper) UpdateTripRecord(record *db.Record) (uuid.UUID, error) {
 			shouldPayModel := RecordShouldPayAddressListModel{
 				RecordID: record.RecordInfo.ID,
 				TripID:   recordModel.TripID, // Link to the trip
-				Address:  string(addr),
+				Address:  string(addr.Address),
 			}
 			models = append(models, shouldPayModel)
 		}
@@ -253,21 +253,24 @@ func (p *pgDBWrapper) DataLoaderGetTripAddressList(ctx context.Context, tripIds 
 	return result, nil
 }
 
-func (p *pgDBWrapper) DataLoaderGetRecordShouldPayList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID][]db.Address, error) {
+func (p *pgDBWrapper) DataLoaderGetRecordShouldPayList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID][]db.ExtendAddress, error) {
 	var shouldPayAddresses []RecordShouldPayAddressListModel
 	// Assuming RecordShouldPayAddressListModel has RecordID and Address
 	if err := p.db.WithContext(ctx).Where("record_id IN ?", recordIds).Find(&shouldPayAddresses).Error; err != nil {
 		return nil, err
 	}
 
-	result := make(map[uuid.UUID][]db.Address)
+	result := make(map[uuid.UUID][]db.ExtendAddress)
 	for _, sp := range shouldPayAddresses {
-		result[sp.RecordID] = append(result[sp.RecordID], db.Address(sp.Address))
+		result[sp.RecordID] = append(result[sp.RecordID], db.ExtendAddress{
+			Address:   db.Address(sp.Address),
+			ExtendMsg: 0, // Assuming ExtendMsg is not used here, set to zero or a default value
+		})
 	}
 	// Ensure all requested recordIds have an entry in the map, even if empty
 	for _, recordID := range recordIds {
 		if _, ok := result[recordID]; !ok {
-			result[recordID] = []db.Address{}
+			result[recordID] = []db.ExtendAddress{}
 		}
 	}
 	return result, nil
