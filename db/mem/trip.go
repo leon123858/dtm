@@ -227,6 +227,19 @@ func (db *inMemoryTripDBWrapper) TripAddressListRemove(id uuid.UUID, address dbt
 
 	// Remove the address by slicing
 	tripData.AddressList = append(tripData.AddressList[:foundIdx], tripData.AddressList[foundIdx+1:]...)
+
+	// scan all records to simulate delete cascade
+	for idx, record := range tripData.Records {
+		// println("Removing address from record", record.ID.String())
+		for i, addr := range record.ShouldPayAddress {
+			// println("Checking address in record", addr.Address)
+			if addr.Address == address {
+				// Remove the address from ShouldPayAddress
+				tripData.Records[idx].ShouldPayAddress = append(record.ShouldPayAddress[:i], record.ShouldPayAddress[i+1:]...)
+				break // Exit after removing the first occurrence
+			}
+		}
+	}
 	return nil
 }
 

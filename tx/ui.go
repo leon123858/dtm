@@ -3,6 +3,11 @@ package tx
 import "fmt"
 
 func AverageSplitStrategy(up *UserPayment) (Tx, error) {
+	// first check
+	if len(up.ShouldPayAddress) == 0 {
+		return Tx{}, fmt.Errorf("UserPayment '%s' must have at least one ShouldPayAddress for AverageSplitStrategy", up.Name)
+	}
+
 	// Create the transaction
 	tx := Tx{
 		Name:  up.Name,
@@ -26,6 +31,19 @@ func AverageSplitStrategy(up *UserPayment) (Tx, error) {
 }
 
 func FixMoneySplitStrategy(up *UserPayment) (Tx, error) {
+	// first check
+	if len(up.ShouldPayAddress) == 0 {
+		return Tx{}, fmt.Errorf("UserPayment '%s' must have at least one ShouldPayAddress for AverageSplitStrategy", up.Name)
+	}
+	if len(up.ExtendPayMsg) != len(up.ShouldPayAddress) {
+		return Tx{}, fmt.Errorf("UserPayment '%s' ExtendPayMsg must have the same length as ShouldPayAddress for AverageSplitStrategy", up.Name)
+	}
+	for _, u := range up.ExtendPayMsg {
+		if u < 0 {
+			return Tx{}, fmt.Errorf("UserPayment '%s' ExtendPayMsg must be non-negative", up.Name)
+		}
+	}
+
 	// Create the transaction
 	tx := Tx{
 		Name:  up.Name,
@@ -68,9 +86,6 @@ func (up *UserPayment) ToTx(strategy UserPaymentToTxStrategy) (Tx, error) {
 
 	if up.PrePayAddress == "" {
 		return Tx{}, fmt.Errorf("UserPayment '%s' must have a PrePayAddress", up.Name)
-	}
-	if len(up.ShouldPayAddress) == 0 {
-		return Tx{}, fmt.Errorf("UserPayment '%s' must have at least one ShouldPayAddress for AverageSplitStrategy", up.Name)
 	}
 	if up.Amount <= 0 {
 		return Tx{}, fmt.Errorf("UserPayment '%s' amount must be positive", up.Name)

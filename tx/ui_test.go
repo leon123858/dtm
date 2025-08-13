@@ -175,10 +175,12 @@ func TestUserPayment_ToTx(t *testing.T) {
 				PrePayAddress:    "Sender",
 				ShouldPayAddress: []string{}, // Empty ShouldPayAddress
 			},
-			strategy:     dummyStrategy,
-			expectedTx:   Tx{},
-			expectedErr:  fmt.Errorf("UserPayment 'EmptyShouldPay' must have at least one ShouldPayAddress for AverageSplitStrategy"),
-			expectingErr: true,
+			strategy: dummyStrategy,
+			expectedTx: Tx{
+				Name: "EmptyShouldPay_converted",
+			},
+			expectedErr:  nil,
+			expectingErr: false,
 		},
 		{
 			name: "Error: non-positive Amount (zero)",

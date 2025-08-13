@@ -3,7 +3,9 @@ import {
 	GET_TRIP,
 	CREATE_TRIP,
 	CREATE_ADDRESS,
+	DELETE_ADDRESS, // 引入 DELETE_ADDRESS
 	CREATE_RECORD,
+	UPDATE_RECORD,
 } from './graphql';
 
 describe('Trip with Money Share Logic End-to-End Tests', () => {
@@ -45,7 +47,6 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 		expect(fetchedTripData.trip.addressList).toEqual(
 			expect.arrayContaining([addressAlice, addressBob, addressCharlie])
 		);
-		// console.log('Setup complete. Trip ID:', tripId);
 	});
 
 	// --- 測試 Record 和 Money Share ---
@@ -131,6 +132,219 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			// 驗證收款方 (output)
 			expect(transaction.output.address).toBe('Charlie');
 			expect(transaction.output.amount).toBeCloseTo(30);
+		});
+	});
+
+	// --- 測試 Record is Valid ---
+	describe('Record Validity (isValid) Tests', () => {
+		let localTripId;
+
+		beforeAll(async () => {
+			const { data } = await client.mutate({
+				mutation: CREATE_TRIP,
+				variables: { input: { name: 'Validity Test Trip' } },
+			});
+			localTripId = data.createTrip.id;
+		});
+
+		it('should mark a NORMAL record as invalid if its payers are removed', async () => {
+			const tempAddress = 'TempPayer';
+			const Payer = 'SinglePayer';
+			await client.mutate({
+				mutation: CREATE_ADDRESS,
+				variables: { tripId: localTripId, address: tempAddress },
+			});
+			await client.mutate({
+				mutation: CREATE_ADDRESS,
+				variables: { tripId: localTripId, address: Payer },
+			});
+
+			const record = {
+				name: 'Valid Record initially',
+				amount: 100,
+				prePayAddress: Payer,
+				shouldPayAddress: [tempAddress],
+				category: 'NORMAL',
+				extendPayMsg: [],
+			};
+			const { data: recordData } = await client.mutate({
+				mutation: CREATE_RECORD,
+				variables: { tripId: localTripId, input: record },
+			});
+			const recordId = recordData.createRecord.id;
+			expect(recordId).toBeDefined();
+			expect(recordData.createRecord.isValid).toBe(true);
+
+			// 驗證初始狀態為 valid
+			let { data: tripData } = await client.query({
+				query: GET_TRIP,
+				variables: { tripId: localTripId },
+			});
+			expect(tripData.trip.records[0].isValid).toBe(true);
+
+			// 移除唯一的付款人
+			await client.mutate({
+				mutation: DELETE_ADDRESS,
+				variables: { tripId: localTripId, address: tempAddress },
+			});
+
+			// 再次查詢，驗證紀錄已變為 invalid
+			({ data: tripData } = await client.query({
+				query: GET_TRIP,
+				variables: { tripId: localTripId },
+			}));
+			const targetRecord = tripData.trip.records.find((r) => r.id === recordId);
+			// console.log('Target Record:', targetRecord);
+			expect(targetRecord.isValid).toBe(false);
+			// when record have inValid, trip should inValid
+			expect(tripData.trip.isValid).toBe(false);
+
+			// 加回來後更新加回去回到合法
+			await client.mutate({
+				mutation: CREATE_ADDRESS,
+				variables: { tripId: localTripId, address: tempAddress },
+			});
+			const { data: recordDataUpdated } = await client.mutate({
+				mutation: UPDATE_RECORD,
+				variables: { recordId: recordId, input: record },
+			});
+			expect(recordDataUpdated.updateRecord.isValid).toBe(true);
+			expect(recordDataUpdated.updateRecord.id).toBe(recordId);
+			({ data: tripData } = await client.query({
+				query: GET_TRIP,
+				variables: { tripId: localTripId },
+			}));
+			// console.log(JSON.stringify(tripData, null, 2));
+			expect(tripData.trip.isValid).toBe(true);
+		});
+
+		it('should mark a FIX record as invalid if amounts do not sum up', async () => {
+			const addr1 = 'FixPayer1';
+			const addr2 = 'FixPayer2';
+			await client.mutate({
+				mutation: CREATE_ADDRESS,
+				variables: { tripId: localTripId, address: addr1 },
+			});
+			await client.mutate({
+				mutation: CREATE_ADDRESS,
+				variables: { tripId: localTripId, address: addr2 },
+			});
+
+			const record = {
+				name: 'Invalid FIX Record',
+				amount: 100, // 總金額
+				prePayAddress: addr1,
+				shouldPayAddress: [addr1, addr2],
+				category: 'FIX',
+				extendPayMsg: [40, 50], // 金額總和 90，不等於 amount 100
+			};
+
+			await client.mutate({
+				mutation: CREATE_RECORD,
+				variables: { tripId: localTripId, input: record },
+			});
+
+			// 查詢並驗證紀錄為 invalid
+			const { data: tripData } = await client.query({
+				query: GET_TRIP,
+				variables: { tripId: localTripId },
+			});
+			// console.log('Trip Data:', JSON.stringify(tripData, null, 2));
+			const targetRecord = tripData.trip.records.find(
+				(r) => r.name === 'Invalid FIX Record'
+			);
+			expect(targetRecord.isValid).toBe(false);
+			// when record have inValid, trip should inValid
+			expect(tripData.trip.isValid).toBe(false);
+		});
+	});
+
+	// --- 測試混合模式 (FIX & NORMAL) ---
+	describe('Mixed Mode Money Share Calculation', () => {
+		let mixedTripId;
+		const mixAlice = 'MixAlice',
+			mixBob = 'MixBob',
+			mixCharlie = 'MixCharlie';
+
+		beforeAll(async () => {
+			const { data } = await client.mutate({
+				mutation: CREATE_TRIP,
+				variables: { input: { name: 'Mixed Mode Test Trip' } },
+			});
+			mixedTripId = data.createTrip.id;
+			await client.mutate({
+				mutation: CREATE_ADDRESS,
+				variables: { tripId: mixedTripId, address: mixAlice },
+			});
+			await client.mutate({
+				mutation: CREATE_ADDRESS,
+				variables: { tripId: mixedTripId, address: mixBob },
+			});
+			await client.mutate({
+				mutation: CREATE_ADDRESS,
+				variables: { tripId: mixedTripId, address: mixCharlie },
+			});
+		});
+
+		it('should calculate moneyShare correctly with mixed NORMAL and FIX records', async () => {
+			// Record 1 (NORMAL): Alice 支付 150，三人均分
+			const recordNormal = {
+				name: 'NORMAL Lunch',
+				amount: 150,
+				prePayAddress: mixAlice,
+				shouldPayAddress: [mixAlice, mixBob, mixCharlie],
+				category: 'NORMAL',
+				extendPayMsg: [],
+			};
+			await client.mutate({
+				mutation: CREATE_RECORD,
+				variables: { tripId: mixedTripId, input: recordNormal },
+			});
+
+			// Record 2 (FIX): Bob 支付 100，指定分擔金額
+			const recordFix = {
+				name: 'FIX Tickets',
+				amount: 100,
+				prePayAddress: mixBob,
+				shouldPayAddress: [mixAlice, mixBob, mixCharlie],
+				category: 'FIX',
+				extendPayMsg: [20, 30, 50], // Alice:20, Bob:30, Charlie:50
+			};
+			await client.mutate({
+				mutation: CREATE_RECORD,
+				variables: { tripId: mixedTripId, input: recordFix },
+			});
+
+			const { data } = await client.query({
+				query: GET_TRIP,
+				variables: { tripId: mixedTripId },
+			});
+
+			// 預期結果:
+			// Alice: 預付 150. 應付 (150/3) + 20 = 50 + 20 = 70.  結果: +80 (應收)
+			// Bob:   預付 100. 應付 (150/3) + 30 = 50 + 30 = 80.  結果: +20 (應收)
+			// Charlie: 預付 0.  應付 (150/3) + 50 = 50 + 50 = 100. 結果: -100 (應付)
+			// 最終交易: Charlie 付 100，其中 80 給 Alice，20 給 Bob
+			expect(data.trip.moneyShare).toBeDefined();
+			expect(data.trip.moneyShare).toHaveLength(2); // 預期有兩筆交易
+
+			const charliePays = data.trip.moneyShare.filter(
+				(tx) => tx.input[0].address === mixCharlie
+			);
+			expect(charliePays).toHaveLength(2);
+
+			const paymentToAlice = charliePays.find(
+				(tx) => tx.output.address === mixAlice
+			);
+			const paymentToBob = charliePays.find(
+				(tx) => tx.output.address === mixBob
+			);
+
+			expect(paymentToAlice).toBeDefined();
+			expect(paymentToBob).toBeDefined();
+
+			expect(paymentToAlice.input[0].amount).toBeCloseTo(80);
+			expect(paymentToBob.input[0].amount).toBeCloseTo(20);
 		});
 	});
 });

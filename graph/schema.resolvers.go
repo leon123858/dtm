@@ -308,11 +308,13 @@ func (r *recordResolver) IsValid(ctx context.Context, obj *model.Record) (bool, 
 		payment.ShouldPayAddress[i] = string(addr.Address)
 		payment.ExtendPayMsg[i] = addr.ExtendMsg
 	}
-
-	if _, err := payment.ToTx(payment.Strategy); err != nil {
+	if t, err := payment.ToTx(payment.Strategy); err != nil {
+		// fmt.Printf("failed to convert UserPayment to Tx: %w", err)
 		return false, nil
+	} else if t.BoolValidate() {
+		return true, nil
 	}
-	return true, nil
+	return false, nil
 }
 
 // SubRecordCreate is the resolver for the subRecordCreate field.
