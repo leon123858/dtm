@@ -107,157 +107,6 @@ describe('GraphQL API End-to-End Tests', () => {
 		tripId = data.createTrip.id;
 	});
 
-	// --- 測試 Trip ---
-	describe('Trip Management', () => {
-		it('should fetch the created trip correctly', async () => {
-			const { data, error } = await client.query({
-				query: GET_TRIP,
-				variables: { tripId },
-			});
-			expect(error).toBeUndefined();
-			expect(data.trip.id).toBe(tripId);
-			expect(data.trip.name).toBe(testTripName);
-			expect(data.trip.records).toEqual([]); // 初始應為空
-			expect(data.trip.addressList).toEqual([]); // 初始應為空
-		});
-
-		it('should throw an error for a non-existent trip', async () => {
-			try {
-				await client.query({
-					query: GET_TRIP,
-					variables: { tripId: '8bc14c40-214d-4c1d-bbd0-ebb4d5a4eee3' }, // 使用一個確保不存在的 ID
-				});
-				fail('Expected client.query to throw an error, but it did not.');
-			} catch (error) {
-				expect(error.graphQLErrors).toBeDefined();
-				expect(error.graphQLErrors.length).toBeGreaterThan(0);
-
-				const firstError = error.graphQLErrors[0];
-				expect(firstError.message).toContain('not found');
-			}
-		});
-	});
-
-	// --- 測試 Address ---
-	describe('Address Management', () => {
-		const addressAlice = 'Alice';
-		const addressBob = 'Bob';
-
-		it('should create new addresses for the trip', async () => {
-			const resAlice = await client.mutate({
-				mutation: CREATE_ADDRESS,
-				variables: { tripId, address: addressAlice },
-			});
-			expect(resAlice.data.createAddress).toBe(addressAlice);
-
-			const resBob = await client.mutate({
-				mutation: CREATE_ADDRESS,
-				variables: { tripId, address: addressBob },
-			});
-			expect(resBob.data.createAddress).toBe(addressBob);
-
-			const { data } = await client.query({
-				query: GET_TRIP,
-				variables: { tripId },
-			});
-			expect(data.trip.addressList).toContain(addressAlice);
-			expect(data.trip.addressList).toContain(addressBob);
-		});
-
-		it('should delete an address from the trip', async () => {
-			const { data: deleteData } = await client.mutate({
-				mutation: DELETE_ADDRESS,
-				variables: { tripId, address: addressBob },
-			});
-			expect(deleteData.deleteAddress).toBe(addressBob);
-
-			const { data: queryData } = await client.query({
-				query: GET_TRIP,
-				variables: { tripId },
-			});
-			expect(queryData.trip.addressList).toContain(addressAlice);
-			expect(queryData.trip.addressList).not.toContain(addressBob);
-		});
-	});
-
-	// --- 測試 Record (完整生命週期) ---
-	describe('Record Management (Create -> Update -> Delete)', () => {
-		it('should create a new record', async () => {
-			const newRecord = {
-				name: 'Lunch',
-				amount: 150.75,
-				time: '1672531199',
-				prePayAddress: 'Alice', // 假設 'Alice' 已在 Address Management 測試中建立
-				shouldPayAddress: ['Alice'],
-			};
-
-			const { data, error } = await client.mutate({
-				mutation: CREATE_RECORD,
-				variables: {
-					tripId: tripId,
-					input: newRecord,
-				},
-			});
-
-			expect(error).toBeUndefined();
-			expect(data.createRecord.id).toBeDefined();
-			expect(data.createRecord.name).toBe(newRecord.name);
-			recordId = data.createRecord.id; // 保存 recordId 供後續測試使用
-
-			const { data: tripData } = await client.query({
-				query: GET_TRIP,
-				variables: { tripId },
-			});
-			expect(tripData.trip.records).toHaveLength(1);
-			expect(tripData.trip.records[0].name).toBe(newRecord.name);
-			expect(tripData.trip.records[0].time).toBe(newRecord.time);
-		});
-
-		it('should update the created record', async () => {
-			expect(recordId).toBeDefined(); // 依賴前一個測試建立的 recordId
-
-			const updatedRecord = {
-				name: 'Expensive Dinner',
-				amount: 500,
-				time: '1672531299',
-				prePayAddress: 'Alice',
-				shouldPayAddress: ['Alice'],
-			};
-
-			const { data, error } = await client.mutate({
-				mutation: UPDATE_RECORD,
-				variables: {
-					recordId,
-					input: updatedRecord,
-				},
-			});
-
-			expect(error).toBeUndefined();
-			expect(data.updateRecord.name).toBe(updatedRecord.name);
-			expect(data.updateRecord.amount).toBe(updatedRecord.amount);
-			expect(data.updateRecord.time).toBe(updatedRecord.time);
-		});
-
-		it('should remove the record', async () => {
-			expect(recordId).toBeDefined(); // 依賴前一個測試建立的 recordId
-
-			const { data, error } = await client.mutate({
-				mutation: REMOVE_RECORD,
-				variables: { recordId },
-			});
-
-			expect(error).toBeUndefined();
-			expect(data.removeRecord).toBe(recordId);
-
-			const { data: tripData } = await client.query({
-				query: GET_TRIP,
-				variables: { tripId },
-			});
-			expect(tripData.trip.records).toHaveLength(0);
-			recordId = null; // 清除 recordId
-		});
-	});
-
 	// --- 測試 Subscription ---
 	describe('Subscription Tests', () => {
 		const commonAddressForSubRecords = `SubRecAddr-${Date.now()}`;
@@ -420,6 +269,8 @@ describe('GraphQL API End-to-End Tests', () => {
 				time: '1672531399',
 				prePayAddress: commonAddressForSubRecords,
 				shouldPayAddress: [commonAddressForSubRecords],
+				category: 'NORMAL',
+				extendPayMsg: [],
 			};
 
 			const subObservable = client.subscribe({
@@ -453,6 +304,8 @@ describe('GraphQL API End-to-End Tests', () => {
 			expect(subData.subRecordCreate.shouldPayAddress).toEqual(
 				newRecordPayload.shouldPayAddress
 			);
+			expect(subData.subRecordCreate.category).toBe('NORMAL');
+			expect(subData.subRecordCreate.isValid).toBe(true);
 		});
 
 		it('should receive a notification when a record is updated (subRecordUpdate)', async () => {
@@ -464,6 +317,8 @@ describe('GraphQL API End-to-End Tests', () => {
 				time: '1672531499',
 				prePayAddress: commonAddressForSubRecords,
 				shouldPayAddress: [commonAddressForSubRecords],
+				category: 'FIX',
+				extendPayMsg: [99.55],
 			};
 
 			const subObservable = client.subscribe({
@@ -493,20 +348,11 @@ describe('GraphQL API End-to-End Tests', () => {
 			expect(subData.subRecordUpdate.name).toBe(updatedRecordPayload.name);
 			expect(subData.subRecordUpdate.amount).toBe(updatedRecordPayload.amount);
 			expect(subData.subRecordUpdate.time).toBe(updatedRecordPayload.time);
+			expect(subData.subRecordUpdate.category).toBe('FIX');
 		});
 
 		it('should receive a notification when a record is deleted (subRecordDelete)', async () => {
 			expect(recordIdForSubTests).toBeDefined(); // 確保 record 存在
-
-			// 為了驗證 subscription 收到的內容，先查詢一次 record 的完整資訊
-			const { data: recordBeforeDelete } = await client.query({
-				query: GET_TRIP, // 使用GET_TRIP來取得 record 詳細資料
-				variables: { tripId },
-			});
-			const targetRecord = recordBeforeDelete.trip.records.find(
-				(r) => r.id === recordIdForSubTests
-			);
-			expect(targetRecord).toBeDefined();
 
 			const subObservable = client.subscribe({
 				query: SUB_RECORD_DELETE,
@@ -524,19 +370,11 @@ describe('GraphQL API End-to-End Tests', () => {
 			expect(mutationError).toBeUndefined();
 			expect(mutationData.removeRecord).toBe(recordIdForSubTests);
 
-			// const { data: subData, errors: subErrors } = await subscriptionPromise;
-			// expect(subErrors).toBeUndefined();
-			// expect(subData.subRecordDelete).toBeDefined();
-			// expect(subData.subRecordDelete.id).toBe(recordIdForSubTests);
-			// 驗證收到的 record data 是否與刪除前一致
-			// expect(subData.subRecordDelete.name).toBe(targetRecord.name);
-			// expect(subData.subRecordDelete.amount).toBe(targetRecord.amount);
-			// expect(subData.subRecordDelete.prePayAddress).toBe(
-			// targetRecord.prePayAddress
-			// );
-			// expect(subData.subRecordDelete.shouldPayAddress).toEqual(
-			// targetRecord.shouldPayAddress
-			// );
+			const { data: subData, errors: subErrors } = await subscriptionPromise;
+			expect(subErrors).toBeUndefined();
+			expect(subData.subRecordDelete).toBeDefined();
+			// 根據 schema，subRecordDelete 只回傳 ID
+			expect(subData.subRecordDelete).toBe(recordIdForSubTests);
 
 			recordIdForSubTests = null; // 標記為已刪除
 		});

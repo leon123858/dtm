@@ -21,6 +21,7 @@ func TripRecordMQ2GQL(msg mq.TripRecordMessage) (*model.Record, bool, error) {
 		Amount:        msg.Amount,
 		Time:          msg.Time,
 		PrePayAddress: string(msg.PrePayAddress), // 將 []byte 轉換為 string
+		Category:      Int2RecordCategory(msg.Category),
 	}
 
 	// 成功轉換，返回 record, false (不跳過), nil (無錯誤)

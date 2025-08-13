@@ -35,6 +35,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			expect(error).toBeUndefined();
 			expect(data.trip.id).toBe(tripId);
 			expect(data.trip.name).toBe(testTripName);
+			expect(data.trip.isValid).toBe(true); // 驗證新欄位
 			expect(data.trip.records).toEqual([]); // 初始應為空
 			expect(data.trip.addressList).toEqual([]); // 初始應為空
 		});
@@ -110,6 +111,8 @@ describe('GraphQL API End-to-End Tests', () => {
 				time: '1672531199',
 				prePayAddress: 'Alice',
 				shouldPayAddress: ['Alice'],
+				category: 'NORMAL', // 新增欄位
+				extendPayMsg: [], // 新增欄位
 			};
 
 			const { data, error } = await client.mutate({
@@ -123,6 +126,8 @@ describe('GraphQL API End-to-End Tests', () => {
 			expect(error).toBeUndefined();
 			expect(data.createRecord.id).toBeDefined();
 			expect(data.createRecord.name).toBe(newRecord.name);
+			expect(data.createRecord.category).toBe(newRecord.category); // 驗證新欄位
+			expect(data.createRecord.isValid).toBe(true); // 驗證新欄位
 			recordId = data.createRecord.id;
 
 			// 驗證紀錄是否真的被加入
@@ -133,6 +138,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			expect(tripData.trip.records).toHaveLength(1);
 			expect(tripData.trip.records[0].name).toBe(newRecord.name);
 			expect(tripData.trip.records[0].time).toBe(newRecord.time);
+			expect(tripData.trip.records[0].category).toBe('NORMAL'); // 驗證新欄位
 		});
 
 		it('should update the created record', async () => {
@@ -144,6 +150,8 @@ describe('GraphQL API End-to-End Tests', () => {
 				amount: 500,
 				prePayAddress: 'Alice',
 				shouldPayAddress: ['Alice'],
+				category: 'FIX', // 更新欄位
+				extendPayMsg: [500], // 更新欄位
 			};
 
 			const { data, error } = await client.mutate({
@@ -157,6 +165,10 @@ describe('GraphQL API End-to-End Tests', () => {
 			expect(error).toBeUndefined();
 			expect(data.updateRecord.name).toBe(updatedRecord.name);
 			expect(data.updateRecord.amount).toBe(updatedRecord.amount);
+			expect(data.updateRecord.category).toBe(updatedRecord.category); // 驗證更新
+			expect(data.updateRecord.extendPayMsg).toEqual(
+				updatedRecord.extendPayMsg
+			); // 驗證更新
 		});
 
 		it('should remove the record', async () => {

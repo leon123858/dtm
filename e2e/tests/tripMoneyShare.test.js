@@ -58,6 +58,8 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 				time: '1672531199',
 				prePayAddress: addressAlice,
 				shouldPayAddress: [addressAlice, addressBob],
+				category: 'NORMAL',
+				extendPayMsg: [],
 			};
 			await client.mutate({
 				mutation: CREATE_RECORD,
@@ -71,6 +73,8 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 				time: '1672531299',
 				prePayAddress: addressBob,
 				shouldPayAddress: [addressAlice, addressCharlie],
+				category: 'NORMAL',
+				extendPayMsg: [],
 			};
 			await client.mutate({
 				mutation: CREATE_RECORD,
@@ -84,6 +88,8 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 				time: '1672531399',
 				prePayAddress: addressCharlie,
 				shouldPayAddress: [addressAlice, addressBob, addressCharlie],
+				category: 'NORMAL',
+				extendPayMsg: [],
 			};
 			await client.mutate({
 				mutation: CREATE_RECORD,
@@ -101,19 +107,30 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			expect(data.trip.records).toHaveLength(3); // 應該有 3 筆記錄
 			expect(data.trip.moneyShare).toBeDefined(); // 確保 moneyShare 存在
 
-			// console.log(data.trip.moneyShare);
+			// console.log(JSON.stringify(data.trip.moneyShare, null, 2));
 
-			for (let input of data.trip.moneyShare[0].input) {
-				if (input.address == 'Alice') {
-					expect(data.trip.moneyShare[0].input[1].amount).toBeCloseTo(10, 1);
-				} else if (input.address == 'Bob') {
-					expect(data.trip.moneyShare[0].input[0].amount).toBeCloseTo(20, 1);
-				} else {
-					fail('expect address are above');
-				}
-			}
-			expect(data.trip.moneyShare[0].output.amount).toBeCloseTo(30, 2); // Charlie 應收 30
-			expect(data.trip.moneyShare[0].output.address).toBe('Charlie');
+			// 假設計算結果只有一筆交易 (某人付錢給另一人)
+			// 注意：這個斷言高度依賴後端業務邏輯的具體實現
+			// 根據之前的紀錄：
+			// Alice: 預付100, 應付 (100/2 + 60/2 + 90/3) = 50 + 30 + 30 = 110. 結果: -10 (應付10)
+			// Bob:   預付60,  應付 (100/2 + 90/3) = 50 + 30 = 80. 結果: -20 (應付20)
+			// Charlie: 預付90,  應付 (60/2 + 90/3) = 30 + 30 = 60. 結果: +30 (應收30)
+			// 最終交易: Alice付10給Charlie, Bob付20給Charlie
+			expect(data.trip.moneyShare).toHaveLength(1); // 假設最終優化為一筆交易 Tx
+			const transaction = data.trip.moneyShare[0];
+
+			// 驗證付款方 (input)
+			expect(transaction.input).toHaveLength(2);
+			const alicePayment = transaction.input.find((p) => p.address === 'Alice');
+			const bobPayment = transaction.input.find((p) => p.address === 'Bob');
+			expect(alicePayment).toBeDefined();
+			expect(bobPayment).toBeDefined();
+			expect(alicePayment.amount).toBeCloseTo(10);
+			expect(bobPayment.amount).toBeCloseTo(20);
+
+			// 驗證收款方 (output)
+			expect(transaction.output.address).toBe('Charlie');
+			expect(transaction.output.amount).toBeCloseTo(30);
 		});
 	});
 });

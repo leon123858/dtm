@@ -9,6 +9,21 @@ export const CREATE_TRIP = gql`
 			id
 			name
 			addressList
+			isValid
+			records {
+				id
+			}
+		}
+	}
+`;
+
+export const UPDATE_TRIP = gql`
+	mutation UpdateTrip($tripId: ID!, $input: NewTrip!) {
+		updateTrip(tripId: $tripId, input: $input) {
+			id
+			name
+			addressList
+			isValid
 			records {
 				id
 			}
@@ -37,6 +52,9 @@ export const CREATE_RECORD = gql`
 			time
 			prePayAddress
 			shouldPayAddress
+			extendPayMsg
+			category
+			isValid
 		}
 	}
 `;
@@ -50,6 +68,9 @@ export const UPDATE_RECORD = gql`
 			time
 			prePayAddress
 			shouldPayAddress
+			extendPayMsg
+			category
+			isValid
 		}
 	}
 `;
@@ -67,6 +88,7 @@ export const GET_TRIP = gql`
 			id
 			name
 			addressList
+			isValid
 			records {
 				id
 				name
@@ -74,6 +96,9 @@ export const GET_TRIP = gql`
 				time
 				prePayAddress
 				shouldPayAddress
+				extendPayMsg
+				category
+				isValid
 			}
 			moneyShare {
 				input {
@@ -99,6 +124,9 @@ export const SUB_RECORD_CREATE = gql`
 			time
 			prePayAddress
 			shouldPayAddress
+			extendPayMsg
+			category
+			isValid
 		}
 	}
 `;
@@ -112,6 +140,9 @@ export const SUB_RECORD_UPDATE = gql`
 			time
 			prePayAddress
 			shouldPayAddress
+			extendPayMsg
+			category
+			isValid
 		}
 	}
 `;

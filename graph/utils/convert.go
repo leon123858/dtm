@@ -9,14 +9,14 @@ import (
 	"time"
 )
 
-func RecordCategory2Int(category model.RecordCategory) int {
-	switch category {
+func RecordCategory2Int(category *model.RecordCategory) int {
+	switch *category {
 	case model.RecordCategoryNormal:
 		return 0
 	case model.RecordCategoryFix:
 		return 1
 	default:
-		panic("unknown RecordCategory: " + string(category))
+		panic("unknown RecordCategory 2 int: " + string(category.String()))
 	}
 }
 
@@ -73,7 +73,7 @@ func MapNewRecordToDBRecord(input model.NewRecord) (*db.Record, error) {
 			Amount:        input.Amount,
 			Time:          t,
 			PrePayAddress: db.Address(input.PrePayAddress),
-			Category:      db.RecordCategory(RecordCategory2Int(*input.Category)),
+			Category:      db.RecordCategory(RecordCategory2Int(input.Category)),
 		},
 		RecordData: db.RecordData{
 			ShouldPayAddress: make([]db.ExtendAddress, len(input.ShouldPayAddress)),

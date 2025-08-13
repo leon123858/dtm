@@ -96,6 +96,7 @@ func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, inpu
 		Amount:        record.Amount,
 		Time:          strconv.FormatInt(record.Time.UnixMilli(), 10),
 		PrePayAddress: record.PrePayAddress,
+		Category:      utils.RecordCategory2Int(input.Category),
 	}); err != nil {
 		fmt.Println("Warning: fail to notice event: " + err.Error())
 	}
@@ -106,6 +107,7 @@ func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, inpu
 		Amount:        record.Amount,
 		Time:          strconv.FormatInt(record.Time.UnixMilli(), 10),
 		PrePayAddress: string(record.PrePayAddress),
+		Category:      *input.Category,
 	}, nil
 }
 
@@ -138,6 +140,7 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, in
 		Amount:        record.Amount,
 		Time:          strconv.FormatInt(record.Time.UnixMilli(), 10),
 		PrePayAddress: record.PrePayAddress,
+		Category:      utils.RecordCategory2Int(input.Category),
 	}); err != nil {
 		fmt.Println("Warning: fail to notice event: " + err.Error())
 	}
@@ -292,24 +295,23 @@ func (r *recordResolver) IsValid(ctx context.Context, obj *model.Record) (bool, 
 		return false, fmt.Errorf("failed to get should pay addresses: %w", err)
 	}
 
-	newTx := tx.Tx{
-		Input: []tx.Payment{},
-		Output: tx.Payment{
-			Address: obj.PrePayAddress,
-			Amount:  obj.Amount,
-		},
-		Name: obj.Name,
-	}
-	for _, addr := range addresses {
-		newTx.Input = append(newTx.Input, tx.Payment{
-			Address: string(addr.Address),
-			Amount:  addr.ExtendMsg,
-		})
-	}
-	if isValid := newTx.BoolValidate(); !isValid {
-		return false, fmt.Errorf("invalid transaction: %v", newTx)
+	payment := tx.UserPayment{
+		Name:             obj.Name,
+		PrePayAddress:    obj.PrePayAddress,
+		Amount:           obj.Amount,
+		ShouldPayAddress: make([]string, len(addresses)),
+		ExtendPayMsg:     make([]float64, len(addresses)),
+		Strategy:         tx.ShareMoneyStrategyFactory(utils.RecordCategory2Int(&obj.Category)),
 	}
 
+	for i, addr := range addresses {
+		payment.ShouldPayAddress[i] = string(addr.Address)
+		payment.ExtendPayMsg[i] = addr.ExtendMsg
+	}
+
+	if _, err := payment.ToTx(payment.Strategy); err != nil {
+		return false, nil
+	}
 	return true, nil
 }
 

@@ -44,6 +44,7 @@ type TripRecordMessage struct {
 	Amount        float64
 	Time          string // ISO format
 	PrePayAddress db.Address
+	Category      int // 使用整數表示 RecordCategory
 }
 
 func (m TripRecordMessage) GetTopic() uuid.UUID {

@@ -93,9 +93,9 @@ func VerifyRecordRequestAndSetDefault(r *model.NewRecord) bool {
 	/**
 	 * DEFAULT VALUE
 	**/
-	if r.Category == nil {
+	if r.Category == nil || r.Category.String() == "" {
 		modelCategory := model.RecordCategoryNormal
-		r.Category = &modelCategory
+		*r.Category = modelCategory
 	}
 
 	return true
