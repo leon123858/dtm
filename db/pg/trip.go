@@ -36,8 +36,9 @@ func (p *pgDBWrapper) CreateTripRecords(id uuid.UUID, records []db.Record) error
 				TripID:        id, // Link to the trip
 				Name:          rec.RecordInfo.Name,
 				Amount:        rec.RecordInfo.Amount,
-				Time:          rec.RecordInfo.Time, // Use the time from RecordInfo
+				Time:          rec.RecordInfo.Time,
 				PrePayAddress: string(rec.RecordInfo.PrePayAddress),
+				Category:      int(rec.RecordInfo.Category),
 			}
 			if err := tx.Create(&recordModel).Error; err != nil {
 				return err
@@ -46,9 +47,10 @@ func (p *pgDBWrapper) CreateTripRecords(id uuid.UUID, records []db.Record) error
 			// Create entries in RecordShouldPayAddressListModel
 			for _, addr := range rec.RecordData.ShouldPayAddress {
 				shouldPayModel := RecordShouldPayAddressListModel{
-					RecordID: rec.RecordInfo.ID,
-					TripID:   id, // Link to the trip
-					Address:  string(addr.Address),
+					RecordID:    rec.RecordInfo.ID,
+					TripID:      id, // Link to the trip
+					Address:     string(addr.Address),
+					ExtendedMsg: addr.ExtendMsg,
 				}
 				if err := tx.Create(&shouldPayModel).Error; err != nil {
 					return err
@@ -84,7 +86,8 @@ func (p *pgDBWrapper) GetTripRecords(id uuid.UUID) ([]db.RecordInfo, error) {
 			Name:          rm.Name,
 			Amount:        rm.Amount,
 			PrePayAddress: db.Address(rm.PrePayAddress),
-			Time:          rm.Time, // Use the time from RecordModel
+			Time:          rm.Time,
+			Category:      db.RecordCategory(rm.Category),
 		})
 	}
 	return recordInfos, nil
@@ -109,11 +112,14 @@ func (p *pgDBWrapper) GetRecordAddressList(recordID uuid.UUID) ([]db.ExtendAddre
 		return nil, err
 	}
 
-	var addresses []db.Address
+	var addresses []db.ExtendAddress
 	for _, spm := range shouldPayModels {
-		addresses = append(addresses, db.Address(spm.Address))
+		addresses = append(addresses, db.ExtendAddress{
+			Address:   db.Address(spm.Address),
+			ExtendMsg: spm.ExtendedMsg,
+		})
 	}
-	return nil, nil
+	return addresses, nil
 }
 
 // Update
@@ -135,11 +141,16 @@ func (p *pgDBWrapper) UpdateTripRecord(record *db.Record) (uuid.UUID, error) {
 			return err
 		}
 
-		recordModel.Name = record.RecordInfo.Name
-		recordModel.Amount = record.RecordInfo.Amount
-		recordModel.PrePayAddress = string(record.RecordInfo.PrePayAddress)
-		recordModel.Time = record.RecordInfo.Time // Update the time field
-		if err := tx.Model(&RecordModel{}).Where("id = ?", record.RecordInfo.ID).Updates(recordModel).Error; err != nil {
+		newRecordModel := RecordModel{
+			ID:            record.RecordInfo.ID,
+			TripID:        recordModel.TripID, // Keep the same trip ID
+			Name:          record.RecordInfo.Name,
+			Amount:        record.RecordInfo.Amount,
+			Time:          record.RecordInfo.Time, // Use the time from RecordInfo
+			PrePayAddress: string(record.RecordInfo.PrePayAddress),
+			Category:      int(record.RecordInfo.Category), // Use int to store the category
+		}
+		if err := tx.Model(&RecordModel{}).Where("id = ?", record.RecordInfo.ID).Updates(&newRecordModel).Error; err != nil {
 			return err
 		}
 
@@ -152,9 +163,10 @@ func (p *pgDBWrapper) UpdateTripRecord(record *db.Record) (uuid.UUID, error) {
 		models := make([]RecordShouldPayAddressListModel, 0, len(record.RecordData.ShouldPayAddress))
 		for _, addr := range record.RecordData.ShouldPayAddress {
 			shouldPayModel := RecordShouldPayAddressListModel{
-				RecordID: record.RecordInfo.ID,
-				TripID:   recordModel.TripID, // Link to the trip
-				Address:  string(addr.Address),
+				RecordID:    record.RecordInfo.ID,
+				TripID:      recordModel.TripID, // Link to the trip
+				Address:     string(addr.Address),
+				ExtendedMsg: addr.ExtendMsg,
 			}
 			models = append(models, shouldPayModel)
 		}
@@ -221,8 +233,9 @@ func (p *pgDBWrapper) DataLoaderGetRecordInfoList(ctx context.Context, tripIds [
 			ID:            r.ID,
 			Name:          r.Name,
 			Amount:        r.Amount,
-			Time:          r.Time, // Use the time from RecordModel
+			Time:          r.Time,
 			PrePayAddress: db.Address(r.PrePayAddress),
+			Category:      db.RecordCategory(r.Category),
 		})
 	}
 	// Ensure all requested tripIds have an entry in the map, even if empty
@@ -264,7 +277,7 @@ func (p *pgDBWrapper) DataLoaderGetRecordShouldPayList(ctx context.Context, reco
 	for _, sp := range shouldPayAddresses {
 		result[sp.RecordID] = append(result[sp.RecordID], db.ExtendAddress{
 			Address:   db.Address(sp.Address),
-			ExtendMsg: 0, // Assuming ExtendMsg is not used here, set to zero or a default value
+			ExtendMsg: sp.ExtendedMsg,
 		})
 	}
 	// Ensure all requested recordIds have an entry in the map, even if empty

@@ -13,9 +13,10 @@ type Mutation struct {
 }
 
 type NewRecord struct {
-	Name             string          `json:"name"`
-	Amount           float64         `json:"amount"`
-	PrePayAddress    string          `json:"prePayAddress"`
+	Name          string  `json:"name"`
+	Amount        float64 `json:"amount"`
+	PrePayAddress string  `json:"prePayAddress"`
+	// time: by JS Date().getTime().toString()
 	Time             *string         `json:"time,omitempty"`
 	ShouldPayAddress []string        `json:"shouldPayAddress"`
 	ExtendPayMsg     []float64       `json:"extendPayMsg,omitempty"`

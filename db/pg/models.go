@@ -28,6 +28,7 @@ type RecordModel struct {
 	Amount        float64   `gorm:"type:numeric(10,2);not null"`
 	Time          time.Time `gorm:"not null"` // Use time.Time to store the timestamp
 	PrePayAddress string    `gorm:"size:255;not null"`
+	Category      int       `gorm:"not null"` // Use int to store the category
 	// meta data
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -40,9 +41,10 @@ func (RecordModel) TableName() string {
 
 // RecordShouldPayAddressListModel
 type RecordShouldPayAddressListModel struct {
-	RecordID uuid.UUID `gorm:"type:uuid;primaryKey"`
-	TripID   uuid.UUID `gorm:"type:uuid;primaryKey"`
-	Address  string    `gorm:"size:255;primaryKey"`
+	RecordID    uuid.UUID `gorm:"type:uuid;primaryKey"`
+	TripID      uuid.UUID `gorm:"type:uuid;primaryKey"`
+	Address     string    `gorm:"size:255;primaryKey"`
+	ExtendedMsg float64   `gorm:"type:numeric(10,2)"`
 	// meta data
 	CreatedAt time.Time
 	UpdatedAt time.Time
