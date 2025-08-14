@@ -2,7 +2,6 @@ package mq
 
 import "github.com/google/uuid"
 
-// TopicProvider 定義了一個可以提供 Topic ID 的介面
 type TopicProvider interface {
 	GetTopic() uuid.UUID
 }

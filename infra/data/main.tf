@@ -3,7 +3,7 @@
 terraform {
   backend "gcs" {
     bucket = "my-terraform-state-division-trip-money-20250614"
-    prefix = "terraform/state/data" # 可選：指定 state 文件在 bucket 中的路徑前綴
+    prefix = "terraform/state/data"
   }
 
   required_providers {
@@ -56,73 +56,65 @@ resource "google_project_service" "apis" {
 }
 
 resource "random_password" "db_password" {
-  # 密碼總長度
   length = 32
 
-  # 確保密碼必須包含以下類型的字元
-  lower   = true # 包含小寫字母 (a-z)
-  upper   = true # 包含大寫字母 (A-Z)
-  numeric = true # 包含數字 (0-9)
-  special = true # 包含特殊符號
 
-  # 為了保證「超級複雜」，我們可以設定每種字元的「最少數量」
-  # 這樣可以避免產生出例如 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1!" 這種雖然符合規則但不夠隨機的密碼
+  lower   = true 
+  upper   = true
+  numeric = true 
+  special = true 
+
+  
   min_lower   = 4
   min_upper   = 4
   min_numeric = 4
   min_special = 4
 
-  # 你可以自訂要使用的特殊符號集，避免某些在 shell 或 URL 中有特殊意義的字元
+
   override_special = "!@#$%^&*()-_=+[]{}"
 }
 
 resource "google_sql_database_instance" "default" {
-  # --- 基本設定 ---
+
   project          = local.project_id
   name             = "dtm-db"
   region           = local.region
   database_version = "POSTGRES_17"
   root_password    = random_password.db_password.result
 
-  # --- 保護機制 ---
-  # 若設為 true，可防止意外刪除執行個體
+
   deletion_protection = false
 
   settings {
-    # --- 機器規格與可用性 ---
+
     tier              = "db-f1-micro"
-    availability_type = "ZONAL" # ZONAL 表示單一區域，REGIONAL 表示高可用性
+    availability_type = "ZONAL" 
     edition           = "ENTERPRISE"
 
     location_preference {
       zone = local.zone
     }
 
-    # --- 儲存空間設定 ---
-    disk_type       = "PD_SSD" # 磁碟類型
-    disk_size       = 10       # 磁碟大小 (GB)
-    disk_autoresize = false    # 停用儲存空間自動成長
 
-    # --- 網路設定 ---
+    disk_type       = "PD_SSD" 
+    disk_size       = 10       
+    disk_autoresize = false    
+
     ip_configuration {
-      ipv4_enabled = true # 啟用 Public IP
+      ipv4_enabled = true # Public IP
     }
 
-    # --- 備份設定 ---
-    # 您提供的設定中，備份是停用的 (enabled = false)
     backup_configuration {
       enabled                        = false
-      point_in_time_recovery_enabled = false # 停用 Point-in-Time Recovery
+      point_in_time_recovery_enabled = false # Point-in-Time Recovery
 
-      # 以下設定僅在 enabled = true 時生效
       backup_retention_settings {
         retained_backups = 7
         retention_unit   = "COUNT"
       }
     }
 
-    # --- 資料庫旗標 (Flags) ---
-    # 啟用 IAM 資料庫身分驗證
+
     database_flags {
       name  = "cloudsql.iam_authentication"
       value = "on"

@@ -12,7 +12,7 @@ import (
 
 	_ "dtm/migration" // Import your migration package to register migrations
 
-	_ "github.com/lib/pq" // PostgreSQL 驅動程式
+	_ "github.com/lib/pq" // PostgreSQL driver
 
 	"github.com/pressly/goose/v3"
 
@@ -36,7 +36,6 @@ func migrateCommand() *cobra.Command {
 				return
 			}
 
-			// 設定資料庫連接字串
 			connStr := "host=localhost user=postgres dbname=postgres port=5432 sslmode=disable TimeZone=Asia/Taipei"
 			if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
 				connStr = dbURL
@@ -68,7 +67,7 @@ func migrateCommand() *cobra.Command {
 				log.Fatalf("Failed to set search path: %v", err)
 			}
 
-			// Ping 資料庫以確保連接已成功建立
+			// Ping to confirm connection
 			pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer pingCancel()
 			if err := db.PingContext(pingCtx); err != nil {
@@ -76,7 +75,7 @@ func migrateCommand() *cobra.Command {
 			}
 			log.Println("Successfully connected to the database.")
 
-			migrationsDir := "migration" // 或您 Go 遷移檔案目錄的實際路徑
+			migrationsDir := "migration"
 			if up {
 				log.Println("Running 'up' migrations...")
 				if err := goose.UpContext(context.Background(), db, migrationsDir); err != nil {
@@ -84,7 +83,6 @@ func migrateCommand() *cobra.Command {
 				}
 				log.Println("Goose operations completed.")
 			} else if down {
-				// 您也可以使用其他 goose 指令，例如：
 				log.Println("Rolling back('down') the last migration...")
 				if err := goose.DownContext(context.Background(), db, migrationsDir); err != nil {
 					log.Fatalf("Goose DownContext failed: %v", err)

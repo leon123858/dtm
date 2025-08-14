@@ -6,11 +6,11 @@ enum RecordCategory {
 	"""
 	average
 	"""
-	NORMAL # 均分
+	NORMAL
 	"""
 	set fix amount list
 	"""
-	FIX # 指定金額
+	FIX
 }
 
 type Record {

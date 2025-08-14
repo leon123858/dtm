@@ -1,9 +1,9 @@
-import { client } from '../src/apolloClient'; // 確保路徑正確
+import { client } from '../src/apolloClient';
 import {
 	GET_TRIP,
 	CREATE_TRIP,
 	CREATE_ADDRESS,
-	DELETE_ADDRESS, // 引入 DELETE_ADDRESS
+	DELETE_ADDRESS,
 	CREATE_RECORD,
 	UPDATE_RECORD,
 } from './graphql';
@@ -15,9 +15,8 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 	const addressBob = 'Bob';
 	const addressCharlie = 'Charlie';
 
-	// 在所有測試開始前，先建立一個共用的旅程和地址
 	beforeAll(async () => {
-		// 1. 創建 Trip
+		// 1. create trip
 		const { data: tripData } = await client.mutate({
 			mutation: CREATE_TRIP,
 			variables: { input: { name: testTripName } },
@@ -25,7 +24,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 		expect(tripData.createTrip.id).toBeDefined();
 		tripId = tripData.createTrip.id;
 
-		// 2. 創建地址
+		// 2. create addresses
 		await client.mutate({
 			mutation: CREATE_ADDRESS,
 			variables: { tripId, address: addressAlice },
@@ -39,7 +38,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			variables: { tripId, address: addressCharlie },
 		});
 
-		// 驗證地址是否成功添加
+		// verify addresses are added to trip
 		const { data: fetchedTripData } = await client.query({
 			query: GET_TRIP,
 			variables: { tripId },
@@ -49,10 +48,10 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 		);
 	});
 
-	// --- 測試 Record 和 Money Share ---
+	// ---  Record and Money Share ---
 	describe('Record and Money Share Calculation', () => {
 		it('should create multiple records and calculate moneyShare correctly', async () => {
-			// Record 1: Alice 支付 100，Alice 和 Bob 分擔
+			// Record 1: Alice pay 100，Alice and Bob share
 			const record1 = {
 				name: 'Dinner',
 				amount: 100,
@@ -67,7 +66,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 				variables: { tripId, input: record1 },
 			});
 
-			// Record 2: Bob 支付 60，Alice 和 Charlie 分擔
+			// Record 2: Bob pay 60，Alice and Charlie share
 			const record2 = {
 				name: 'Transport',
 				amount: 60,
@@ -82,7 +81,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 				variables: { tripId, input: record2 },
 			});
 
-			// Record 3: Charlie 支付 90，Alice, Bob, Charlie 分擔
+			// Record 3: Charlie pay 90，Alice, Bob, Charlie share
 			const record3 = {
 				name: 'Accommodation',
 				amount: 90,
@@ -105,22 +104,18 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 
 			expect(error).toBeUndefined();
 			expect(data.trip.id).toBe(tripId);
-			expect(data.trip.records).toHaveLength(3); // 應該有 3 筆記錄
-			expect(data.trip.moneyShare).toBeDefined(); // 確保 moneyShare 存在
+			expect(data.trip.records).toHaveLength(3);
+			expect(data.trip.moneyShare).toBeDefined();
 
 			// console.log(JSON.stringify(data.trip.moneyShare, null, 2));
 
-			// 假設計算結果只有一筆交易 (某人付錢給另一人)
-			// 注意：這個斷言高度依賴後端業務邏輯的具體實現
-			// 根據之前的紀錄：
-			// Alice: 預付100, 應付 (100/2 + 60/2 + 90/3) = 50 + 30 + 30 = 110. 結果: -10 (應付10)
-			// Bob:   預付60,  應付 (100/2 + 90/3) = 50 + 30 = 80. 結果: -20 (應付20)
-			// Charlie: 預付90,  應付 (60/2 + 90/3) = 30 + 30 = 60. 結果: +30 (應收30)
-			// 最終交易: Alice付10給Charlie, Bob付20給Charlie
-			expect(data.trip.moneyShare).toHaveLength(1); // 假設最終優化為一筆交易 Tx
+			// Alice: pay 100, should (100/2 + 60/2 + 90/3) = 50 + 30 + 30 = 110. get: -10 (output 10)
+			// Bob:   pay 60,  should (100/2 + 90/3) = 50 + 30 = 80. get: -20 (output 20)
+			// Charlie: pay 90,  should (60/2 + 90/3) = 30 + 30 = 60. get: +30 (input 30)
+			// result: Alice pay 10 to Charlie, Bob pay 20 to Charlie
+			expect(data.trip.moneyShare).toHaveLength(1);
 			const transaction = data.trip.moneyShare[0];
 
-			// 驗證付款方 (input)
 			expect(transaction.input).toHaveLength(2);
 			const alicePayment = transaction.input.find((p) => p.address === 'Alice');
 			const bobPayment = transaction.input.find((p) => p.address === 'Bob');
@@ -129,13 +124,12 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			expect(alicePayment.amount).toBeCloseTo(10);
 			expect(bobPayment.amount).toBeCloseTo(20);
 
-			// 驗證收款方 (output)
 			expect(transaction.output.address).toBe('Charlie');
 			expect(transaction.output.amount).toBeCloseTo(30);
 		});
 	});
 
-	// --- 測試 Record is Valid ---
+	// --- Record is Valid ---
 	describe('Record Validity (isValid) Tests', () => {
 		let localTripId;
 
@@ -175,20 +169,18 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			expect(recordId).toBeDefined();
 			expect(recordData.createRecord.isValid).toBe(true);
 
-			// 驗證初始狀態為 valid
+			// valid
 			let { data: tripData } = await client.query({
 				query: GET_TRIP,
 				variables: { tripId: localTripId },
 			});
 			expect(tripData.trip.records[0].isValid).toBe(true);
 
-			// 移除唯一的付款人
 			await client.mutate({
 				mutation: DELETE_ADDRESS,
 				variables: { tripId: localTripId, address: tempAddress },
 			});
 
-			// 再次查詢，驗證紀錄已變為 invalid
 			({ data: tripData } = await client.query({
 				query: GET_TRIP,
 				variables: { tripId: localTripId },
@@ -199,7 +191,6 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			// when record have inValid, trip should inValid
 			expect(tripData.trip.isValid).toBe(false);
 
-			// 加回來後更新加回去回到合法
 			await client.mutate({
 				mutation: CREATE_ADDRESS,
 				variables: { tripId: localTripId, address: tempAddress },
@@ -232,11 +223,11 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 
 			const record = {
 				name: 'Invalid FIX Record',
-				amount: 100, // 總金額
+				amount: 100,
 				prePayAddress: addr1,
 				shouldPayAddress: [addr1, addr2],
 				category: 'FIX',
-				extendPayMsg: [40, 50], // 金額總和 90，不等於 amount 100
+				extendPayMsg: [40, 50], // total 90，not equal to amount 100
 			};
 
 			await client.mutate({
@@ -244,7 +235,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 				variables: { tripId: localTripId, input: record },
 			});
 
-			// 查詢並驗證紀錄為 invalid
+			// invalid
 			const { data: tripData } = await client.query({
 				query: GET_TRIP,
 				variables: { tripId: localTripId },
@@ -259,7 +250,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 		});
 	});
 
-	// --- 測試混合模式 (FIX & NORMAL) ---
+	// --- record mode (FIX & NORMAL) ---
 	describe('Mixed Mode Money Share Calculation', () => {
 		let mixedTripId;
 		const mixAlice = 'MixAlice',
@@ -287,7 +278,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 		});
 
 		it('should calculate moneyShare correctly with mixed NORMAL and FIX records', async () => {
-			// Record 1 (NORMAL): Alice 支付 150，三人均分
+			// Record 1 (NORMAL): Alice pay 150，average split
 			const recordNormal = {
 				name: 'NORMAL Lunch',
 				amount: 150,
@@ -301,7 +292,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 				variables: { tripId: mixedTripId, input: recordNormal },
 			});
 
-			// Record 2 (FIX): Bob 支付 100，指定分擔金額
+			// Record 2 (FIX): Bob pay 100，fixed split
 			const recordFix = {
 				name: 'FIX Tickets',
 				amount: 100,
@@ -320,13 +311,13 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 				variables: { tripId: mixedTripId },
 			});
 
-			// 預期結果:
-			// Alice: 預付 150. 應付 (150/3) + 20 = 50 + 20 = 70.  結果: +80 (應收)
-			// Bob:   預付 100. 應付 (150/3) + 30 = 50 + 30 = 80.  結果: +20 (應收)
-			// Charlie: 預付 0.  應付 (150/3) + 50 = 50 + 50 = 100. 結果: -100 (應付)
-			// 最終交易: Charlie 付 100，其中 80 給 Alice，20 給 Bob
+			// Expected result:
+			// Alice: paid 150. Should pay (150/3) + 20 = 50 + 20 = 70. Net: +80 (to receive)
+			// Bob:   paid 100. Should pay (150/3) + 30 = 50 + 30 = 80. Net: +20 (to receive)
+			// Charlie: paid 0. Should pay (150/3) + 50 = 50 + 50 = 100. Net: -100 (to pay)
+			// Final transactions: Charlie pays 100, with 80 to Alice and 20 to Bob
 			expect(data.trip.moneyShare).toBeDefined();
-			expect(data.trip.moneyShare).toHaveLength(2); // 預期有兩筆交易
+			expect(data.trip.moneyShare).toHaveLength(2);
 
 			const charliePays = data.trip.moneyShare.filter(
 				(tx) => tx.input[0].address === mixCharlie

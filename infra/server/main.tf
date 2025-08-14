@@ -3,7 +3,7 @@
 terraform {
   backend "gcs" {
     bucket = "my-terraform-state-division-trip-money-20250614"
-    prefix = "terraform/state/server" # 可選：指定 state 文件在 bucket 中的路徑前綴
+    prefix = "terraform/state/server"
   }
 
   required_providers {
@@ -38,7 +38,7 @@ provider "google-beta" {
   zone    = local.zone
 }
 
-# --- Backend 服務帳戶 (有權限) ---
+# --- Backend SA ---
 resource "google_service_account" "backend_app_runtime" {
   account_id   = "dtm-backend-runtime"
   display_name = "DTM Backend App Runtime SA"
@@ -71,7 +71,7 @@ resource "google_project_iam_member" "sql_instance_user_binding" {
   member  = google_service_account.backend_app_runtime.member
 }
 
-# --- Frontend 服務帳戶 (無權限) ---
+# --- Frontend SA ---
 resource "google_service_account" "frontend_app_runtime" {
   account_id   = "dtmf-frontend-runtime"
   display_name = "DTMF Frontend App Runtime SA"
@@ -86,7 +86,6 @@ resource "google_cloud_run_v2_service" "dtmf_frontend" {
   # default_uri_disabled = true
 
   template {
-    # 前端服務使用 "無權限" 的服務帳戶
     service_account = google_service_account.frontend_app_runtime.email
 
     scaling {
@@ -136,7 +135,6 @@ resource "google_cloud_run_v2_service" "dtm_backend" {
   # default_uri_disabled = true
 
   template {
-    # 後端服務使用 "有權限" 的服務帳戶
     service_account = google_service_account.backend_app_runtime.email
 
     scaling {

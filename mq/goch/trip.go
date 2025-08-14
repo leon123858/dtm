@@ -54,7 +54,6 @@ func newFanOutQueueCore[T mq.TopicProvider](bufferSize int) *fanOutQueueCore[T] 
 func (f *fanOutQueueCore[T]) Publish(msg T) error {
 	select {
 	case f.publishChan <- msg:
-		// 如果 channel 有緩衝空間，或者有無緩衝 channel 的接收者立即準備好，則發送成功
 		return nil
 	case <-time.After(200 * time.Millisecond):
 		return FullQueueError

@@ -1,4 +1,4 @@
-import { client } from '../src/apolloClient'; // 假設您的 Apollo Client 實例從此處匯出
+import { client } from '../src/apolloClient';
 import {
 	GET_TRIP,
 	CREATE_TRIP,
@@ -15,9 +15,9 @@ import {
 } from './graphql';
 
 /**
- * 使執行緒暫停指定的毫秒數。
- * @param {number} ms - 要暫停的毫秒數。
- * @returns {Promise<void>} 一個在時間到期後解析的 Promise。
+ * let thread sleep for a while
+ * @param {number} ms
+ * @returns {Promise<void>} Promise。
  */
 function sleep(ms) {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -92,12 +92,10 @@ const waitForMultiSubscription = (observable, count, timeout = 7000) => {
 };
 
 describe('GraphQL API End-to-End Tests', () => {
-	let tripId; // 用於儲存測試流程中建立的 Trip ID
-	let recordId; // 用於儲存測試流程中建立的 Record ID (用於非 subscription 測試)
+	let tripId;
 	const testTripName = `Test Trip - ${Date.now()}`;
 	let nenExistTripId = '0b4d17a1-7db3-4686-aae2-2120f7919d50';
 
-	// 在所有測試開始前，先建立一個共用的旅程
 	beforeAll(async () => {
 		const { data } = await client.mutate({
 			mutation: CREATE_TRIP,
@@ -107,12 +105,11 @@ describe('GraphQL API End-to-End Tests', () => {
 		tripId = data.createTrip.id;
 	});
 
-	// --- 測試 Subscription ---
+	// --- Subscription ---
 	describe('Subscription Tests', () => {
 		const commonAddressForSubRecords = `SubRecAddr-${Date.now()}`;
-		let recordIdForSubTests; // 用於 subscription 測試中 record 的生命週期
+		let recordIdForSubTests;
 
-		// 在此 describe 區塊的所有測試開始前，建立一個共用地址
 		beforeAll(async () => {
 			const { data, error } = await client.mutate({
 				mutation: CREATE_ADDRESS,
@@ -122,7 +119,6 @@ describe('GraphQL API End-to-End Tests', () => {
 			expect(data.createAddress).toBe(commonAddressForSubRecords);
 		});
 
-		// 在此 describe 區塊的所有測試結束後，清理共用地址
 		afterAll(async () => {
 			try {
 				await client.mutate({
@@ -134,7 +130,7 @@ describe('GraphQL API End-to-End Tests', () => {
 					`Could not clean up commonAddressForSubRecords: ${commonAddressForSubRecords}. Error: ${e.message}`
 				);
 			}
-			// 清理可能未被刪除的 record (如果測試中途失敗)
+
 			if (recordIdForSubTests) {
 				try {
 					await client.mutate({
@@ -161,7 +157,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			// sleep to wait subscript trigger
 			await sleep(1000);
 
-			// 觸發 mutation
+			// mutation
 			const { data: mutationData, error: mutationError } = await client.mutate({
 				mutation: CREATE_ADDRESS,
 				variables: { tripId, address: newAddressName },
@@ -170,12 +166,12 @@ describe('GraphQL API End-to-End Tests', () => {
 			expect(mutationError).toBeUndefined();
 			expect(mutationData.createAddress).toBe(newAddressName);
 
-			// 等待並驗證 subscription 結果
+			// wait and verify subscription
 			const { data: subData, errors: subErrors } = await subscriptionPromise;
 			expect(subErrors).toBeUndefined();
 			expect(subData.subAddressCreate).toBe(newAddressName);
 
-			// 清理
+			// clear
 			await client.mutate({
 				mutation: DELETE_ADDRESS,
 				variables: { tripId, address: newAddressName },
@@ -196,7 +192,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			// sleep to wait subscript trigger
 			await sleep(1000);
 
-			// 觸發多個 mutation
+			// trigger many mutation
 			const mutationPromises = newAddressNames.map((address) =>
 				client.mutate({
 					mutation: CREATE_ADDRESS,
@@ -208,14 +204,14 @@ describe('GraphQL API End-to-End Tests', () => {
 				expect(result.error).toBeUndefined();
 				expect(result.data.createAddress).toBe(newAddressNames[index]);
 			});
-			// 等待並驗證 subscription 結果
+			// subscription
 			const subscriptionResults = await subscriptionPromise;
 			expect(subscriptionResults.length).toBe(2);
 			// just check include
 			expect(subscriptionResults.map((r) => r.data.subAddressCreate)).toEqual(
 				expect.arrayContaining(newAddressNames)
 			);
-			// 清理
+
 			await Promise.all(
 				newAddressNames.map((address) =>
 					client.mutate({
@@ -238,7 +234,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			// sleep to wait subscript trigger
 			await sleep(1000);
 
-			// 觸發 mutation
+			// mutation
 			const { data: mutationData, error: mutationError } = await client.mutate({
 				mutation: CREATE_ADDRESS,
 				variables: { tripId, address: newAddressName },
@@ -247,7 +243,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			expect(mutationError).toBeUndefined();
 			expect(mutationData.createAddress).toBe(newAddressName);
 
-			// 等待並驗證 subscription 結果
+			// subscription
 			try {
 				await subscriptionPromise;
 				throw 'should not receive here as tripID not map';
@@ -255,7 +251,6 @@ describe('GraphQL API End-to-End Tests', () => {
 				expect(err).not.toBe('should not receive here as tripID not map');
 			}
 
-			// 清理
 			await client.mutate({
 				mutation: DELETE_ADDRESS,
 				variables: { tripId, address: newAddressName },
@@ -289,7 +284,7 @@ describe('GraphQL API End-to-End Tests', () => {
 
 			expect(mutationError).toBeUndefined();
 			expect(mutationData.createRecord.id).toBeDefined();
-			recordIdForSubTests = mutationData.createRecord.id; // 保存 ID 供後續測試
+			recordIdForSubTests = mutationData.createRecord.id;
 
 			const { data: subData, errors: subErrors } = await subscriptionPromise;
 			expect(subErrors).toBeUndefined();
@@ -309,7 +304,7 @@ describe('GraphQL API End-to-End Tests', () => {
 		});
 
 		it('should receive a notification when a record is updated (subRecordUpdate)', async () => {
-			expect(recordIdForSubTests).toBeDefined(); // 確保 record 已被建立
+			expect(recordIdForSubTests).toBeDefined();
 
 			const updatedRecordPayload = {
 				name: 'Sub Test Record Updated',
@@ -352,7 +347,7 @@ describe('GraphQL API End-to-End Tests', () => {
 		});
 
 		it('should receive a notification when a record is deleted (subRecordDelete)', async () => {
-			expect(recordIdForSubTests).toBeDefined(); // 確保 record 存在
+			expect(recordIdForSubTests).toBeDefined();
 
 			const subObservable = client.subscribe({
 				query: SUB_RECORD_DELETE,
@@ -373,15 +368,14 @@ describe('GraphQL API End-to-End Tests', () => {
 			const { data: subData, errors: subErrors } = await subscriptionPromise;
 			expect(subErrors).toBeUndefined();
 			expect(subData.subRecordDelete).toBeDefined();
-			// 根據 schema，subRecordDelete 只回傳 ID
 			expect(subData.subRecordDelete).toBe(recordIdForSubTests);
 
-			recordIdForSubTests = null; // 標記為已刪除
+			recordIdForSubTests = null;
 		});
 
 		it('should receive a notification when an address is deleted (subAddressDelete)', async () => {
 			const addressToDelete = `SubAddrDelete-${Date.now()}`;
-			// 先建立一個要刪除的地址
+
 			await client.mutate({
 				mutation: CREATE_ADDRESS,
 				variables: { tripId, address: addressToDelete },
@@ -396,7 +390,6 @@ describe('GraphQL API End-to-End Tests', () => {
 			// sleep to wait subscript trigger
 			await sleep(1000);
 
-			// 觸發刪除
 			const { data: mutationData, error: mutationError } = await client.mutate({
 				mutation: DELETE_ADDRESS,
 				variables: { tripId, address: addressToDelete },

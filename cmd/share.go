@@ -69,9 +69,9 @@ func shareCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&inputPath, "input", "i", "", "csv input file path (required)")
-	cmd.MarkFlagRequired("input") // 標記為必填參數
+	cmd.MarkFlagRequired("input")
 	cmd.Flags().StringVarP(&outputPath, "output", "o", "", "csv output file path (required)")
-	cmd.MarkFlagRequired("output") // 標記為必填參數
+	cmd.MarkFlagRequired("output")
 
 	return cmd
 }
@@ -88,7 +88,7 @@ func ParseCSVToUserPayments(csvContent [][]string) ([]tx.UserPayment, error) {
 	var payments []tx.UserPayment
 	for i, row := range dataRows {
 		if len(row) != 4 {
-			return nil, fmt.Errorf("row %d: expected 4 columns, but got %d", i+2, len(row)) // +2 因為跳過了標題行且索引從 0 開始
+			return nil, fmt.Errorf("row %d: expected 4 columns, but got %d", i+2, len(row)) // +2 to account for the header row
 		}
 
 		amount, err := strconv.ParseFloat(row[1], 64)

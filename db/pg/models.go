@@ -6,7 +6,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// TripInfoModel 代表 trips 表
 type TripInfoModel struct {
 	ID   uuid.UUID `gorm:"type:uuid;primaryKey"`
 	Name string    `gorm:"size:255;not null"`
@@ -20,7 +19,6 @@ func (TripInfoModel) TableName() string {
 	return "trips"
 }
 
-// RecordModel 代表 records 表
 type RecordModel struct {
 	ID            uuid.UUID `gorm:"type:uuid;primaryKey"`
 	TripID        uuid.UUID `gorm:"type:uuid;not null"`
@@ -54,7 +52,6 @@ func (RecordShouldPayAddressListModel) TableName() string {
 	return "record_should_pay_address_lists"
 }
 
-// TripAddressListModel 代表 trip_address_lists 表
 type TripAddressListModel struct {
 	TripID  uuid.UUID `gorm:"type:uuid;primaryKey"`
 	Address string    `gorm:"size:255;primaryKey"`

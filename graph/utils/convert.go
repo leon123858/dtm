@@ -31,7 +31,6 @@ func Int2RecordCategory(category int) model.RecordCategory {
 	}
 }
 
-// toModelTxList 將計算核心的 tx.Tx 列表轉換為 GraphQL 的 model.Tx 列表。
 func ToModelTxList(txList []tx.Tx) []*model.Tx {
 	modelList := make([]*model.Tx, len(txList))
 	for i, t := range txList {

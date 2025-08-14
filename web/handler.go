@@ -20,11 +20,10 @@ import (
 func GraphQLHandler(executableSchema graphql.ExecutableSchema) gin.HandlerFunc {
 	srv := handler.New(executableSchema)
 
-	// 僅添加 HTTP 相關的傳輸器
 	srv.AddTransport(transport.GET{})
 	srv.AddTransport(transport.POST{})
 	srv.AddTransport(transport.Options{})
-	srv.AddTransport(transport.MultipartForm{}) // 支持文件上傳
+	srv.AddTransport(transport.MultipartForm{})
 	srv.AddTransport(transport.Websocket{
 		KeepAlivePingInterval: 10 * time.Second,
 		Upgrader: websocket.Upgrader{
@@ -41,27 +40,25 @@ func GraphQLHandler(executableSchema graphql.ExecutableSchema) gin.HandlerFunc {
 		},
 	})
 
-	srv.SetQueryCache(lru.New[*ast.QueryDocument](1000)) // 設置查詢緩存
+	srv.SetQueryCache(lru.New[*ast.QueryDocument](1000))
 
-	srv.Use(extension.Introspection{}) // 啟用內省 (通常在開發環境啟用)
+	srv.Use(extension.Introspection{})
 	srv.Use(extension.AutomaticPersistedQuery{
-		Cache: lru.New[string](100), // 如果需要 APQ
+		Cache: lru.New[string](100),
 	})
 
 	return func(c *gin.Context) {
-		// 在這裡，你可以從 Gin 的 Context 中獲取一些請求相關的資訊
-		// 並將其添加到 GraphQL 執行的 Context 中，供 Resolver 使用
-		// 例如，傳遞用戶身份驗證信息：
-		// userID := c.GetString("userID") // 假設你用 AuthMiddleware 將 userID 存儲為 string
+		// Here you can extract request-related information from Gin's Context
+		// and add it to the GraphQL execution Context for use in Resolvers.
+		// For example, to pass user authentication info:
+		// userID := c.GetString("userID")
 		// ctx := context.WithValue(c.Request.Context(), "user_id", userID)
 		// r := c.Request.WithContext(ctx)
 
-		// 讓 gqlgen 的 handler 處理 HTTP 請求
 		srv.ServeHTTP(c.Writer, c.Request)
 	}
 }
 
-// GraphQLPlaygroundHandler 處理 GraphQL Playground 頁面
 func GraphQLPlaygroundHandler(title string, endpoint string) gin.HandlerFunc {
 	h := playground.Handler(title, endpoint)
 	return func(c *gin.Context) {

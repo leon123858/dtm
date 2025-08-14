@@ -1,59 +1,47 @@
 # ===================================================================
 # CD Pipeline: Build and Push Docker Image
 # ===================================================================
-# 此工作流程會在 "CI Pipeline" 成功完成後自動觸發
-# 職責：建置 Docker Image 並推送到 GitHub Container Registry (GHCR)
+# build Docker Image and push to GitHub Container Registry (GHCR)
 # ===================================================================
 name: CD Pipeline
 
 on:
-  # 監聽另一個工作流程 (CI Pipeline) 的執行結果
   workflow_run:
-    # 指定要監聽的工作流程檔案名稱或流程名稱
     workflows: ['CI Pipeline']
-    # 指定觸發的時機為「完成時」
     types:
       - completed
-  # 增加手動觸發選項
   workflow_dispatch:
 
 jobs:
   build-and-push-docker-image:
-    # 使用 if 條件判斷，只有當 CI 流程成功 (success) 且是在 main 分支上時，才執行此 job
     if: (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') || github.event_name == 'workflow_dispatch'
 
     runs-on: ubuntu-latest
 
-    # 授予此 job 寫入 GHCR 的權限
+    # auth job write GHCR permission
     permissions:
       contents: read
       packages: write
 
     steps:
       - name: Checkout code
-        # 需要 checkout 程式碼才能讀取到 Dockerfile
         uses: actions/checkout@v4
 
       - name: Log in to GitHub Container Registry
-        # 登入到 GHCR，以便後續可以推送 image
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          # github.actor 是觸發此流程的使用者名稱
+          # github.actor is the username of the person who triggered the workflow
           username: ${{ github.actor }}
-          # GITHUB_TOKEN 是一個由 GitHub Actions 自動提供的 secret
+          # GITHUB_TOKEN is a token automatically created by GitHub for the workflow
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
-        # 自動建置並推送 image
         uses: docker/build-push-action@v5
         with:
-          # Dockerfile 的路徑 (context)
           context: .
-          # 推送 image 到 registry
           push: true
-          # 設定 image 的標籤 (tag)
-          # ${{ github.repository }} 會是 'your-username/your-repo-name'
+          # ${{ github.repository }} is 'your-username/your-repo-name'
           tags: ghcr.io/${{ github.repository }}:latest
 
   push-docker-image-to-gcp:

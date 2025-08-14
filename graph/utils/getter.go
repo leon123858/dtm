@@ -108,12 +108,9 @@ func CalculateMoneyShare(ctx context.Context, obj *model.Trip) (*tx.TxPackage, f
 	return nil, 0, false, nil
 }
 
-// getShouldPayList 是一個輔助函式，用於從 dataloader 中獲取指定 record 的 should-pay 列表。
-// 它封裝了從 context 提取 dataloader、解析 ID 和呼叫 loader 的重複邏輯。
 func GetShouldPayList(ctx context.Context, obj *model.Record) ([]db.ExtendAddress, error) {
 	ginCtx, err := GinContextFromContext(ctx)
 	if err != nil {
-		// 直接回傳 nil 和錯誤，讓呼叫者處理
 		return nil, err
 	}
 	dataLoader, ok := ginCtx.Value(string(db.DataLoaderKeyTripData)).(*db.TripDataLoader)
@@ -126,7 +123,7 @@ func GetShouldPayList(ctx context.Context, obj *model.Record) ([]db.ExtendAddres
 		return nil, fmt.Errorf("invalid record ID: %w", err)
 	}
 
-	// DataLoader 會自動處理批次和快取，所以直接呼叫 Load
+	// DataLoader may handle batch and cache
 	addresses, err := dataLoader.GetRecordShouldPayList.Load(ctx, recordID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get should pay addresses: %w", err)

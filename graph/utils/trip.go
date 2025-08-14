@@ -10,31 +10,27 @@ import (
 
 func TripRecordMQ2GQL(msg mq.TripRecordMessage) (*model.Record, bool, error) {
 	if msg.ID == uuid.Nil {
-		// 返回 nil, true, nil 表示沒有 Record 對象，但應該跳過這個訊息，且沒有錯誤。
+		// do not have record
 		return nil, true, nil
 	}
 
-	// 執行您原始範例中的型別轉換邏輯
 	record := &model.Record{
-		ID:            msg.ID.String(), // 將 uuid.UUID 轉換為 string
+		ID:            msg.ID.String(),
 		Name:          msg.Name,
 		Amount:        msg.Amount,
 		Time:          msg.Time,
-		PrePayAddress: string(msg.PrePayAddress), // 將 []byte 轉換為 string
+		PrePayAddress: string(msg.PrePayAddress),
 		Category:      Int2RecordCategory(msg.Category),
 	}
 
-	// 成功轉換，返回 record, false (不跳過), nil (無錯誤)
 	return record, false, nil
 }
 
 func TripRecordIdMQ2GQL(msg mq.TripRecordMessage) (string, bool, error) {
 	if msg.ID == uuid.Nil {
-		// 返回 nil, true, nil 表示沒有 Record 對象，但應該跳過這個訊息，且沒有錯誤。
 		return "", true, nil
 	}
 
-	// 成功轉換，返回 record, false (不跳過), nil (無錯誤)
 	return msg.ID.String(), false, nil
 }
 

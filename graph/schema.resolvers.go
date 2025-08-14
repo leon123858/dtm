@@ -479,7 +479,7 @@ func (r *tripResolver) MoneyShare(ctx context.Context, obj *model.Trip) ([]*mode
 	if !isValid {
 		return []*model.Tx{}, nil
 	}
-	// 3. 轉換為 model（可以進一步提取）
+
 	return utils.ToModelTxList(txPackage.TxList), nil
 }
 

@@ -9,8 +9,7 @@ on:
 
 jobs:
   # ===================================================================
-  # Job 1: 編譯與單元測試 (Unit Test)
-  # 職責：編譯、執行單元測試、打包執行檔產物
+  # Job 1: compile and Unit Test
   # ===================================================================
   unit-test:
     runs-on: ubuntu-latest
@@ -59,17 +58,15 @@ jobs:
         run: go test -v ./...
 
   # ===================================================================
-  # Job 2: 端對端測試 (E2E Test)
-  # 職責：使用不同參數執行後端，並運行 E2E 測試
+  # Job 2: (E2E Test)
   # ===================================================================
   e2e-test:
     needs: unit-test
     runs-on: ubuntu-latest
 
     strategy:
-      fail-fast: false # 即使其中一個測試失敗，也繼續執行完其他的測試
+      fail-fast: false
       matrix:
-        # 定義後端應用程式的啟動命令
         start_command:
           - 'serve --dev=true --mq="gochan"'
           - 'serve --dev=true --mq="rabbitmq"'

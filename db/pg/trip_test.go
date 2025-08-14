@@ -512,7 +512,7 @@ func TestDataLoaderGetRecordShouldPayList(t *testing.T) {
 	records := []db.Record{
 		{RecordInfo: db.RecordInfo{ID: recID1, Name: "R1", PrePayAddress: prePay}, RecordData: db.RecordData{ShouldPayAddress: []db.ExtendAddress{
 			{Address: addrA, ExtendMsg: 10.0},
-			{Address: addrB, ExtendMsg: 20.0},	
+			{Address: addrB, ExtendMsg: 20.0},
 		}}},
 		{RecordInfo: db.RecordInfo{ID: recID2, Name: "R2", PrePayAddress: prePay}, RecordData: db.RecordData{ShouldPayAddress: []db.ExtendAddress{
 			{Address: addrC, ExtendMsg: 50.0},
