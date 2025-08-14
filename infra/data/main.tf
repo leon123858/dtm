@@ -59,12 +59,12 @@ resource "random_password" "db_password" {
   length = 32
 
 
-  lower   = true 
+  lower   = true
   upper   = true
-  numeric = true 
-  special = true 
+  numeric = true
+  special = true
 
-  
+
   min_lower   = 4
   min_upper   = 4
   min_numeric = 4
@@ -88,7 +88,7 @@ resource "google_sql_database_instance" "default" {
   settings {
 
     tier              = "db-f1-micro"
-    availability_type = "ZONAL" 
+    availability_type = "ZONAL"
     edition           = "ENTERPRISE"
 
     location_preference {
@@ -96,9 +96,9 @@ resource "google_sql_database_instance" "default" {
     }
 
 
-    disk_type       = "PD_SSD" 
-    disk_size       = 10       
-    disk_autoresize = false    
+    disk_type       = "PD_SSD"
+    disk_size       = 10
+    disk_autoresize = false
 
     ip_configuration {
       ipv4_enabled = true # Public IP

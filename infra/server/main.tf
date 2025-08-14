@@ -80,9 +80,9 @@ resource "google_service_account" "frontend_app_runtime" {
 
 resource "google_cloud_run_v2_service" "dtmf_frontend" {
   # provider             = google-beta
-  name                 = "dtmf"
-  location             = local.region
-  deletion_protection  = false
+  name                = "dtmf"
+  location            = local.region
+  deletion_protection = false
   # default_uri_disabled = true
 
   template {
@@ -129,9 +129,9 @@ resource "google_cloud_run_v2_service" "dtmf_frontend" {
 
 resource "google_cloud_run_v2_service" "dtm_backend" {
   # provider             = google-beta
-  name                 = "dtm"
-  location             = local.region
-  deletion_protection  = false
+  name                = "dtm"
+  location            = local.region
+  deletion_protection = false
   # default_uri_disabled = true
 
   template {
