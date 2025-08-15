@@ -93,6 +93,9 @@ func PartMoneySplitStrategy(up *UserPayment) (Tx, error) {
 	for _, u := range up.ExtendPayMsg {
 		sumOfPart += u
 	}
+	if sumOfPart <= 0 {
+		return Tx{}, fmt.Errorf("ExtendPayMsg must have a positive sum")
+	}
 
 	// should pay user split output as input
 	for i, u := range up.ShouldPayAddress {

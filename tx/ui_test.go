@@ -455,6 +455,23 @@ func TestPartMoneySplitStrategy(t *testing.T) {
 			expectedErr:  nil,
 			expectingErr: false,
 		},
+		{
+			name: "Error split with only one part with all zero",
+			userPayment: &UserPayment{
+				Name:             "ZeroPartSplit",
+				Amount:           120.0,
+				PrePayAddress:    "AliceAccount",
+				ShouldPayAddress: []string{"BobAccount", "CharlieAccount", "DavidAccount"},
+				ExtendPayMsg:     []float64{0, 0, 0}, // Total parts: 4
+			},
+			expectedTx: Tx{
+				Name: "ZeroPartSplit",
+				Input: []Payment{},
+				Output: Payment{Amount: 120.0, Address: "AliceAccount"},
+			},
+			expectedErr:  fmt.Errorf("ExtendPayMsg must have a positive sum"),
+			expectingErr: true,
+		},
 	}
 
 	for _, tt := range tests {
