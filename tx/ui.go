@@ -56,11 +56,48 @@ func FixMoneySplitStrategy(up *UserPayment) (Tx, error) {
 
 	// should pay user split output as input
 	for i, u := range up.ShouldPayAddress {
-		if i >= len(up.ExtendPayMsg) {
-			return Tx{}, fmt.Errorf("not enough ExtendPayMsg for address %s", u)
-		}
 		tx.Input = append(tx.Input, Payment{
 			Amount:  up.ExtendPayMsg[i],
+			Address: u,
+		})
+	}
+
+	return tx, nil
+}
+
+func PartMoneySplitStrategy(up *UserPayment) (Tx, error) {
+	// first check
+	if len(up.ShouldPayAddress) == 0 {
+		return Tx{}, fmt.Errorf("UserPayment '%s' must have at least one ShouldPayAddress for PartMoneySplitStrategy", up.Name)
+	}
+	if len(up.ExtendPayMsg) != len(up.ShouldPayAddress) {
+		return Tx{}, fmt.Errorf("UserPayment '%s' ExtendPayMsg must have the same length as ShouldPayAddress for PartMoneySplitStrategy", up.Name)
+	}
+	for _, u := range up.ExtendPayMsg {
+		if u < 0 {
+			return Tx{}, fmt.Errorf("UserPayment '%s' ExtendPayMsg must be non-negative", up.Name)
+		}
+	}
+
+	// Create the transaction
+	tx := Tx{
+		Name:  up.Name,
+		Input: []Payment{},
+		Output: Payment{
+			Amount:  up.Amount,
+			Address: up.PrePayAddress,
+		},
+	}
+
+	sumOfPart := 0.0
+	for _, u := range up.ExtendPayMsg {
+		sumOfPart += u
+	}
+
+	// should pay user split output as input
+	for i, u := range up.ShouldPayAddress {
+		tx.Input = append(tx.Input, Payment{
+			Amount:  up.Amount * (up.ExtendPayMsg[i] / sumOfPart),
 			Address: u,
 		})
 	}
@@ -74,6 +111,8 @@ func ShareMoneyStrategyFactory(strategyEnum int) UserPaymentToTxStrategy {
 		return AverageSplitStrategy
 	case 1:
 		return FixMoneySplitStrategy
+	case 2:
+		return PartMoneySplitStrategy
 	default:
 		return nil
 	}

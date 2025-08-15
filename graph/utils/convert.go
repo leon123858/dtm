@@ -15,6 +15,8 @@ func RecordCategory2Int(category *model.RecordCategory) int {
 		return 0
 	case model.RecordCategoryFix:
 		return 1
+	case model.RecordCategoryPart:
+		return 2
 	default:
 		panic("unknown RecordCategory 2 int: " + string(category.String()))
 	}
@@ -26,6 +28,8 @@ func Int2RecordCategory(category int) model.RecordCategory {
 		return model.RecordCategoryNormal
 	case 1:
 		return model.RecordCategoryFix
+	case 2:
+		return model.RecordCategoryPart
 	default:
 		panic("unknown RecordCategory: " + string(rune(category)))
 	}

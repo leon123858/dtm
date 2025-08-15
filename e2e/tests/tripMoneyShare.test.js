@@ -338,4 +338,92 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			expect(paymentToBob.input[0].amount).toBeCloseTo(20);
 		});
 	});
+
+	// --- record mode (FIX & PART) ---
+	describe('Mixed Mode Money Share Calculation', () => {
+		let mixedTripId;
+		const mixAlice = 'MixAlice',
+			mixBob = 'MixBob',
+			mixCharlie = 'MixCharlie';
+
+		beforeAll(async () => {
+			const { data } = await client.mutate({
+				mutation: CREATE_TRIP,
+				variables: { input: { name: 'Mixed Mode Test Trip' } },
+			});
+			mixedTripId = data.createTrip.id;
+			await client.mutate({
+				mutation: CREATE_ADDRESS,
+				variables: { tripId: mixedTripId, address: mixAlice },
+			});
+			await client.mutate({
+				mutation: CREATE_ADDRESS,
+				variables: { tripId: mixedTripId, address: mixBob },
+			});
+			await client.mutate({
+				mutation: CREATE_ADDRESS,
+				variables: { tripId: mixedTripId, address: mixCharlie },
+			});
+		});
+
+		it('should calculate moneyShare correctly with mixed NORMAL and PART records', async () => {
+			// Record 1 (NORMAL): Alice pay 150，average split
+			const recordNormal = {
+				name: 'NORMAL Lunch',
+				amount: 150,
+				prePayAddress: mixAlice,
+				shouldPayAddress: [mixAlice, mixBob, mixCharlie],
+				category: 'NORMAL',
+				extendPayMsg: [],
+			};
+			await client.mutate({
+				mutation: CREATE_RECORD,
+				variables: { tripId: mixedTripId, input: recordNormal },
+			});
+
+			const recordFix = {
+				name: 'FIX Tickets',
+				amount: 100,
+				prePayAddress: mixBob,
+				shouldPayAddress: [mixAlice, mixBob, mixCharlie],
+				category: 'PART',
+				extendPayMsg: [2, 3, 5],
+			};
+			await client.mutate({
+				mutation: CREATE_RECORD,
+				variables: { tripId: mixedTripId, input: recordFix },
+			});
+
+			const { data } = await client.query({
+				query: GET_TRIP,
+				variables: { tripId: mixedTripId },
+			});
+
+			// Expected result:
+			// Alice: paid 150. Should pay (150/3) + 20 = 50 + 20 = 70. Net: +80 (to receive)
+			// Bob:   paid 100. Should pay (150/3) + 30 = 50 + 30 = 80. Net: +20 (to receive)
+			// Charlie: paid 0. Should pay (150/3) + 50 = 50 + 50 = 100. Net: -100 (to pay)
+			// Final transactions: Charlie pays 100, with 80 to Alice and 20 to Bob
+			expect(data.trip.moneyShare).toBeDefined();
+			expect(data.trip.moneyShare).toHaveLength(2);
+
+			const charliePays = data.trip.moneyShare.filter(
+				(tx) => tx.input[0].address === mixCharlie
+			);
+			expect(charliePays).toHaveLength(2);
+
+			const paymentToAlice = charliePays.find(
+				(tx) => tx.output.address === mixAlice
+			);
+			const paymentToBob = charliePays.find(
+				(tx) => tx.output.address === mixBob
+			);
+
+			expect(paymentToAlice).toBeDefined();
+			expect(paymentToBob).toBeDefined();
+
+			expect(paymentToAlice.input[0].amount).toBeCloseTo(80);
+			expect(paymentToBob.input[0].amount).toBeCloseTo(20);
+		});
+	});
 });

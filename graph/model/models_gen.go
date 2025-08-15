@@ -50,16 +50,19 @@ const (
 	RecordCategoryNormal RecordCategory = "NORMAL"
 	// set fix amount list
 	RecordCategoryFix RecordCategory = "FIX"
+	// set Part to split
+	RecordCategoryPart RecordCategory = "PART"
 )
 
 var AllRecordCategory = []RecordCategory{
 	RecordCategoryNormal,
 	RecordCategoryFix,
+	RecordCategoryPart,
 }
 
 func (e RecordCategory) IsValid() bool {
 	switch e {
-	case RecordCategoryNormal, RecordCategoryFix:
+	case RecordCategoryNormal, RecordCategoryFix, RecordCategoryPart:
 		return true
 	}
 	return false

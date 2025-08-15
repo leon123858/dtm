@@ -11,6 +11,10 @@ enum RecordCategory {
 	set fix amount list
 	"""
 	FIX
+	"""
+	set Part to split
+	"""
+	PART
 }
 
 type Record {
