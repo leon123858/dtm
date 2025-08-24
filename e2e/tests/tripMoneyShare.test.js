@@ -498,7 +498,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			);
 			expect(paymentToAlice).toHaveLength(1);
 
-			console.log(JSON.stringify(data.trip.moneyShare, null, 2));
+			// console.log(JSON.stringify(data.trip.moneyShare, null, 2));
 			expect(data.trip.moneyShare[0].output.address).toBe(mixAlice);
 			expect(data.trip.moneyShare[0].output.amount).toBeCloseTo(130);
 
