@@ -18,6 +18,7 @@ func (t *Tx) Validate() (float64, float64) {
 	return totalInputAmount, totalOutputAmount
 }
 
+// BoolValidate checks if the transaction is valid by ensuring that the total input amount
 func (t *Tx) BoolValidate() bool {
 	totalInputAmount, totalOutputAmount := t.Validate()
 	if totalInputAmount < epsilon || totalOutputAmount < epsilon {

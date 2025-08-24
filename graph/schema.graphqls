@@ -15,6 +15,10 @@ enum RecordCategory {
 	set Part to split
 	"""
 	PART
+	"""
+	after set fix money choose some address average split last money, use plus mean should engage average sharing
+	"""
+	FIX_BEFORE_NORMAL
 }
 
 type Record {

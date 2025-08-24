@@ -9,30 +9,36 @@ import (
 	"time"
 )
 
-func RecordCategory2Int(category *model.RecordCategory) int {
-	switch *category {
-	case model.RecordCategoryNormal:
-		return 0
-	case model.RecordCategoryFix:
-		return 1
-	case model.RecordCategoryPart:
-		return 2
-	default:
-		panic("unknown RecordCategory 2 int: " + string(category.String()))
+var (
+	RecordCategoryList = []model.RecordCategory{
+		model.RecordCategoryNormal,
+		model.RecordCategoryFix,
+		model.RecordCategoryPart,
+		model.RecordCategoryFixBeforeNormal,
+	}
+	Category2IntMap = map[model.RecordCategory]int{}
+	Int2CategoryMap = map[int]model.RecordCategory{}
+)
+
+func init() {
+	for i, category := range RecordCategoryList {
+		Category2IntMap[category] = i
+		Int2CategoryMap[i] = category
 	}
 }
 
-func Int2RecordCategory(category int) model.RecordCategory {
-	switch category {
-	case 0:
-		return model.RecordCategoryNormal
-	case 1:
-		return model.RecordCategoryFix
-	case 2:
-		return model.RecordCategoryPart
-	default:
-		panic("unknown RecordCategory: " + string(rune(category)))
+func RecordCategory2Int(category *model.RecordCategory) int {
+	if val, ok := Category2IntMap[*category]; ok {
+		return val
 	}
+	panic("unknown RecordCategory to int: " + fmt.Sprintf("%v", category))
+}
+
+func Int2RecordCategory(categoryInt int) model.RecordCategory {
+	if val, ok := Int2CategoryMap[categoryInt]; ok {
+		return val
+	}
+	panic("unknown RecordCategory: " + fmt.Sprintf("%v", categoryInt))
 }
 
 func ToModelTxList(txList []tx.Tx) []*model.Tx {

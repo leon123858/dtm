@@ -58,15 +58,7 @@ func VerifyStringListRequest(s []string) bool {
 }
 
 func VerifyFloatListRequest(floats []float64) bool {
-	if len(floats) > 100 {
-		return false
-	}
-	for _, f := range floats {
-		if f < 0 {
-			return false
-		}
-	}
-	return true
+	return len(floats) <= 100
 }
 
 func VerifyRecordRequestAndSetDefault(r *model.NewRecord) bool {

@@ -52,17 +52,20 @@ const (
 	RecordCategoryFix RecordCategory = "FIX"
 	// set Part to split
 	RecordCategoryPart RecordCategory = "PART"
+	// after set fix money choose some address average split last money, use plus mean should engage average sharing
+	RecordCategoryFixBeforeNormal RecordCategory = "FIX_BEFORE_NORMAL"
 )
 
 var AllRecordCategory = []RecordCategory{
 	RecordCategoryNormal,
 	RecordCategoryFix,
 	RecordCategoryPart,
+	RecordCategoryFixBeforeNormal,
 }
 
 func (e RecordCategory) IsValid() bool {
 	switch e {
-	case RecordCategoryNormal, RecordCategoryFix, RecordCategoryPart:
+	case RecordCategoryNormal, RecordCategoryFix, RecordCategoryPart, RecordCategoryFixBeforeNormal:
 		return true
 	}
 	return false

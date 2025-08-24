@@ -3,6 +3,7 @@ package tx
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -446,7 +447,7 @@ func TestPartMoneySplitStrategy(t *testing.T) {
 			expectedTx: Tx{
 				Name: "ZeroPartSplit",
 				Input: []Payment{
-					{Amount: 90.0, Address: "BobAccount"},   // 120 * (3/4)
+					{Amount: 90.0, Address: "BobAccount"},    // 120 * (3/4)
 					{Amount: 0.0, Address: "CharlieAccount"}, // 120 * (0/4)
 					{Amount: 30.0, Address: "DavidAccount"},  // 120 * (1/4)
 				},
@@ -465,8 +466,8 @@ func TestPartMoneySplitStrategy(t *testing.T) {
 				ExtendPayMsg:     []float64{0, 0, 0}, // Total parts: 4
 			},
 			expectedTx: Tx{
-				Name: "ZeroPartSplit",
-				Input: []Payment{},
+				Name:   "ZeroPartSplit",
+				Input:  []Payment{},
 				Output: Payment{Amount: 120.0, Address: "AliceAccount"},
 			},
 			expectedErr:  fmt.Errorf("ExtendPayMsg must have a positive sum"),
@@ -491,6 +492,144 @@ func TestPartMoneySplitStrategy(t *testing.T) {
 
 			if !reflect.DeepEqual(gotTx, tt.expectedTx) {
 				t.Errorf("PartMoneySplitStrategy() gotTx = %v, want %v", gotTx, tt.expectedTx)
+			}
+		})
+	}
+}
+
+func TestFixBeforeAverageMoneySplitStrategy(t *testing.T) {
+	tests := []struct {
+		name        string
+		userPayment *UserPayment
+		want        Tx
+		wantErr     bool
+		expectedErr string
+	}{
+		{
+			name: "Successful split with mixed fixed and average payments",
+			userPayment: &UserPayment{
+				Name:             "MixedSplit",
+				Amount:           100.0,
+				PrePayAddress:    "Alice",
+				ShouldPayAddress: []string{"Bob", "Charlie", "David"},
+				ExtendPayMsg:     []float64{-20, 0, 10},
+			},
+			want: Tx{
+				Name: "MixedSplit",
+				Input: []Payment{
+					{Amount: 20, Address: "Bob"},
+					{Amount: 35, Address: "Charlie"},
+					{Amount: 45, Address: "David"},
+				},
+				Output: Payment{Amount: 100.0, Address: "Alice"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Successful split with all adjusted average payments",
+			userPayment: &UserPayment{
+				Name:             "AllAdjusted",
+				Amount:           120.0,
+				PrePayAddress:    "Alice",
+				ShouldPayAddress: []string{"Bob", "Charlie", "David"},
+				ExtendPayMsg:     []float64{10, 0, 20},
+			},
+			want: Tx{
+				Name: "AllAdjusted",
+				Input: []Payment{
+					{Amount: 40, Address: "Bob"},
+					{Amount: 30, Address: "Charlie"},
+					{Amount: 50, Address: "David"},
+				},
+				Output: Payment{Amount: 120.0, Address: "Alice"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Successful split with no one left to pay the average",
+			userPayment: &UserPayment{
+				Name:             "NoAveragePayers",
+				Amount:           100.0,
+				PrePayAddress:    "Alice",
+				ShouldPayAddress: []string{"Bob", "Charlie"},
+				ExtendPayMsg:     []float64{-50, -50},
+			},
+			want:    Tx{
+				Name: "NoAveragePayers",
+				Input: []Payment{
+					{Amount: 50, Address: "Bob"},
+					{Amount: 50, Address: "Charlie"},
+				},
+				Output: Payment{Amount: 100.0, Address: "Alice"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Error: lastMoney becomes negative",
+			userPayment: &UserPayment{
+				Name:             "NegativeLastMoney",
+				Amount:           100.0,
+				PrePayAddress:    "Alice",
+				ShouldPayAddress: []string{"Bob", "Charlie"},
+				ExtendPayMsg:     []float64{0, 110}, // 100 - 110 = -10
+			},
+			
+			want: Tx{},
+			wantErr: true,
+			expectedErr: "after deducting fixed amounts, the remaining amount to be split is negative",
+		},
+		{
+			name: "Error: ShouldPayAddress is empty",
+			userPayment: &UserPayment{
+				Name:             "EmptyShouldPay",
+				Amount:           100.0,
+				PrePayAddress:    "Alice",
+				ShouldPayAddress: []string{},
+				ExtendPayMsg:     []float64{},
+			},
+			want:    Tx{},
+			wantErr: true,
+			expectedErr: "UserPayment 'EmptyShouldPay' must have at least one ShouldPayAddress for AverageSplitStrategy",
+		},
+		{
+			name: "Error: Mismatched lengths of ExtendPayMsg and ShouldPayAddress",
+			userPayment: &UserPayment{
+				Name:             "MismatchedLengths",
+				Amount:           100.0,
+				PrePayAddress:    "Alice",
+				ShouldPayAddress: []string{"Bob", "Charlie"},
+				ExtendPayMsg:     []float64{-50},
+			},
+			want:    Tx{},
+			wantErr: true,
+			expectedErr: "UserPayment 'MismatchedLengths' ExtendPayMsg must have the same length as ShouldPayAddress for AverageSplitStrategy",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := FixBeforeAverageMoneySplitStrategy(tt.userPayment)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("FixBeforeAverageMoneySplitStrategy() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr {
+				if err.Error() != tt.expectedErr {
+					t.Errorf("FixBeforeAverageMoneySplitStrategy() error message = %q, want %q", err.Error(), tt.expectedErr)
+				}
+				return
+			}
+
+			// Sort inputs for consistent comparison
+			sort.Slice(got.Input, func(i, j int) bool {
+				return got.Input[i].Address < got.Input[j].Address
+			})
+			sort.Slice(tt.want.Input, func(i, j int) bool {
+				return tt.want.Input[i].Address < tt.want.Input[j].Address
+			})
+
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("FixBeforeAverageMoneySplitStrategy() = %v, want %v", got, tt.want)
 			}
 		})
 	}
