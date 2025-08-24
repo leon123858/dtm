@@ -554,7 +554,7 @@ func TestFixBeforeAverageMoneySplitStrategy(t *testing.T) {
 				ShouldPayAddress: []string{"Bob", "Charlie"},
 				ExtendPayMsg:     []float64{-50, -50},
 			},
-			want:    Tx{
+			want: Tx{
 				Name: "NoAveragePayers",
 				Input: []Payment{
 					{Amount: 50, Address: "Bob"},
@@ -573,9 +573,9 @@ func TestFixBeforeAverageMoneySplitStrategy(t *testing.T) {
 				ShouldPayAddress: []string{"Bob", "Charlie"},
 				ExtendPayMsg:     []float64{0, 110}, // 100 - 110 = -10
 			},
-			
-			want: Tx{},
-			wantErr: true,
+
+			want:        Tx{},
+			wantErr:     true,
 			expectedErr: "after deducting fixed amounts, the remaining amount to be split is negative",
 		},
 		{
@@ -587,8 +587,8 @@ func TestFixBeforeAverageMoneySplitStrategy(t *testing.T) {
 				ShouldPayAddress: []string{},
 				ExtendPayMsg:     []float64{},
 			},
-			want:    Tx{},
-			wantErr: true,
+			want:        Tx{},
+			wantErr:     true,
 			expectedErr: "UserPayment 'EmptyShouldPay' must have at least one ShouldPayAddress for AverageSplitStrategy",
 		},
 		{
@@ -600,8 +600,8 @@ func TestFixBeforeAverageMoneySplitStrategy(t *testing.T) {
 				ShouldPayAddress: []string{"Bob", "Charlie"},
 				ExtendPayMsg:     []float64{-50},
 			},
-			want:    Tx{},
-			wantErr: true,
+			want:        Tx{},
+			wantErr:     true,
 			expectedErr: "UserPayment 'MismatchedLengths' ExtendPayMsg must have the same length as ShouldPayAddress for AverageSplitStrategy",
 		},
 	}
