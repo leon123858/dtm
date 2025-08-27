@@ -8,6 +8,9 @@
 # Mac
 .DS_Store
 
+# IDE
+.idea
+
 # Binaries for programs and plugins
 *.exe
 *.exe~

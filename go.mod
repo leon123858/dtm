@@ -1,6 +1,6 @@
 module dtm
 
-go 1.23.3
+go 1.25.0
 
 require (
 	cloud.google.com/go/pubsub v1.49.0
