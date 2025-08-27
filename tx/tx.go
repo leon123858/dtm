@@ -71,6 +71,7 @@ func (tp *TxPackage) ProcessTransactions() []Cash {
 	return cashList
 }
 
+// String returns a string representation of the TxPackage
 func (tp *TxPackage) String() string {
 	result := "TxPackage: " + tp.Name + "\n"
 	for _, tx := range tp.TxList {
@@ -85,6 +86,7 @@ func (tp *TxPackage) String() string {
 	return result
 }
 
+// UIList2TxList converts a list of UserPayment to a list of Tx
 func UIList2TxList(uiList []UserPayment) ([]Tx, error) {
 	txList := make([]Tx, 0, len(uiList))
 	for _, up := range uiList {
@@ -100,6 +102,7 @@ func UIList2TxList(uiList []UserPayment) ([]Tx, error) {
 	return txList, nil
 }
 
+// ShareMoneyEasyNoLog is a simplified version of ShareMoneyEasy without logging
 func ShareMoneyEasyNoLog(uiList []UserPayment) (TxPackage, float64, error) {
 	txList, err := UIList2TxList(uiList)
 	if err != nil {
@@ -123,6 +126,7 @@ func ShareMoneyEasyNoLog(uiList []UserPayment) (TxPackage, float64, error) {
 	return txPackageFromCash, diff, nil
 }
 
+// ShareMoneyEasy is the main function to share money among users based on their payments
 func ShareMoneyEasy(uiList []UserPayment) (TxPackage, float64, error) {
 	txList, err := UIList2TxList(uiList)
 	if err != nil {

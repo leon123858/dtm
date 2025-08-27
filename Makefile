@@ -9,7 +9,7 @@ start:
 
 test:
 	@echo "==> unit test, should set env by docker first"
-	go test ./... -cover -v -count=1
+	go test ./... -v -count=1
 
 format:
 	@echo "==> Running initial checks..."
