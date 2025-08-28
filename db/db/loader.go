@@ -18,6 +18,7 @@ type TripDataLoader struct {
 	GetTripInfoList        *dataloadgen.Loader[uuid.UUID, *TripInfo]
 }
 
+// NewTripDataLoader creates a new TripDataLoader with the provided TripDBWrapper.
 func NewTripDataLoader(dbWrapper TripDBWrapper) *TripDataLoader {
 	return &TripDataLoader{
 		GetRecordInfoList:      dataloadgen.NewMappedLoader(dbWrapper.DataLoaderGetRecordInfoList),
