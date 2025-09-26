@@ -1,9 +1,13 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"dtm/db/db"
 	"dtm/graph/utils"
+	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -15,6 +19,8 @@ import (
 	mgin "github.com/ulule/limiter/v3/drivers/middleware/gin"
 	"github.com/ulule/limiter/v3/drivers/store/memory"
 )
+
+var logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 func AdminKeyMiddleware() gin.HandlerFunc {
 	adminKey := os.Getenv("ADMIN_KEY") // Retrieve from env variable
@@ -76,6 +82,33 @@ func GinContextToContextMiddleware() gin.HandlerFunc {
 	}
 }
 
+// GraphQLBodyLogMiddleware log post body
+func GraphQLBodyLogMiddleware(logger *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.Method != http.MethodPost {
+			c.Next()
+			return
+		}
+
+		const maxBodySize = 4 * 1024 * 1024 // 4MB
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBodySize)
+
+		bodyBytes, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			logger.Error("Failed to read request body", "error", err)
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+			return
+		}
+
+		// gin body can read only once so write back
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+		logger.Info("post", "body", json.RawMessage(bodyBytes))
+
+		c.Next()
+	}
+}
+
 func TripDataLoaderInjectionMiddleware(wrapper db.TripDBWrapper) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		DBTripDataLoader := *db.NewTripDataLoader(wrapper)
@@ -89,6 +122,7 @@ func setupMiddlewares(r *gin.Engine, webConfig WebServiceConfig) {
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
 	r.Use(AdminKeyMiddleware())
+	r.Use(GraphQLBodyLogMiddleware(logger))
 	r.Use(cors.New(CorsConfig(webConfig)))
 	r.Use(secure.New(secure.Config{
 		STSSeconds:           2592000, // 1 month
