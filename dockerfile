@@ -39,5 +39,5 @@ USER appuser
 
 EXPOSE 8080
 
-ENTRYPOINT ["./app", "serve", "--dev=false", "--port=8080", "--mq=gochan"]
+ENTRYPOINT ["./app", "serve", "--dev=false", "--port=8080", "--mq=go_chan"]
 # ENTRYPOINT ["./app", "serve", "--dev=true", "--port=8080"]
