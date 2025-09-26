@@ -2,9 +2,9 @@ name: CI Pipeline
 
 on:
   push:
-    branches: ['main']
+    branches: ["main"]
   pull_request:
-    branches: ['main']
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
@@ -14,8 +14,8 @@ jobs:
   unit-test:
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: 'host=localhost user=postgres dbname=postgres port=5432 sslmode=disable TimeZone=Asia/Taipei'
-      RABBITMQ_URL: 'amqp://guest:guest@localhost:5672/'
+      DATABASE_URL: "host=localhost user=postgres dbname=postgres port=5432 sslmode=disable TimeZone=Asia/Taipei"
+      RABBITMQ_URL: "amqp://guest:guest@localhost:5672/"
 
     services:
       postgres:
@@ -40,7 +40,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.23'
+          go-version: "1.23"
 
       - name: Build Go application
         run: make build
@@ -68,14 +68,14 @@ jobs:
       fail-fast: false
       matrix:
         start_command:
-          - 'serve --dev=true --mq="gochan"'
+          - 'serve --dev=true --mq="go_chan"'
           - 'serve --dev=true --mq="rabbitmq"'
-          - 'serve --dev=false --mq="gochan"'
+          - 'serve --dev=false --mq="go_chan"'
           - 'serve --dev=false --mq="rabbitmq"'
 
     env:
-      DATABASE_URL: 'host=localhost user=postgres dbname=postgres port=5432 sslmode=disable TimeZone=Asia/Taipei'
-      RABBITMQ_URL: 'amqp://guest:guest@localhost:5672/'
+      DATABASE_URL: "host=localhost user=postgres dbname=postgres port=5432 sslmode=disable TimeZone=Asia/Taipei"
+      RABBITMQ_URL: "amqp://guest:guest@localhost:5672/"
 
     services:
       postgres:
@@ -100,12 +100,12 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.23'
+          go-version: "1.23"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
       - name: Download executable artifact
         uses: actions/download-artifact@v4
