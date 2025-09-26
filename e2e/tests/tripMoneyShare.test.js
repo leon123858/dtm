@@ -141,7 +141,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			localTripId = data.createTrip.id;
 		});
 
-		it('should mark a NORMAL record as invalid if its payers are removed', async () => {
+		it('should fail when remove addr have dependency', async () => {
 			const tempAddress = 'TempPayer';
 			const Payer = 'SinglePayer';
 			await client.mutate({
@@ -176,37 +176,15 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			});
 			expect(tripData.trip.records[0].isValid).toBe(true);
 
-			await client.mutate({
-				mutation: DELETE_ADDRESS,
-				variables: { tripId: localTripId, address: tempAddress },
-			});
-
-			({ data: tripData } = await client.query({
-				query: GET_TRIP,
-				variables: { tripId: localTripId },
-			}));
-			const targetRecord = tripData.trip.records.find((r) => r.id === recordId);
-			// console.log('Target Record:', targetRecord);
-			expect(targetRecord.isValid).toBe(false);
-			// when record have inValid, trip should inValid
-			expect(tripData.trip.isValid).toBe(false);
-
-			await client.mutate({
-				mutation: CREATE_ADDRESS,
-				variables: { tripId: localTripId, address: tempAddress },
-			});
-			const { data: recordDataUpdated } = await client.mutate({
-				mutation: UPDATE_RECORD,
-				variables: { recordId: recordId, input: record },
-			});
-			expect(recordDataUpdated.updateRecord.isValid).toBe(true);
-			expect(recordDataUpdated.updateRecord.id).toBe(recordId);
-			({ data: tripData } = await client.query({
-				query: GET_TRIP,
-				variables: { tripId: localTripId },
-			}));
-			// console.log(JSON.stringify(tripData, null, 2));
-			expect(tripData.trip.isValid).toBe(true);
+			try {
+				await client.mutate({
+					mutation: DELETE_ADDRESS,
+					variables: { tripId: localTripId, address: tempAddress },
+				});
+				throw new Error('Should not get this Error');
+			} catch (err) {
+				expect(err.message).not.toBe('Should not get this Error');
+			}
 		});
 
 		it('should mark a FIX record as invalid if amounts do not sum up', async () => {

@@ -248,6 +248,57 @@ func TestTripAddressListRemove(t *testing.T) {
 	require.NoError(t, err) // Should not error
 }
 
+func TestTripAddressListRemoveWithRestrict(t *testing.T) {
+	wrapper, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	tripId := uuid.New()
+	err := wrapper.CreateTrip(&db.TripInfo{ID: tripId, Name: "Trip For Address Removal With Restrict"})
+	require.NoError(t, err)
+	err = wrapper.TripAddressListAdd(tripId, db.Address("addr1"))
+	require.NoError(t, err)
+	err = wrapper.TripAddressListAdd(tripId, db.Address("addr2"))
+	require.NoError(t, err)
+
+	// should not create record with not exist address
+	wrongRecord := []db.Record{
+		{RecordInfo: db.RecordInfo{Name: "Sample Record", Amount: 50.0, PrePayAddress: "addr1", Category: db.CategoryNormal}, RecordData: db.RecordData{ShouldPayAddress: []db.ExtendAddress{{Address: "addr_not_exist", ExtendMsg: 0.0}, {Address: "addr2", ExtendMsg: 0.0}}}},
+	}
+	err = wrapper.CreateTripRecords(tripId, wrongRecord)
+	require.Error(t, err)
+
+	sampleRecord := []db.Record{
+		{RecordInfo: db.RecordInfo{ID: uuid.New(), Name: "Sample Record", Amount: 50.0, PrePayAddress: "addr1", Category: db.CategoryNormal}, RecordData: db.RecordData{ShouldPayAddress: []db.ExtendAddress{{Address: "addr1", ExtendMsg: 0.0}, {Address: "addr2", ExtendMsg: 0.0}}}},
+	}
+	err = wrapper.CreateTripRecords(tripId, sampleRecord)
+	require.NoError(t, err)
+
+	// should not rm address be records' owner
+	err = wrapper.TripAddressListRemove(tripId, db.Address("addr1"))
+	require.Error(t, err)
+
+	// should not rm address in records' pay list
+	err = wrapper.TripAddressListRemove(tripId, db.Address("addr2"))
+	require.Error(t, err)
+
+	// rm addr2 in pay list
+	sampleRecord[0].RecordData.ShouldPayAddress = []db.ExtendAddress{{Address: "addr1", ExtendMsg: 0.0}}
+	_, err = wrapper.UpdateTripRecord(&sampleRecord[0])
+	require.NoError(t, err)
+
+	// can rm addr2
+	err = wrapper.TripAddressListRemove(tripId, db.Address("addr2"))
+	require.NoError(t, err)
+
+	// delete record
+	_, err = wrapper.DeleteTripRecord(sampleRecord[0].ID)
+	require.NoError(t, err)
+
+	// can rm owner addr1
+	err = wrapper.TripAddressListRemove(tripId, db.Address("addr1"))
+	require.NoError(t, err)
+}
+
 func TestUpdateTripInfo(t *testing.T) {
 	wrapper, cleanup := setupTestDB(t)
 	defer cleanup()
@@ -363,7 +414,6 @@ func TestDeleteTripRecord(t *testing.T) {
 func TestDeleteTrip(t *testing.T) {
 	wrapper, cleanup := setupTestDB(t)
 	defer cleanup()
-	dbConn := (wrapper.(*pgDBWrapper)).db // For direct DB checks
 
 	tripID := uuid.New()
 	err := wrapper.CreateTrip(&db.TripInfo{ID: tripID, Name: "Trip To Fully Delete"})
@@ -383,23 +433,19 @@ func TestDeleteTrip(t *testing.T) {
 	require.NoError(t, err)
 
 	err = wrapper.DeleteTrip(tripID)
+	require.Error(t, err)
+
+	// delete records
+	_, err = wrapper.DeleteTripRecord(recordID)
 	require.NoError(t, err)
 
-	_, err = wrapper.GetTripInfo(tripID)
-	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
-
-	var count int64
-	err = dbConn.Model(&TripAddressListModel{}).Where("trip_id = ?", tripID).Count(&count).Error
+	// delete addr
+	err = wrapper.TripAddressListRemove(tripID, db.Address("addr_for_delete_trip_dt"))
 	require.NoError(t, err)
-	assert.Equal(t, int64(0), count, "TripAddressList entries should be deleted")
 
-	err = dbConn.Model(&RecordModel{}).Where("trip_id = ?", tripID).Count(&count).Error
+	// delete trip success
+	err = wrapper.DeleteTrip(tripID)
 	require.NoError(t, err)
-	assert.Equal(t, int64(0), count, "RecordModel entries should be deleted")
-
-	err = dbConn.Model(&RecordShouldPayAddressListModel{}).Where("trip_id = ?", tripID).Count(&count).Error
-	require.NoError(t, err)
-	assert.Equal(t, int64(0), count, "RecordShouldPayAddressListModel entries should be deleted")
 }
 
 // --- Data Loader Tests ---

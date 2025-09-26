@@ -194,8 +194,6 @@ func (p *pgDBWrapper) TripAddressListRemove(id uuid.UUID, address db.Address) er
 }
 
 func (p *pgDBWrapper) DeleteTrip(id uuid.UUID) error {
-	// GORM's CASCADE constraint should handle deleting associated records, trip_address_lists,
-	// and record_should_pay_address_lists.
 	return p.db.Delete(&TripInfoModel{}, "id = ?", id).Error
 }
 
@@ -206,10 +204,19 @@ func (p *pgDBWrapper) DeleteTripRecord(recordID uuid.UUID) (uuid.UUID, error) {
 		return uuid.Nil, err // Record not found or other error
 	}
 
-	// GORM's CASCADE constraint on RecordModel should handle deleting associated
-	// record_should_pay_address_lists.
-	if err := p.db.Delete(&RecordModel{}, "id = ?", recordID).Error; err != nil {
-		return uuid.Nil, err
+	ret := p.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("record_id = ?", recordID).Delete(&RecordShouldPayAddressListModel{}).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Delete(&RecordModel{}, "id = ?", recordID).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if ret != nil {
+		return uuid.Nil, ret
 	}
 	return recordModel.TripID, nil
 }
