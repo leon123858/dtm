@@ -205,7 +205,10 @@ func (q *ChannelTripAddressMessageQueue) GetAction() mq.Action {
 
 // Publish sends a TripAddressMessage to the queue.
 func (q *ChannelTripAddressMessageQueue) Publish(msg mq.TripAddressMessage) error {
-	q.core.Publish(msg) // Delegate to the core's Publish
+	err := q.core.Publish(msg)
+	if err != nil {
+		return err
+	} // Delegate to the core's Publish
 	return nil
 }
 
@@ -227,7 +230,7 @@ func (q *ChannelTripAddressMessageQueue) Stop() {
 
 // --- Wrapper for Message Queues ---
 
-// This struct can be used to implement the TripMessageQueueWrapper interface
+// GoChanTripMessageQueueWrapper This struct can be used to implement the TripMessageQueueWrapper interface
 type GoChanTripMessageQueueWrapper struct {
 	RecordMQArray  [mq.ActionCnt]*ChannelTripRecordMessageQueue  // Use pointers to the new struct
 	AddressMQArray [mq.ActionCnt]*ChannelTripAddressMessageQueue // Use pointers to the new struct
@@ -265,7 +268,7 @@ func NewGoChanTripMessageQueueWrapper() mq.TripMessageQueueWrapper {
 	return &wrapper
 }
 
-// --- Error Definitions ---
+// QueueError --- Error Definitions ---
 // Note: These errors are less relevant now that `Publish` only indicates acceptance into the queue.
 // If you need fan-out specific errors, consider a more complex return from `Publish` or a separate error channel.
 type QueueError string

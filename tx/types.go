@@ -26,8 +26,8 @@ type Tx struct {
 	Name   string    // name is a string
 }
 
-// TxPackage represents a package containing multiple transactions.
-type TxPackage struct {
+// Package represents a package containing multiple transactions.
+type Package struct {
 	Name   string // Name of the transaction package
 	TxList []Tx   // A slice of Tx (transaction) structs
 }
@@ -43,5 +43,5 @@ type Cash struct {
 // It takes the UserPayment and returns a Tx struct, or an error if conversion fails.
 type UserPaymentToTxStrategy func(up *UserPayment) (Tx, error)
 
-// AverageSplitStrategy is a strategy for converting UserPayment to Tx by averaging the payment among recipients.
-type TxListGenerateStrategy func(txList *[]Tx, cashList *[]Cash) (float64, error)
+// ListGenerateStrategy is a strategy for converting UserPayment to Tx by averaging the payment among recipients.
+type ListGenerateStrategy func(txList *[]Tx, cashList *[]Cash) (float64, error)

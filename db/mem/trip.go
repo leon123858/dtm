@@ -299,7 +299,7 @@ func (db *inMemoryTripDBWrapper) DeleteTripRecord(recordID uuid.UUID) (uuid.UUID
 // --- Data Loader Operations ---
 
 // DataLoaderGetRecordInfoList retrieves a map of RecordInfo lists for given trip IDs.
-func (db *inMemoryTripDBWrapper) DataLoaderGetRecordInfoList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]dbt.RecordInfo, error) {
+func (db *inMemoryTripDBWrapper) DataLoaderGetRecordInfoList(_ context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]dbt.RecordInfo, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
@@ -325,7 +325,7 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetRecordInfoList(ctx context.Context
 }
 
 // DataLoaderGetTripAddressList retrieves a map of Address lists for given trip IDs.
-func (db *inMemoryTripDBWrapper) DataLoaderGetTripAddressList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]dbt.Address, error) {
+func (db *inMemoryTripDBWrapper) DataLoaderGetTripAddressList(_ context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]dbt.Address, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
@@ -348,7 +348,7 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetTripAddressList(ctx context.Contex
 }
 
 // DataLoaderGetRecordShouldPayList retrieves a map of ShouldPayAddress lists for given record IDs.
-func (db *inMemoryTripDBWrapper) DataLoaderGetRecordShouldPayList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID][]dbt.ExtendAddress, error) {
+func (db *inMemoryTripDBWrapper) DataLoaderGetRecordShouldPayList(_ context.Context, recordIds []uuid.UUID) (map[uuid.UUID][]dbt.ExtendAddress, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
@@ -382,7 +382,7 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetRecordShouldPayList(ctx context.Co
 }
 
 // DataLoaderGetTripInfoList retrieves a map of TripInfo pointers for given trip IDs.
-func (db *inMemoryTripDBWrapper) DataLoaderGetTripInfoList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID]*dbt.TripInfo, error) {
+func (db *inMemoryTripDBWrapper) DataLoaderGetTripInfoList(_ context.Context, tripIds []uuid.UUID) (map[uuid.UUID]*dbt.TripInfo, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 

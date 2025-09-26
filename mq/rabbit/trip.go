@@ -201,46 +201,44 @@ func (s *GenericRabbitMQService[M]) Close() error {
 	return nil
 }
 
-// --- tripRecordMQ implementation ---
-type tripRecordMQ struct {
+type TripRecordMQ struct {
 	genericService   *GenericRabbitMQService[mq.TripRecordMessage]
 	configuredAction mq.Action
 }
 
-func NewTripRecordMessageQueue(conn *amqp.Connection, exchangeName string, action mq.Action) (*tripRecordMQ, error) {
+func NewTripRecordMessageQueue(conn *amqp.Connection, exchangeName string, action mq.Action) (*TripRecordMQ, error) {
 	gs, err := NewGenericRabbitMQService[mq.TripRecordMessage](conn, exchangeName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generic service for TripRecord: %w", err)
 	}
-	return &tripRecordMQ{genericService: gs, configuredAction: action}, nil
+	return &TripRecordMQ{genericService: gs, configuredAction: action}, nil
 }
-func (q *tripRecordMQ) GetAction() mq.Action                   { return q.configuredAction }
-func (q *tripRecordMQ) Publish(msg mq.TripRecordMessage) error { return q.genericService.Publish(msg) }
+func (q *TripRecordMQ) GetAction() mq.Action                   { return q.configuredAction }
+func (q *TripRecordMQ) Publish(msg mq.TripRecordMessage) error { return q.genericService.Publish(msg) }
 func unmarshalTripRecordMessage(data []byte) (mq.TripRecordMessage, error) {
 	var msg mq.TripRecordMessage
 	err := json.Unmarshal(data, &msg)
 	return msg, err
 }
-func (q *tripRecordMQ) Subscribe(tripId uuid.UUID) (uuid.UUID, <-chan mq.TripRecordMessage, error) {
+func (q *TripRecordMQ) Subscribe(tripId uuid.UUID) (uuid.UUID, <-chan mq.TripRecordMessage, error) {
 	return q.genericService.Subscribe(tripId, unmarshalTripRecordMessage)
 }
-func (q *tripRecordMQ) DeSubscribe(id uuid.UUID) error { return q.genericService.DeSubscribe(id) }
+func (q *TripRecordMQ) DeSubscribe(id uuid.UUID) error { return q.genericService.DeSubscribe(id) }
 
-// --- tripAddressMQ implementation ---
-type tripAddressMQ struct {
+type TripAddressMQ struct {
 	genericService   *GenericRabbitMQService[mq.TripAddressMessage]
 	configuredAction mq.Action
 }
 
-func NewTripAddressMessageQueue(conn *amqp.Connection, exchangeName string, action mq.Action) (*tripAddressMQ, error) {
+func NewTripAddressMessageQueue(conn *amqp.Connection, exchangeName string, action mq.Action) (*TripAddressMQ, error) {
 	gs, err := NewGenericRabbitMQService[mq.TripAddressMessage](conn, exchangeName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generic service for TripAddress: %w", err)
 	}
-	return &tripAddressMQ{genericService: gs, configuredAction: action}, nil
+	return &TripAddressMQ{genericService: gs, configuredAction: action}, nil
 }
-func (q *tripAddressMQ) GetAction() mq.Action { return q.configuredAction }
-func (q *tripAddressMQ) Publish(msg mq.TripAddressMessage) error {
+func (q *TripAddressMQ) GetAction() mq.Action { return q.configuredAction }
+func (q *TripAddressMQ) Publish(msg mq.TripAddressMessage) error {
 	return q.genericService.Publish(msg)
 }
 func unmarshalTripAddressMessage(data []byte) (mq.TripAddressMessage, error) {
@@ -248,26 +246,26 @@ func unmarshalTripAddressMessage(data []byte) (mq.TripAddressMessage, error) {
 	err := json.Unmarshal(data, &msg)
 	return msg, err
 }
-func (q *tripAddressMQ) Subscribe(tripId uuid.UUID) (uuid.UUID, <-chan mq.TripAddressMessage, error) {
+func (q *TripAddressMQ) Subscribe(tripId uuid.UUID) (uuid.UUID, <-chan mq.TripAddressMessage, error) {
 	return q.genericService.Subscribe(tripId, unmarshalTripAddressMessage)
 }
-func (q *tripAddressMQ) DeSubscribe(id uuid.UUID) error { return q.genericService.DeSubscribe(id) }
+func (q *TripAddressMQ) DeSubscribe(id uuid.UUID) error { return q.genericService.DeSubscribe(id) }
 
 // --------- trip message queue wrapper implementation ---------
 
-type RabbitTripMessageQueueWrapper struct {
-	RecordMQArray  [mq.ActionCnt]*tripRecordMQ
-	AddressMQArray [mq.ActionCnt]*tripAddressMQ
+type TripMessageQueueWrapper struct {
+	RecordMQArray  [mq.ActionCnt]*TripRecordMQ
+	AddressMQArray [mq.ActionCnt]*TripAddressMQ
 }
 
-func (wrapper *RabbitTripMessageQueueWrapper) GetTripRecordMessageQueue(action mq.Action) mq.TripRecordMessageQueue {
+func (wrapper *TripMessageQueueWrapper) GetTripRecordMessageQueue(action mq.Action) mq.TripRecordMessageQueue {
 	if action < 0 || action >= mq.ActionCnt {
 		return nil // or handle the error as needed
 	}
 	return wrapper.RecordMQArray[action]
 }
 
-func (wrapper *RabbitTripMessageQueueWrapper) GetTripAddressMessageQueue(action mq.Action) mq.TripAddressMessageQueue {
+func (wrapper *TripMessageQueueWrapper) GetTripAddressMessageQueue(action mq.Action) mq.TripAddressMessageQueue {
 	if action < 0 || action >= mq.ActionCnt {
 		return nil // or handle the error as needed
 	}
@@ -279,7 +277,7 @@ func (wrapper *RabbitTripMessageQueueWrapper) GetTripAddressMessageQueue(action 
 
 // NewRabbitTripMessageQueueWrapper creates a new instance of RabbitTripMessageQueueWrapper.
 func NewRabbitTripMessageQueueWrapper(conn *amqp.Connection) (mq.TripMessageQueueWrapper, error) {
-	wrapper := RabbitTripMessageQueueWrapper{}
+	wrapper := TripMessageQueueWrapper{}
 	var err error
 	// address need add and remove
 	wrapper.AddressMQArray[mq.ActionCreate], err = NewTripAddressMessageQueue(conn, fmt.Sprintf("trip_address_exchange_%d", mq.ActionCreate), mq.ActionCreate)
@@ -310,20 +308,20 @@ func NewRabbitTripMessageQueueWrapper(conn *amqp.Connection) (mq.TripMessageQueu
 
 // ------- implement utils function --------------
 
-func RecordBytesToTripRecordMessage(data []byte) (mq.TripRecordMessage, error) {
-	var msg mq.TripRecordMessage
-	err := json.Unmarshal(data, &msg)
-	if err != nil {
-		return mq.TripRecordMessage{}, fmt.Errorf("failed to unmarshal TripRecordMessage: %w", err)
-	}
-	return msg, nil
-}
-
-func AddressBytesToTripAddressMessage(data []byte) (mq.TripAddressMessage, error) {
-	var msg mq.TripAddressMessage
-	err := json.Unmarshal(data, &msg)
-	if err != nil {
-		return mq.TripAddressMessage{}, fmt.Errorf("failed to unmarshal TripAddressMessage: %w", err)
-	}
-	return msg, nil
-}
+//func RecordBytesToTripRecordMessage(data []byte) (mq.TripRecordMessage, error) {
+//	var msg mq.TripRecordMessage
+//	err := json.Unmarshal(data, &msg)
+//	if err != nil {
+//		return mq.TripRecordMessage{}, fmt.Errorf("failed to unmarshal TripRecordMessage: %w", err)
+//	}
+//	return msg, nil
+//}
+//
+//func AddressBytesToTripAddressMessage(data []byte) (mq.TripAddressMessage, error) {
+//	var msg mq.TripAddressMessage
+//	err := json.Unmarshal(data, &msg)
+//	if err != nil {
+//		return mq.TripAddressMessage{}, fmt.Errorf("failed to unmarshal TripAddressMessage: %w", err)
+//	}
+//	return msg, nil
+//}

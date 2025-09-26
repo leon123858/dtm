@@ -10,14 +10,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/secure"
 	"github.com/gin-gonic/gin"
-	"github.com/ulule/limiter/v3"
-	mgin "github.com/ulule/limiter/v3/drivers/middleware/gin"
-	"github.com/ulule/limiter/v3/drivers/store/memory"
 )
 
 var logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -43,7 +39,7 @@ func AdminKeyMiddleware() gin.HandlerFunc {
 	}
 }
 
-func CorsConfig(webConfig WebServiceConfig) cors.Config {
+func CorsConfig(webConfig ServiceConfig) cors.Config {
 	corsConf := cors.DefaultConfig()
 	if webConfig.IsDev {
 		corsConf.AllowAllOrigins = true
@@ -62,17 +58,17 @@ func CorsConfig(webConfig WebServiceConfig) cors.Config {
 	return corsConf
 }
 
-func limiterMiddleWare() gin.HandlerFunc {
-	rate := limiter.Rate{
-		Period: 5 * time.Minute,
-		Limit:  1000, // 1000 requests per 5 minutes
-	}
-	store := memory.NewStore()
-	instance := limiter.New(store, rate)
-	middleware := mgin.NewMiddleware(instance)
-
-	return middleware
-}
+//func limiterMiddleWare() gin.HandlerFunc {
+//	rate := limiter.Rate{
+//		Period: 5 * time.Minute,
+//		Limit:  1000, // 1000 requests per 5 minutes
+//	}
+//	store := memory.NewStore()
+//	instance := limiter.New(store, rate)
+//	middleware := mgin.NewMiddleware(instance)
+//
+//	return middleware
+//}
 
 func GinContextToContextMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -117,7 +113,7 @@ func TripDataLoaderInjectionMiddleware(wrapper db.TripDBWrapper) gin.HandlerFunc
 	}
 }
 
-func setupMiddlewares(r *gin.Engine, webConfig WebServiceConfig) {
+func setupMiddlewares(r *gin.Engine, webConfig ServiceConfig) {
 	// r.Use(limiterMiddleWare()) // We limit it by cloudflare, so no need to limit here
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())

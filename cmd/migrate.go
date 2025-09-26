@@ -32,7 +32,11 @@ func migrateCommand() *cobra.Command {
 			connectionPwd, _ := cmd.Flags().GetString("pwd")
 
 			if up && down {
-				cmd.Help()
+				err := cmd.Help()
+				if err != nil {
+					println(err.Error())
+					return
+				}
 				return
 			}
 
@@ -55,7 +59,12 @@ func migrateCommand() *cobra.Command {
 			if err != nil {
 				log.Fatalf("Failed to open database: %v", err)
 			}
-			defer db.Close()
+			defer func(db *sql.DB) {
+				err := db.Close()
+				if err != nil {
+					log.Fatalf("Failed to close database connection: %v", err)
+				}
+			}(db)
 
 			// create app schema if not exists
 			if _, err := db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", config.AppName)); err != nil {

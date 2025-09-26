@@ -12,7 +12,7 @@ import (
 )
 
 type CalculateMoneyShareResult struct {
-	txPackage      *tx.TxPackage
+	txPackage      *tx.Package
 	totalRemaining float64
 	err            error
 	isValid        bool
@@ -26,7 +26,7 @@ var TripMoneyShareKey = tripMoneyShareKeyType{
 	key: "trip_money_share",
 }
 
-func CalculateMoneyShare(ctx context.Context, obj *model.Trip) (*tx.TxPackage, float64, bool, error) {
+func CalculateMoneyShare(ctx context.Context, obj *model.Trip) (*tx.Package, float64, bool, error) {
 	if result, ok := ctx.Value(TripMoneyShareKey).(CalculateMoneyShareResult); ok {
 		return result.txPackage, result.totalRemaining, result.isValid, result.err
 	}

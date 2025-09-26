@@ -7,6 +7,7 @@ import (
 	"dtm/mq/goch"
 	"dtm/mq/mq"
 	"dtm/mq/rabbit"
+	"log"
 
 	"dtm/db/db"
 	"dtm/db/mem"
@@ -14,15 +15,16 @@ import (
 
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-type WebServiceConfig struct {
+type ServiceConfig struct {
 	IsDev  bool
 	Port   string
-	MqMode mq.MqMode
+	MqMode mq.Mode
 }
 
-func Serve(config WebServiceConfig) {
+func Serve(config ServiceConfig) {
 	// set by config
 	if config.IsDev {
 		gin.SetMode(gin.DebugMode)
@@ -43,28 +45,33 @@ func Serve(config WebServiceConfig) {
 	if config.IsDev {
 		dbDep = mem.NewInMemoryTripDBWrapper()
 	} else {
-		db, err := pg.InitPostgresGORM(pg.CreateDSN())
+		iDB, err := pg.InitPostgresGORM(pg.CreateDSN())
 		if err != nil {
 			panic(err)
 		}
-		defer pg.CloseGORM(db)
-		dbDep = pg.NewPgDBWrapper(db)
+		defer pg.CloseGORM(iDB)
+		dbDep = pg.NewPgDBWrapper(iDB)
 	}
 	switch config.MqMode {
-	case mq.MqModeGoChan:
+	case mq.ModeGoChan:
 		mqDep = goch.NewGoChanTripMessageQueueWrapper()
-	case mq.MqModeRabbitMQ:
+	case mq.ModeRabbitMQ:
 		mqc := rabbit.NewRabbitConnection(rabbit.CreateAmqpURL())
 		if mqc == nil {
 			panic("Failed to connect to RabbitMQ")
 		}
-		defer mqc.Close()
+		defer func(mqc *amqp.Connection) {
+			err := mqc.Close()
+			if err != nil {
+				panic(err)
+			}
+		}(mqc)
 		var err error
 		mqDep, err = rabbit.NewRabbitTripMessageQueueWrapper(mqc)
 		if err != nil {
 			panic("Failed to create RabbitMQ trip message queue wrapper: " + err.Error())
 		}
-	case mq.MqModeGCPPubSub:
+	case mq.ModeGCPPubSub:
 		// os.Setenv("GCP_PROJECT_ID", "gcp-exercise-434714")
 		mqc, err := gcppubsub.NewGCPTripMessageQueueWrapper(context.Background(), gcppubsub.GetGCPProjectID())
 		if err != nil {
@@ -90,5 +97,9 @@ func Serve(config WebServiceConfig) {
 
 	// Start the server
 	println("Starting web server on port " + config.Port)
-	r.Run("0.0.0.0:" + config.Port)
+	err := r.Run("0.0.0.0:" + config.Port)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
 }

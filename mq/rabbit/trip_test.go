@@ -8,6 +8,7 @@ import (
 	"dtm/mq/mq"              // MQ interfaces
 	rabbitMQ "dtm/mq/rabbit" // RabbitMQ implementation of MQ interfaces
 	"fmt"
+	"log"
 	"reflect"
 	"testing"
 	"time"
@@ -64,7 +65,12 @@ var testAddressValue = db.Address("123 Test St")
 
 func TestMQInterfacesWithRabbitMQ(t *testing.T) {
 	conn := getTestConnection(t)
-	defer conn.Close()
+	defer func(conn *amqp.Connection) {
+		err := conn.Close()
+		if err != nil {
+			log.Fatalf("Error closing connection: %v", err)
+		}
+	}(conn)
 
 	wrapper, err := rabbitMQ.NewRabbitTripMessageQueueWrapper(conn)
 	if err != nil {
@@ -153,8 +159,18 @@ func TestMQInterfacesWithRabbitMQ(t *testing.T) {
 
 			subID1, rcvChan1, _ := trq.Subscribe(topicID)
 			subID2, rcvChan2, _ := trq.Subscribe(topicID)
-			defer trq.DeSubscribe(subID1) // Ensure cleanup
-			defer trq.DeSubscribe(subID2) // Ensure cleanup
+			defer func(trq mq.TripRecordMessageQueue, id uuid.UUID) {
+				err := trq.DeSubscribe(id)
+				if err != nil {
+					log.Fatalf("trq.DeSubscribe failed: %v", err)
+				}
+			}(trq, subID1) // Ensure cleanup
+			defer func(trq mq.TripRecordMessageQueue, id uuid.UUID) {
+				err := trq.DeSubscribe(id)
+				if err != nil {
+					log.Fatalf("trq.DeSubscribe failed: %v", err)
+				}
+			}(trq, subID2) // Ensure cleanup
 
 			time.Sleep(200 * time.Millisecond)
 			if err := trq.Publish(msgToPublish); err != nil {
@@ -181,8 +197,18 @@ func TestMQInterfacesWithRabbitMQ(t *testing.T) {
 
 			subA, rcvA, _ := trq.Subscribe(topicA)
 			subB, rcvB, _ := trq.Subscribe(topicB)
-			defer trq.DeSubscribe(subA)
-			defer trq.DeSubscribe(subB)
+			defer func(trq mq.TripRecordMessageQueue, id uuid.UUID) {
+				err := trq.DeSubscribe(id)
+				if err != nil {
+					log.Fatalf("trq.DeSubscribe failed: %v", err)
+				}
+			}(trq, subA)
+			defer func(trq mq.TripRecordMessageQueue, id uuid.UUID) {
+				err := trq.DeSubscribe(id)
+				if err != nil {
+					log.Fatalf("trq.DeSubscribe failed: %v", err)
+				}
+			}(trq, subB)
 
 			time.Sleep(200 * time.Millisecond)
 			if err := trq.Publish(msgA); err != nil {
@@ -231,7 +257,12 @@ func TestMQInterfacesWithRabbitMQ(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Subscribe failed: %v", err)
 			}
-			defer trq.DeSubscribe(subID)
+			defer func(trq mq.TripRecordMessageQueue, id uuid.UUID) {
+				err := trq.DeSubscribe(id)
+				if err != nil {
+					log.Fatalf("trq.DeSubscribe failed: %v", err)
+				}
+			}(trq, subID)
 
 			time.Sleep(200 * time.Millisecond) // Allow consumer to start
 			if err := trq.Publish(msg1); err != nil {
@@ -295,7 +326,12 @@ func TestMQInterfacesWithRabbitMQ(t *testing.T) {
 			if err != nil {
 				t.Fatalf("taq.Subscribe failed: %v", err)
 			}
-			defer taq.DeSubscribe(subID)
+			defer func(taq mq.TripAddressMessageQueue, id uuid.UUID) {
+				err := taq.DeSubscribe(id)
+				if err != nil {
+					log.Fatalf("taq.DeSubscribe failed: %v", err)
+				}
+			}(taq, subID)
 
 			time.Sleep(200 * time.Millisecond)
 			if err := taq.Publish(msgToPublish); err != nil {

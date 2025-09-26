@@ -5,6 +5,7 @@ import (
 	"dtm/db/db"
 	"dtm/mq/gcppubsub" // Import the package to be tested
 	"dtm/mq/mq"
+	"log"
 	"os"
 	"reflect"
 	"sync"
@@ -114,7 +115,12 @@ func TestMQInterfacesWithGCPPubSub(t *testing.T) {
 			if err != nil {
 				t.Fatalf("taq.Subscribe failed: %v", err)
 			}
-			defer taq.DeSubscribe(subID)
+			defer func(taq mq.TripAddressMessageQueue, id uuid.UUID) {
+				err := taq.DeSubscribe(id)
+				if err != nil {
+					log.Fatalf("taq.DeSubscribe failed: %v", err)
+				}
+			}(taq, subID)
 
 			time.Sleep(200 * time.Millisecond)
 			if err := taq.Publish(msgToPublish); err != nil {
@@ -229,8 +235,18 @@ func TestTripRecordMessageQueue_MultipleSubscribers_SameTopic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("trq.Subscribe failed for sub2: %v", err)
 	}
-	defer trq.DeSubscribe(subID1) // Ensure cleanup
-	defer trq.DeSubscribe(subID2) // Ensure cleanup
+	defer func(trq mq.TripRecordMessageQueue, id uuid.UUID) {
+		err := trq.DeSubscribe(id)
+		if err != nil {
+			log.Fatalf("trq.DeSubscribe failed for sub1: %v", err)
+		}
+	}(trq, subID1) // Ensure cleanup
+	defer func(trq mq.TripRecordMessageQueue, id uuid.UUID) {
+		err := trq.DeSubscribe(id)
+		if err != nil {
+			log.Fatalf("trq.DeSubscribe failed for sub2: %v", err)
+		}
+	}(trq, subID2) // Ensure cleanup
 
 	time.Sleep(2 * time.Second)
 	if err := trq.Publish(msgToPublish); err != nil {
@@ -283,8 +299,18 @@ func TestTripRecordMessageQueue_Subscribers_DifferentTopics_WithFilter(t *testin
 	if err != nil {
 		t.Fatalf("Subscribe for Topic B failed: %v", err)
 	}
-	defer trq.DeSubscribe(subA)
-	defer trq.DeSubscribe(subB)
+	defer func(trq mq.TripRecordMessageQueue, id uuid.UUID) {
+		err := trq.DeSubscribe(id)
+		if err != nil {
+			log.Printf("DeSubscribe failed: %v", err)
+		}
+	}(trq, subA)
+	defer func(trq mq.TripRecordMessageQueue, id uuid.UUID) {
+		err := trq.DeSubscribe(id)
+		if err != nil {
+			log.Printf("DeSubscribe failed: %v", err)
+		}
+	}(trq, subB)
 
 	time.Sleep(2 * time.Second)
 	if err := trq.Publish(msgA); err != nil {

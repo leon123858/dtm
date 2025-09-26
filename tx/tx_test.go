@@ -9,12 +9,12 @@ import (
 func TestTxPackage_ProcessTransactions(t *testing.T) {
 	tests := []struct {
 		name             string
-		txPackage        TxPackage
+		txPackage        Package
 		expectedCashList []Cash
 	}{
 		{
 			name: "Single transaction, two addresses",
-			txPackage: TxPackage{
+			txPackage: Package{
 				Name: "SingleTxPackage",
 				TxList: []Tx{
 					{
@@ -31,7 +31,7 @@ func TestTxPackage_ProcessTransactions(t *testing.T) {
 		},
 		{
 			name: "Multiple transactions, addresses interacting",
-			txPackage: TxPackage{
+			txPackage: Package{
 				Name: "ComplexTxPackage",
 				TxList: []Tx{
 					{
@@ -60,7 +60,7 @@ func TestTxPackage_ProcessTransactions(t *testing.T) {
 		},
 		{
 			name: "Empty transaction list",
-			txPackage: TxPackage{
+			txPackage: Package{
 				Name:   "EmptyPackage",
 				TxList: []Tx{},
 			},
@@ -68,7 +68,7 @@ func TestTxPackage_ProcessTransactions(t *testing.T) {
 		},
 		{
 			name: "Transactions with zero amounts",
-			txPackage: TxPackage{
+			txPackage: Package{
 				Name: "ZeroAmountPackage",
 				TxList: []Tx{
 					{
@@ -85,7 +85,7 @@ func TestTxPackage_ProcessTransactions(t *testing.T) {
 		},
 		{
 			name: "Address appears in both input and output within the same package",
-			txPackage: TxPackage{
+			txPackage: Package{
 				Name: "SelfTransferPackage",
 				TxList: []Tx{
 					{
@@ -190,12 +190,12 @@ func TestTx_Validate(t *testing.T) {
 func TestTxPackage_String(t *testing.T) {
 	tests := []struct {
 		name      string
-		txPackage TxPackage
+		txPackage Package
 		expected  string
 	}{
 		{
 			name: "Single transaction package",
-			txPackage: TxPackage{
+			txPackage: Package{
 				Name: "TestPackage",
 				TxList: []Tx{
 					{
@@ -208,7 +208,7 @@ func TestTxPackage_String(t *testing.T) {
 		},
 		{
 			name: "Empty transaction package",
-			txPackage: TxPackage{
+			txPackage: Package{
 				Name:   "EmptyPackage",
 				TxList: []Tx{},
 			},

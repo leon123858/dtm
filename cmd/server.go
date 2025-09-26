@@ -18,17 +18,17 @@ func serverCommand() *cobra.Command {
 			mqMode := cmd.Flags().Lookup("mq").Value.String()
 
 			// Start the web server
-			web.Serve(web.WebServiceConfig{
+			web.Serve(web.ServiceConfig{
 				IsDev:  isDev,
 				Port:   port,
-				MqMode: mq.MqMode(mqMode),
+				MqMode: mq.Mode(mqMode),
 			})
 		},
 	}
 
 	cmd.Flags().Bool("dev", true, "Run in development mode")
 	cmd.Flags().String("port", "8080", "Port to run the web server on")
-	cmd.Flags().String("mq", "gochan", "Message queue mode (gochan, rabbitmq, gcppubsub)")
+	cmd.Flags().String("mq", "go_chan", "Message queue mode (go_chan, rabbitmq, gcp_pub_sub)")
 
 	return cmd
 }

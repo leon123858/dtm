@@ -37,7 +37,6 @@ func (RecordModel) TableName() string {
 	return "records"
 }
 
-// RecordShouldPayAddressListModel
 type RecordShouldPayAddressListModel struct {
 	RecordID    uuid.UUID `gorm:"type:uuid;primaryKey"`
 	TripID      uuid.UUID `gorm:"type:uuid;primaryKey"`

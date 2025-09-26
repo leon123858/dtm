@@ -61,7 +61,7 @@ func ToModelTxList(txList []tx.Tx) []*model.Tx {
 	return modelList
 }
 
-// This function can be in the graph package or a utils package
+// MapNewRecordToDBRecord This function can be in the graph package or a utils package
 func MapNewRecordToDBRecord(input model.NewRecord) (*db.Record, error) {
 	var t time.Time
 	var err error

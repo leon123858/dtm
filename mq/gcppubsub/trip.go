@@ -4,6 +4,7 @@ import (
 	"context"
 	"dtm/mq/mq"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"reflect"
@@ -156,7 +157,7 @@ func (s *GenericPubSubService[M]) Subscribe(tripId uuid.UUID) (uuid.UUID, <-chan
 			}
 		})
 
-		if err != nil && err != context.Canceled {
+		if err != nil && !errors.Is(err, context.Canceled) {
 			log.Printf("Error in Receive loop for %s subscription %s: %v", typeName, subscriptionID, err)
 		}
 	}()
@@ -195,55 +196,53 @@ func (s *GenericPubSubService[M]) Close() {
 	}
 }
 
-// --- tripRecordMQ implementation ---
-type tripRecordMQ struct {
+type TripRecordMQ struct {
 	genericService *GenericPubSubService[mq.TripRecordMessage]
 	action         mq.Action
 }
 
-func NewTripRecordMessageQueue(ctx context.Context, client *pubsub.Client, action mq.Action) (*tripRecordMQ, error) {
+func NewTripRecordMessageQueue(ctx context.Context, client *pubsub.Client, action mq.Action) (*TripRecordMQ, error) {
 	topicID := fmt.Sprintf("trip-record-%s", action.String())
 	gs, err := NewGenericPubSubService[mq.TripRecordMessage](ctx, client, topicID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generic service for TripRecord: %w", err)
 	}
-	return &tripRecordMQ{genericService: gs, action: action}, nil
+	return &TripRecordMQ{genericService: gs, action: action}, nil
 }
-func (q *tripRecordMQ) GetAction() mq.Action                   { return q.action }
-func (q *tripRecordMQ) Publish(msg mq.TripRecordMessage) error { return q.genericService.Publish(msg) }
-func (q *tripRecordMQ) Subscribe(tripId uuid.UUID) (uuid.UUID, <-chan mq.TripRecordMessage, error) {
+func (q *TripRecordMQ) GetAction() mq.Action                   { return q.action }
+func (q *TripRecordMQ) Publish(msg mq.TripRecordMessage) error { return q.genericService.Publish(msg) }
+func (q *TripRecordMQ) Subscribe(tripId uuid.UUID) (uuid.UUID, <-chan mq.TripRecordMessage, error) {
 	return q.genericService.Subscribe(tripId)
 }
-func (q *tripRecordMQ) DeSubscribe(id uuid.UUID) error { return q.genericService.DeSubscribe(id) }
+func (q *TripRecordMQ) DeSubscribe(id uuid.UUID) error { return q.genericService.DeSubscribe(id) }
 
-// --- tripAddressMQ implementation ---
-type tripAddressMQ struct {
+type TripAddressMQ struct {
 	genericService *GenericPubSubService[mq.TripAddressMessage]
 	action         mq.Action
 }
 
-func NewTripAddressMessageQueue(ctx context.Context, client *pubsub.Client, action mq.Action) (*tripAddressMQ, error) {
+func NewTripAddressMessageQueue(ctx context.Context, client *pubsub.Client, action mq.Action) (*TripAddressMQ, error) {
 	topicID := fmt.Sprintf("trip-address-%s", action.String())
 	gs, err := NewGenericPubSubService[mq.TripAddressMessage](ctx, client, topicID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generic service for TripAddress: %w", err)
 	}
-	return &tripAddressMQ{genericService: gs, action: action}, nil
+	return &TripAddressMQ{genericService: gs, action: action}, nil
 }
-func (q *tripAddressMQ) GetAction() mq.Action { return q.action }
-func (q *tripAddressMQ) Publish(msg mq.TripAddressMessage) error {
+func (q *TripAddressMQ) GetAction() mq.Action { return q.action }
+func (q *TripAddressMQ) Publish(msg mq.TripAddressMessage) error {
 	return q.genericService.Publish(msg)
 }
-func (q *tripAddressMQ) Subscribe(tripId uuid.UUID) (uuid.UUID, <-chan mq.TripAddressMessage, error) {
+func (q *TripAddressMQ) Subscribe(tripId uuid.UUID) (uuid.UUID, <-chan mq.TripAddressMessage, error) {
 	return q.genericService.Subscribe(tripId)
 }
-func (q *tripAddressMQ) DeSubscribe(id uuid.UUID) error { return q.genericService.DeSubscribe(id) }
+func (q *TripAddressMQ) DeSubscribe(id uuid.UUID) error { return q.genericService.DeSubscribe(id) }
 
 // --------- trip message queue wrapper implementation ---------
 
 type GCPTripMessageQueueWrapper struct {
-	RecordMQArray  [mq.ActionCnt]*tripRecordMQ
-	AddressMQArray [mq.ActionCnt]*tripAddressMQ
+	RecordMQArray  [mq.ActionCnt]*TripRecordMQ
+	AddressMQArray [mq.ActionCnt]*TripAddressMQ
 }
 
 func (wrapper *GCPTripMessageQueueWrapper) GetTripRecordMessageQueue(action mq.Action) mq.TripRecordMessageQueue {

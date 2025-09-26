@@ -281,9 +281,18 @@ func TestFanOutQueueCore_Stop(t *testing.T) {
 	var receivedMessages2 []MockItem
 	doneReceiving := make(chan bool)
 
-	core.Publish(MockItem{Value: 1, TopicID: topic1})
-	core.Publish(MockItem{Value: 2, TopicID: topic2})
-	core.Publish(MockItem{Value: 3, TopicID: uuid.New()})
+	err := core.Publish(MockItem{Value: 1, TopicID: topic1})
+	if err != nil {
+		panic("Failed to publish mock item")
+	}
+	err = core.Publish(MockItem{Value: 2, TopicID: topic2})
+	if err != nil {
+		panic("Failed to publish mock item")
+	}
+	err = core.Publish(MockItem{Value: 3, TopicID: uuid.New()})
+	if err != nil {
+		panic("Failed to publish mock item")
+	}
 
 	go func() {
 		for {
@@ -339,8 +348,14 @@ func TestFanOutQueueCore_Stop(t *testing.T) {
 
 	// For full cleanup in a real scenario, one might DeSubscribe explicitly.
 	// Here we are testing Stop's defined behavior.
-	core.DeSubscribe(id1) // cleanup
-	core.DeSubscribe(id2) // cleanup
+	err = core.DeSubscribe(id1)
+	if err != nil {
+		panic("Failed to publish mock item")
+	} // cleanup
+	err = core.DeSubscribe(id2)
+	if err != nil {
+		panic("Failed to publish mock item")
+	} // cleanup
 }
 
 func TestFanOutQueueCore_BlockedSubscriberWillRemove(t *testing.T) {
@@ -475,7 +490,10 @@ func TestFanOutQueueCore_PublishToFullPublishChan_ReturnsError(t *testing.T) {
 	_, stillSubscribed := core.subscribers[blockerSubID]
 	core.mu.RUnlock()
 	if stillSubscribed {
-		core.DeSubscribe(blockerSubID) // Manually desubscribe if not auto-removed.
+		err := core.DeSubscribe(blockerSubID) // Manually desubscribe if not auto-removed.
+		if err != nil {
+			t.Errorf("Second publish unexpectedly failed: %v", err)
+		}
 	}
 	core.Stop()
 }
@@ -759,7 +777,7 @@ func TestNewGoChanTripMessageQueueWrapper(t *testing.T) {
 		t.Errorf("AddressMQArray[ActionDelete] has action %v, expected %v", wrapper.AddressMQArray[mq.ActionDelete].GetAction(), mq.ActionDelete)
 	}
 	// Check that other address actions (like Update) are nil as per constructor logic
-	if mq.ActionUpdate < mq.ActionCnt && wrapper.AddressMQArray[mq.ActionUpdate] != nil {
+	if wrapper.AddressMQArray[mq.ActionUpdate] != nil {
 		t.Errorf("AddressMQArray[ActionUpdate] should be nil, got %v", wrapper.AddressMQArray[mq.ActionUpdate])
 	}
 
@@ -822,10 +840,8 @@ func TestGoChanTripMessageQueueWrapper_GetQueues(t *testing.T) {
 	if q := wrapperIFace.GetTripRecordMessageQueue(mq.Action(-1)); q != nil {
 		t.Errorf("GetTripRecordMessageQueue(Action(-1)) expected nil, got %T", q)
 	}
-	if mq.ActionCnt <= 3 { // Example: if ActionCnt is exactly 3 (0,1,2)
-		if q := wrapperIFace.GetTripRecordMessageQueue(mq.ActionCnt); q != nil {
-			t.Errorf("GetTripRecordMessageQueue(ActionCnt) expected nil, got %T", q)
-		}
+	if q := wrapperIFace.GetTripRecordMessageQueue(mq.ActionCnt); q != nil {
+		t.Errorf("GetTripRecordMessageQueue(ActionCnt) expected nil, got %T", q)
 	}
 
 	// Test GetTripAddressMessageQueue

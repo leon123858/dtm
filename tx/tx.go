@@ -32,7 +32,7 @@ func (t *Tx) BoolValidate() bool {
 
 // ProcessTransactions calculates the total input and output amounts for each address
 // within the TxList of the TxPackage, and returns a slice of Cash objects.
-func (tp *TxPackage) ProcessTransactions() []Cash {
+func (tp *Package) ProcessTransactions() []Cash {
 	// Use a map to aggregate amounts by address
 	// The key is the address (string), and the value is a pointer to a Cash struct.
 	// Using a pointer allows us to modify the struct fields directly.
@@ -72,7 +72,7 @@ func (tp *TxPackage) ProcessTransactions() []Cash {
 }
 
 // String returns a string representation of the TxPackage
-func (tp *TxPackage) String() string {
+func (tp *Package) String() string {
 	result := "TxPackage: " + tp.Name + "\n"
 	for _, tx := range tp.TxList {
 		result += "  Tx: " + tx.Name + "\n"
@@ -103,13 +103,13 @@ func UIList2TxList(uiList []UserPayment) ([]Tx, error) {
 }
 
 // ShareMoneyEasyNoLog is a simplified version of ShareMoneyEasy without logging
-func ShareMoneyEasyNoLog(uiList []UserPayment) (TxPackage, float64, error) {
+func ShareMoneyEasyNoLog(uiList []UserPayment) (Package, float64, error) {
 	txList, err := UIList2TxList(uiList)
 	if err != nil {
-		return TxPackage{}, 0, fmt.Errorf("failed to convert UserPayment to TxList: %w", err)
+		return Package{}, 0, fmt.Errorf("failed to convert UserPayment to TxList: %w", err)
 	}
 	// Create a TxPackage from the generated transactions
-	txPackage := TxPackage{
+	txPackage := Package{
 		Name:   "UserPaymentsPackage",
 		TxList: txList,
 	}
@@ -118,22 +118,22 @@ func ShareMoneyEasyNoLog(uiList []UserPayment) (TxPackage, float64, error) {
 	// Normalize the cash
 	cashList = NormalizeCash(cashList)
 	// Convert the cash list to a TxPackage
-	txPackageFromCash, diff, err := CashListToTxPackage(cashList, "activity", TxListGenerateWithMixMap)
+	txPackageFromCash, diff, err := CashListToTxPackage(cashList, "activity", ListTxGenerateWithMixMap)
 	if err != nil {
-		return TxPackage{}, 0, fmt.Errorf("failed to convert cash list to TxPackage: %w", err)
+		return Package{}, 0, fmt.Errorf("failed to convert cash list to TxPackage: %w", err)
 	}
 	// println(txPackageFromCash.String())
 	return txPackageFromCash, diff, nil
 }
 
 // ShareMoneyEasy is the main function to share money among users based on their payments
-func ShareMoneyEasy(uiList []UserPayment) (TxPackage, float64, error) {
+func ShareMoneyEasy(uiList []UserPayment) (Package, float64, error) {
 	txList, err := UIList2TxList(uiList)
 	if err != nil {
-		return TxPackage{}, 0, fmt.Errorf("failed to convert UserPayment to TxList: %w", err)
+		return Package{}, 0, fmt.Errorf("failed to convert UserPayment to TxList: %w", err)
 	}
 	// Create a TxPackage from the generated transactions
-	txPackage := TxPackage{
+	txPackage := Package{
 		Name:   "UserPaymentsPackage",
 		TxList: txList,
 	}
@@ -148,9 +148,9 @@ func ShareMoneyEasy(uiList []UserPayment) (TxPackage, float64, error) {
 	cashList = NormalizeCash(cashList)
 	PrintCash(cashList)
 	// Convert the cash list to a TxPackage
-	txPackageFromCash, diff, err := CashListToTxPackage(cashList, "activity", TxListGenerateWithMixMap)
+	txPackageFromCash, diff, err := CashListToTxPackage(cashList, "activity", ListTxGenerateWithMixMap)
 	if err != nil {
-		return TxPackage{}, 0, fmt.Errorf("failed to convert cash list to TxPackage: %w", err)
+		return Package{}, 0, fmt.Errorf("failed to convert cash list to TxPackage: %w", err)
 	}
 	// println(txPackageFromCash.String())
 	return txPackageFromCash, diff, nil

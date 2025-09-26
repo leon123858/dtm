@@ -376,7 +376,7 @@ func TestDeleteTrip(t *testing.T) {
 	records := []db.Record{
 		{
 			RecordInfo: db.RecordInfo{ID: recordID, Name: "Record in Deleted Trip", Amount: 1.0, PrePayAddress: addr},
-			RecordData: db.RecordData{ShouldPayAddress: []db.ExtendAddress{db.ExtendAddress{Address: addr, ExtendMsg: 0.5}}},
+			RecordData: db.RecordData{ShouldPayAddress: []db.ExtendAddress{{Address: addr, ExtendMsg: 0.5}}},
 		},
 	}
 	err = wrapper.CreateTripRecords(tripID, records)

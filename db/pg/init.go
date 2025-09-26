@@ -44,7 +44,11 @@ func CloseGORM(db *gorm.DB) {
 	if err != nil {
 		log.Fatalf("Error getting underlying sql.DB from GORM: %v", err)
 	}
-	sqlDB.Close()
+	err = sqlDB.Close()
+	if err != nil {
+		log.Fatalf("Error closing underlying DB: %v", err)
+		return
+	}
 }
 
 // InitPostgresGORM initializes a new GORM DB connection to PostgreSQL.

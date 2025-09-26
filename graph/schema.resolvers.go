@@ -18,7 +18,7 @@ import (
 )
 
 // CreateTrip is the resolver for the createTrip field.
-func (r *mutationResolver) CreateTrip(ctx context.Context, input model.NewTrip) (*model.Trip, error) {
+func (r *mutationResolver) CreateTrip(_ context.Context, input model.NewTrip) (*model.Trip, error) {
 	if !utils.VerifyStringRequest(input.Name) {
 		return nil, fmt.Errorf("invalid trip name")
 	}
@@ -40,7 +40,7 @@ func (r *mutationResolver) CreateTrip(ctx context.Context, input model.NewTrip) 
 }
 
 // UpdateTrip is the resolver for the updateTrip field.
-func (r *mutationResolver) UpdateTrip(ctx context.Context, tripID string, input model.NewTrip) (*model.Trip, error) {
+func (r *mutationResolver) UpdateTrip(_ context.Context, tripID string, input model.NewTrip) (*model.Trip, error) {
 	if !utils.VerifyStringRequest(input.Name) {
 		return nil, fmt.Errorf("invalid trip name")
 	}
@@ -67,7 +67,7 @@ func (r *mutationResolver) UpdateTrip(ctx context.Context, tripID string, input 
 }
 
 // CreateRecord is the resolver for the createRecord field.
-func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, input model.NewRecord) (*model.Record, error) {
+func (r *mutationResolver) CreateRecord(_ context.Context, tripID string, input model.NewRecord) (*model.Record, error) {
 	if !utils.VerifyRecordRequestAndSetDefault(&input) {
 		return nil, fmt.Errorf("invalid record input")
 	}
@@ -112,7 +112,7 @@ func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, inpu
 }
 
 // UpdateRecord is the resolver for the updateRecord field.
-func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, input model.NewRecord) (*model.Record, error) {
+func (r *mutationResolver) UpdateRecord(_ context.Context, recordID string, input model.NewRecord) (*model.Record, error) {
 	if !utils.VerifyRecordRequestAndSetDefault(&input) {
 		return nil, fmt.Errorf("invalid record input")
 	}
@@ -156,7 +156,7 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, in
 }
 
 // RemoveRecord is the resolver for the removeRecord field.
-func (r *mutationResolver) RemoveRecord(ctx context.Context, recordID string) (string, error) {
+func (r *mutationResolver) RemoveRecord(_ context.Context, recordID string) (string, error) {
 	dbTripInfo := r.TripDB
 	recordUID, err := uuid.Parse(recordID)
 	if err != nil {
@@ -179,7 +179,7 @@ func (r *mutationResolver) RemoveRecord(ctx context.Context, recordID string) (s
 }
 
 // CreateAddress is the resolver for the createAddress field.
-func (r *mutationResolver) CreateAddress(ctx context.Context, tripID string, address string) (string, error) {
+func (r *mutationResolver) CreateAddress(_ context.Context, tripID string, address string) (string, error) {
 	if !utils.VerifyStringRequest(address) {
 		return "", fmt.Errorf("invalid address")
 	}
@@ -207,7 +207,7 @@ func (r *mutationResolver) CreateAddress(ctx context.Context, tripID string, add
 }
 
 // DeleteAddress is the resolver for the deleteAddress field.
-func (r *mutationResolver) DeleteAddress(ctx context.Context, tripID string, address string) (string, error) {
+func (r *mutationResolver) DeleteAddress(_ context.Context, tripID string, address string) (string, error) {
 	dbTripInfo := r.TripDB
 	tripUUID, err := uuid.Parse(tripID)
 	if err != nil {

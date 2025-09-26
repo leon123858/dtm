@@ -18,7 +18,6 @@ func NewPgDBWrapper(db *gorm.DB) db.TripDBWrapper { // Assuming db.TripDBWrapper
 	return &pgDBWrapper{db: db}
 }
 
-// Create
 func (p *pgDBWrapper) CreateTrip(info *db.TripInfo) error { // Assuming db.TripInfo is the type from db/types.go
 	tripModel := TripInfoModel{
 		ID:   info.ID,
@@ -61,7 +60,6 @@ func (p *pgDBWrapper) CreateTripRecords(id uuid.UUID, records []db.Record) error
 	})
 }
 
-// Read
 func (p *pgDBWrapper) GetTripInfo(id uuid.UUID) (*db.TripInfo, error) {
 	var tripModel TripInfoModel
 	if err := p.db.First(&tripModel, "id = ?", id).Error; err != nil {
@@ -122,7 +120,6 @@ func (p *pgDBWrapper) GetRecordAddressList(recordID uuid.UUID) ([]db.ExtendAddre
 	return addresses, nil
 }
 
-// Update
 func (p *pgDBWrapper) UpdateTripInfo(info *db.TripInfo) error {
 	tripModel := TripInfoModel{
 		ID:   info.ID,
@@ -196,7 +193,6 @@ func (p *pgDBWrapper) TripAddressListRemove(id uuid.UUID, address db.Address) er
 	return p.db.Where("trip_id = ? AND address = ?", id, string(address)).Delete(&TripAddressListModel{}).Error
 }
 
-// Delete
 func (p *pgDBWrapper) DeleteTrip(id uuid.UUID) error {
 	// GORM's CASCADE constraint should handle deleting associated records, trip_address_lists,
 	// and record_should_pay_address_lists.
@@ -218,7 +214,7 @@ func (p *pgDBWrapper) DeleteTripRecord(recordID uuid.UUID) (uuid.UUID, error) {
 	return recordModel.TripID, nil
 }
 
-// Data Loader
+// DataLoaderGetRecordInfoList Data Loader
 // These are more complex and often involve custom SQL or optimized GORM queries
 // to avoid N+1 problems. The implementations below are basic.
 func (p *pgDBWrapper) DataLoaderGetRecordInfoList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]db.RecordInfo, error) {

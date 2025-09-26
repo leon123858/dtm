@@ -217,7 +217,7 @@ func TestGenerateQueues(t *testing.T) {
 	}
 }
 
-func TestTxListGenerateWithMixMap(t *testing.T) {
+func TestListTxGenerateWithMixMap(t *testing.T) {
 	tests := []struct {
 		name                   string
 		initialCashList        []Cash
@@ -319,7 +319,7 @@ func TestTxListGenerateWithMixMap(t *testing.T) {
 			},
 			expectedTxList:         []Tx{}, // No inputs, so no transactions can be formed
 			expectedRemainingInput: 0.0,
-			expectingError:         true, // No error from TxListGenerateWithMixMap itself, but outputs weren't covered.
+			expectingError:         true, // No error from ListTxGenerateWithMixMap itself, but outputs weren't covered.
 		},
 		{
 			name: "Complex scenario: multiple outputs and inputs, some remaining",
@@ -363,22 +363,22 @@ func TestTxListGenerateWithMixMap(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Deep copy the initialCashList to avoid side effects across test runs,
-			// as TxListGenerateWithMixMap modifies the passed slice.
+			// as ListTxGenerateWithMixMap modifies the passed slice.
 			cashListCopy := make([]Cash, len(tt.initialCashList))
 			copy(cashListCopy, tt.initialCashList)
 
 			// The function expects pointers to slices for modification
 			var gotTxList []Tx
-			gotRemainingInput, err := TxListGenerateWithMixMap(&gotTxList, &cashListCopy)
+			gotRemainingInput, err := ListTxGenerateWithMixMap(&gotTxList, &cashListCopy)
 
 			// Check for error first
 			if (err != nil) != tt.expectingError {
-				t.Errorf("TxListGenerateWithMixMap() error = %v, expectingError %v", err, tt.expectingError)
+				t.Errorf("ListTxGenerateWithMixMap() error = %v, expectingError %v", err, tt.expectingError)
 				return
 			}
 			if tt.expectingError && err != nil && tt.expectedErrorMsg != "" {
 				if err.Error() != tt.expectedErrorMsg {
-					t.Errorf("TxListGenerateWithMixMap() error message mismatch. Got: %q, Want: %q", err.Error(), tt.expectedErrorMsg)
+					t.Errorf("ListTxGenerateWithMixMap() error message mismatch. Got: %q, Want: %q", err.Error(), tt.expectedErrorMsg)
 				}
 			}
 
@@ -392,18 +392,18 @@ func TestTxListGenerateWithMixMap(t *testing.T) {
 
 			// Compare generated TxList (elements by elements)
 			if len(gotTxList) != len(tt.expectedTxList) {
-				t.Errorf("TxListGenerateWithMixMap() generated TxList length = %v, want %v", len(gotTxList), len(tt.expectedTxList))
+				t.Errorf("ListTxGenerateWithMixMap() generated TxList length = %v, want %v", len(gotTxList), len(tt.expectedTxList))
 				return
 			}
 			for i := range gotTxList {
 				// Compare Tx Name
 				if gotTxList[i].Name != tt.expectedTxList[i].Name {
-					t.Errorf("TxListGenerateWithMixMap() Tx[%d] Name got %q, want %q", i, gotTxList[i].Name, tt.expectedTxList[i].Name)
+					t.Errorf("ListTxGenerateWithMixMap() Tx[%d] Name got %q, want %q", i, gotTxList[i].Name, tt.expectedTxList[i].Name)
 				}
 				// Compare Tx Output
 				if !floatEquals(gotTxList[i].Output.Amount, tt.expectedTxList[i].Output.Amount) ||
 					gotTxList[i].Output.Address != tt.expectedTxList[i].Output.Address {
-					t.Errorf("TxListGenerateWithMixMap() Tx[%d] Output got %v, want %v", i, gotTxList[i].Output, tt.expectedTxList[i].Output)
+					t.Errorf("ListTxGenerateWithMixMap() Tx[%d] Output got %v, want %v", i, gotTxList[i].Output, tt.expectedTxList[i].Output)
 				}
 				// Compare Tx Input (must sort to ensure order)
 				sort.Slice(gotTxList[i].Input, func(j, k int) bool { return gotTxList[i].Input[j].Address < gotTxList[i].Input[k].Address })
@@ -412,20 +412,20 @@ func TestTxListGenerateWithMixMap(t *testing.T) {
 				})
 
 				if len(gotTxList[i].Input) != len(tt.expectedTxList[i].Input) {
-					t.Errorf("TxListGenerateWithMixMap() Tx[%d] Input length got %d, want %d", i, len(gotTxList[i].Input), len(tt.expectedTxList[i].Input))
+					t.Errorf("ListTxGenerateWithMixMap() Tx[%d] Input length got %d, want %d", i, len(gotTxList[i].Input), len(tt.expectedTxList[i].Input))
 					continue
 				}
 				for j := range gotTxList[i].Input {
 					if !floatEquals(gotTxList[i].Input[j].Amount, tt.expectedTxList[i].Input[j].Amount) ||
 						gotTxList[i].Input[j].Address != tt.expectedTxList[i].Input[j].Address {
-						t.Errorf("TxListGenerateWithMixMap() Tx[%d] Input[%d] got %v, want %v", i, j, gotTxList[i].Input[j], tt.expectedTxList[i].Input[j])
+						t.Errorf("ListTxGenerateWithMixMap() Tx[%d] Input[%d] got %v, want %v", i, j, gotTxList[i].Input[j], tt.expectedTxList[i].Input[j])
 					}
 				}
 			}
 
 			// Compare remaining input amount
 			if !floatEquals(gotRemainingInput, tt.expectedRemainingInput) {
-				t.Errorf("TxListGenerateWithMixMap() gotRemainingInput = %v, want %v", gotRemainingInput, tt.expectedRemainingInput)
+				t.Errorf("ListTxGenerateWithMixMap() gotRemainingInput = %v, want %v", gotRemainingInput, tt.expectedRemainingInput)
 			}
 		})
 	}
@@ -452,7 +452,7 @@ func TestCashListToTxPackage(t *testing.T) {
 		name                   string
 		cashList               []Cash
 		packageName            string
-		strategy               TxListGenerateStrategy
+		strategy               ListGenerateStrategy
 		expectedTxPackageName  string
 		expectedTxListCount    int
 		expectedRemainingInput float64
@@ -491,12 +491,12 @@ func TestCashListToTxPackage(t *testing.T) {
 			expectingError:         true,
 			expectedErrorMsg:       "there are remaining unspent inputs totaling 50.00",
 		},
-		// Test cases for real TxListGenerateWithMixMap strategy
+		// Test cases for real ListTxGenerateWithMixMap strategy
 		{
 			name:                   "Real strategy: sufficient funds",
 			cashList:               []Cash{{Address: "Inputter", InputAmount: 100}, {Address: "Outputter", OutputAmount: 100}},
 			packageName:            "RealStrategySuccess",
-			strategy:               TxListGenerateWithMixMap,
+			strategy:               ListTxGenerateWithMixMap,
 			expectedTxPackageName:  "RealStrategySuccess",
 			expectedTxListCount:    1, // One Tx expected
 			expectedRemainingInput: 0.0,
@@ -506,18 +506,18 @@ func TestCashListToTxPackage(t *testing.T) {
 			name:                   "Real strategy: insufficient funds for output",
 			cashList:               []Cash{{Address: "Inputter", InputAmount: 50}, {Address: "Outputter", OutputAmount: 100}},
 			packageName:            "RealStrategyFailNoCover",
-			strategy:               TxListGenerateWithMixMap,
+			strategy:               ListTxGenerateWithMixMap,
 			expectedTxPackageName:  "", // Error because an output couldn't be covered by available inputs
 			expectedTxListCount:    0,
 			expectedRemainingInput: 0.0, // The 50 from inputter would be considered remaining
 			expectingError:         true,
-			expectedErrorMsg:       "unexpected condition: collected inputs sum 50.00 is less than output 100.00 for Outputter", // This is the error from TxListGenerateWithMixMap
+			expectedErrorMsg:       "unexpected condition: collected inputs sum 50.00 is less than output 100.00 for Outputter", // This is the error from ListTxGenerateWithMixMap
 		},
 		{
 			name:                   "Real strategy: with remaining input",
 			cashList:               []Cash{{Address: "Inputter", InputAmount: 100}, {Address: "Outputter", OutputAmount: 50}},
 			packageName:            "RealStrategyRemaining",
-			strategy:               TxListGenerateWithMixMap,
+			strategy:               ListTxGenerateWithMixMap,
 			expectedTxPackageName:  "",   // Expecting error from CashListToTxPackage due to remaining input
 			expectedTxListCount:    1,    // One Tx would be generated by strategy
 			expectedRemainingInput: 50.0, // 100 - 50 = 50 remaining

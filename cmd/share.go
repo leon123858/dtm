@@ -4,6 +4,7 @@ import (
 	"dtm/tx"
 	"encoding/csv"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -30,7 +31,12 @@ func shareCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer inputFile.Close()
+			defer func(inputFile *os.File) {
+				err := inputFile.Close()
+				if err != nil {
+					log.Fatalf("Failed to close input file: %v", err)
+				}
+			}(inputFile)
 
 			csvContent, err := csv.NewReader(inputFile).ReadAll()
 			if err != nil {
@@ -59,19 +65,35 @@ func shareCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer outputFile.Close()
+			defer func(outputFile *os.File) {
+				err := outputFile.Close()
+				if err != nil {
+					log.Fatalf("Failed to close output file: %v", err)
+				}
+			}(outputFile)
 
 			// show result in output
-			outputFile.Write([]byte(txPackage.String()))
+			_, err = outputFile.Write([]byte(txPackage.String()))
+			if err != nil {
+				return err
+			}
 
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVarP(&inputPath, "input", "i", "", "csv input file path (required)")
-	cmd.MarkFlagRequired("input")
+	err := cmd.MarkFlagRequired("input")
+	if err != nil {
+		log.Fatal(err)
+		return nil
+	}
 	cmd.Flags().StringVarP(&outputPath, "output", "o", "", "csv output file path (required)")
-	cmd.MarkFlagRequired("output")
+	err = cmd.MarkFlagRequired("output")
+	if err != nil {
+		log.Fatal(err)
+		return nil
+	}
 
 	return cmd
 }

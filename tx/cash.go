@@ -7,7 +7,7 @@ import (
 	"sort"
 )
 
-// normalizeCash aggregates the cash movements for each address.
+// NormalizeCash aggregates the cash movements for each address.
 // It combines multiple entries for the same address into a single entry,
 // let cash will only have input or output amounts, not both.
 func NormalizeCash(cashList []Cash) []Cash {
@@ -54,8 +54,8 @@ func NormalizeCash(cashList []Cash) []Cash {
 func generateQueues(cashList []Cash) (*list.List, *list.List) {
 	// Use Go's `container/list` as a double-ended queue (deque)
 	// We'll populate temporary slices first, then sort, then push to queues.
-	tempInputSlice := []Cash{}
-	tempOutputSlice := []Cash{}
+	var tempInputSlice []Cash
+	var tempOutputSlice []Cash
 
 	// Pre-process cashList to populate temporary slices
 	for _, cash := range cashList {
@@ -115,13 +115,17 @@ func PrintCash(cashList []Cash) {
 	}
 }
 
-func TxListGenerateWithMixMap(txList *[]Tx, cashList *[]Cash) (float64, error) {
+func ListTxGenerateWithMixMap(txList *[]Tx, cashList *[]Cash) (float64, error) {
 	var totalRemainingInputAmount float64 = 0.0
 	var inputQueue, outputQueue *list.List = generateQueues(*cashList)
 
 	// Process transactions until all outputs are covered or inputs are exhausted
+
 	for outputQueue.Len() > 0 {
 		currentOutputElem := outputQueue.Front()
+		if currentOutputElem == nil {
+			break
+		}
 		outputQueue.Remove(currentOutputElem)
 		currentOutputCash := currentOutputElem.Value.(Cash) // Type assertion
 
@@ -138,6 +142,9 @@ func TxListGenerateWithMixMap(txList *[]Tx, cashList *[]Cash) (float64, error) {
 		for inputQueue.Len() > 0 && currentInputSum < currentOutputCash.OutputAmount {
 			currentInputElem := inputQueue.Front()
 			inputQueue.Remove(currentInputElem)
+			if currentInputElem == nil {
+				break
+			}
 			currentInputCash := currentInputElem.Value.(Cash) // Type assertion
 
 			// This is an 'input' for the transaction, so it's an 'output' from the address's perspective
@@ -202,8 +209,12 @@ func TxListGenerateWithMixMap(txList *[]Tx, cashList *[]Cash) (float64, error) {
 	}
 
 	// Any remaining inputs in the input queue are considered "unspent" or "leftover"
+
 	for inputQueue.Len() > 0 {
 		inputElem := inputQueue.Front()
+		if inputElem == nil {
+			break
+		}
 		inputQueue.Remove(inputElem)
 		inputCash := inputElem.Value.(Cash)
 		totalRemainingInputAmount += inputCash.InputAmount
@@ -215,18 +226,18 @@ func TxListGenerateWithMixMap(txList *[]Tx, cashList *[]Cash) (float64, error) {
 // CashListToTxPackage converts a slice of Cash objects into a TxPackage,
 // forming transactions based on the specified queue algorithm.
 // It returns the generated TxPackage and the total remaining input amount.
-func CashListToTxPackage(cashList []Cash, packageName string, strategy TxListGenerateStrategy) (TxPackage, float64, error) {
-	generatedTxList := []Tx{}
+func CashListToTxPackage(cashList []Cash, packageName string, strategy ListGenerateStrategy) (Package, float64, error) {
+	var generatedTxList []Tx
 	totalRemainingInputAmount, err := strategy(&generatedTxList, &cashList)
 	if err != nil {
-		return TxPackage{}, 0, err
+		return Package{}, 0, err
 	}
 	if totalRemainingInputAmount > epsilon {
 		fmt.Printf("Warning: There are remaining unspent inputs totaling %.2f\n", totalRemainingInputAmount)
-		return TxPackage{}, totalRemainingInputAmount, fmt.Errorf("there are remaining unspent inputs totaling %.2f", totalRemainingInputAmount)
+		return Package{}, totalRemainingInputAmount, fmt.Errorf("there are remaining unspent inputs totaling %.2f", totalRemainingInputAmount)
 	}
 
-	return TxPackage{
+	return Package{
 		Name:   packageName,
 		TxList: generatedTxList,
 	}, totalRemainingInputAmount, nil
