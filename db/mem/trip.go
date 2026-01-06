@@ -6,10 +6,12 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/r3labs/diff/v3"
 	"github.com/vikstrous/dataloadgen"
 
 	// Assuming this library is used for dataloaders
 	dbt "dtm/db/db" // Alias the db package as dbt
+	cdiff "dtm/libs/diff"
 )
 
 // inMemoryTripDBWrapper is an in-memory implementation of dbt.TripDBWrapper.
@@ -160,7 +162,7 @@ func (db *inMemoryTripDBWrapper) UpdateTripInfo(info *dbt.TripInfo) error {
 // UpdateTripRecord updates a specific record within a trip.
 // This function updates both the RecordInfo and RecordData parts.
 // Return trip ID if the record was found and updated, or an error if not found.
-func (db *inMemoryTripDBWrapper) UpdateTripRecord(record *dbt.Record) (uuid.UUID, error) {
+func (db *inMemoryTripDBWrapper) UpdateTripRecord(recordID uuid.UUID, changeLog diff.Changelog) (uuid.UUID, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
@@ -168,18 +170,21 @@ func (db *inMemoryTripDBWrapper) UpdateTripRecord(record *dbt.Record) (uuid.UUID
 	for tripID, tripData := range db.tripsData {
 		foundIdx := -1
 		for i, rec := range tripData.Records {
-			if rec.ID == record.ID {
+			if rec.ID == recordID {
 				foundIdx = i
 				break
 			}
 		}
 		if foundIdx != -1 {
-			// Update the record in the trip data
-			tripData.Records[foundIdx] = *record
+			// apply patch on record
+			pl := cdiff.GetCustomDiffer().Patch(changeLog, &tripData.Records[foundIdx])
+			if pl.HasErrors() {
+				return uuid.Nil, fmt.Errorf("trip with ID %s update fail", recordID)
+			}
 			return tripID, nil // Record found and updated, exit early
 		}
 	}
-	return uuid.Nil, fmt.Errorf("record with ID %s not found in any trip for update", record.ID)
+	return uuid.Nil, fmt.Errorf("record with ID %s not found in any trip for update", recordID)
 }
 
 // TripAddressListAdd adds an address to a trip's address list.

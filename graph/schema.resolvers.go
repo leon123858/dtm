@@ -12,9 +12,12 @@ import (
 	"dtm/mq/mq"
 	"dtm/tx"
 	"fmt"
+	"log"
 	"strconv"
 
 	"github.com/google/uuid"
+
+	"dtm/libs/diff"
 )
 
 // CreateTrip is the resolver for the createTrip field.
@@ -127,8 +130,26 @@ func (r *mutationResolver) UpdateRecord(_ context.Context, recordID string, inpu
 		return nil, fmt.Errorf("invalid record ID: %w", err)
 	}
 
+	changelog, err := diff.GetCustomDiffer().Diff(db.Record{}, *record)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(changelog) == 0 {
+		log.Println("warning: no change to record")
+		// early return, because of no update request
+		return &model.Record{
+			ID:            record.ID.String(),
+			Name:          record.Name,
+			Amount:        record.Amount,
+			Time:          strconv.FormatInt(record.Time.UnixMilli(), 10),
+			PrePayAddress: string(record.PrePayAddress),
+			Category:      *input.Category,
+		}, nil
+	}
+
 	var tripId uuid.UUID
-	if tripId, err = dbTripInfo.UpdateTripRecord(record); err != nil {
+	if tripId, err = dbTripInfo.UpdateTripRecord(record.ID, changelog); err != nil {
 		return nil, fmt.Errorf("failed to update record: %w", err)
 	}
 

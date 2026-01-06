@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"dtm/libs/diff"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
@@ -334,8 +336,9 @@ func TestUpdateTripRecord(t *testing.T) {
 				ShouldPayAddress: []dbt.ExtendAddress{{Address: "PayU"}},
 			},
 		}
-
-		tripId, err := db.UpdateTripRecord(&updatedRecord)
+		cl, err := diff.GetCustomDiffer().Diff(record1, updatedRecord)
+		assert.NoError(t, err)
+		tripId, err := db.UpdateTripRecord(record1.ID, cl)
 		assert.NoError(t, err)
 		assert.Equal(t, tripInfo.ID, tripId, "Trip ID should match the original trip")
 
@@ -369,12 +372,15 @@ func TestUpdateTripRecord(t *testing.T) {
 			ID:   uuid.New(),
 			Name: "Non-existent Record",
 		}
-		tripId, err := db.UpdateTripRecord(&dbt.Record{
+
+		cl, err := diff.GetCustomDiffer().Diff(record1, dbt.Record{
 			RecordInfo: nonExistentRecordInfo,
 			RecordData: dbt.RecordData{
 				ShouldPayAddress: []dbt.ExtendAddress{{Address: "PayX"}},
 			},
 		})
+		assert.NoError(t, err)
+		tripId, err := db.UpdateTripRecord(nonExistentRecordInfo.ID, cl)
 		assert.Error(t, err)
 		assert.Equal(t, uuid.Nil, tripId, "Trip ID should be nil for non-existent record")
 		assert.Contains(t, err.Error(), "not found")

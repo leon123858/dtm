@@ -3,9 +3,13 @@ package pg
 import (
 	"context"
 	"dtm/db/db"
+	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/r3labs/diff/v3"
 	"gorm.io/gorm"
+
+	cdiff "dtm/libs/diff"
 )
 
 // pgDBWrapper is an implementation of TripDBWrapper using GORM.
@@ -128,30 +132,59 @@ func (p *pgDBWrapper) UpdateTripInfo(info *db.TripInfo) error {
 	return p.db.Model(&TripInfoModel{}).Where("id = ?", info.ID).Updates(tripModel).Error
 }
 
-func (p *pgDBWrapper) UpdateTripRecord(record *db.Record) (uuid.UUID, error) {
+func (p *pgDBWrapper) UpdateTripRecord(recordID uuid.UUID, changeLog diff.Changelog) (uuid.UUID, error) {
 	// use transaction to update info and data
 	tripId := uuid.Nil
 	ret := p.db.Transaction(func(tx *gorm.DB) error {
-		// read recordModel.TripId and update recordModel
+		// load cur data
 		var recordModel RecordModel
-		if err := tx.First(&recordModel, "id = ?", record.RecordInfo.ID).Error; err != nil {
+		var shouldPayModels []RecordShouldPayAddressListModel
+		if err := tx.First(&recordModel, "id = ?", recordID).Error; err != nil {
 			return err
 		}
+		if err := p.db.Where("record_id = ?", recordID).Find(&shouldPayModels).Error; err != nil {
+			return err
+		}
+		// convert to interface
+		record := &db.Record{
+			RecordInfo: db.RecordInfo{
+				ID:            recordModel.ID,
+				Name:          recordModel.Name,
+				Amount:        recordModel.Amount,
+				Time:          recordModel.Time,
+				PrePayAddress: db.Address(recordModel.PrePayAddress),
+				Category:      db.RecordCategory(recordModel.Category),
+			},
+			RecordData: db.RecordData{
+				ShouldPayAddress: make([]db.ExtendAddress, len(shouldPayModels)),
+			},
+		}
+		for i, d := range shouldPayModels {
+			record.ShouldPayAddress[i] = db.ExtendAddress{
+				Address:   db.Address(d.Address),
+				ExtendMsg: d.ExtendedMsg,
+			}
+		}
 
+		// apply patch
+		if pl := cdiff.GetCustomDiffer().Patch(changeLog, &record); pl.HasErrors() {
+			return fmt.Errorf("record %s patch failed", recordID)
+		}
+
+		// convert back to db model
 		newRecordModel := RecordModel{
-			ID:            record.RecordInfo.ID,
+			ID:            recordModel.ID,     // Keep same record ID
 			TripID:        recordModel.TripID, // Keep the same trip ID
 			Name:          record.RecordInfo.Name,
 			Amount:        record.RecordInfo.Amount,
-			Time:          record.RecordInfo.Time, // Use the time from RecordInfo
+			Time:          record.RecordInfo.Time,
 			PrePayAddress: string(record.RecordInfo.PrePayAddress),
 			Category:      int(record.RecordInfo.Category), // Use int to store the category
 		}
+		// update db
 		if err := tx.Model(&RecordModel{}).Where("id = ?", record.RecordInfo.ID).Updates(&newRecordModel).Error; err != nil {
 			return err
 		}
-
-		// Update RecordShouldPayAddressListModel
 		if err := tx.Where("record_id = ?", record.RecordInfo.ID).Delete(&RecordShouldPayAddressListModel{}).Error; err != nil {
 			return err
 		}
@@ -159,6 +192,9 @@ func (p *pgDBWrapper) UpdateTripRecord(record *db.Record) (uuid.UUID, error) {
 		// insert batch
 		models := make([]RecordShouldPayAddressListModel, 0, len(record.RecordData.ShouldPayAddress))
 		for _, addr := range record.RecordData.ShouldPayAddress {
+			if addr.Address == "" {
+				continue
+			}
 			shouldPayModel := RecordShouldPayAddressListModel{
 				RecordID:    record.RecordInfo.ID,
 				TripID:      recordModel.TripID, // Link to the trip

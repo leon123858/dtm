@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/r3labs/diff/v3"
 )
 
 type TripDBWrapper interface {
@@ -22,7 +23,7 @@ type TripDBWrapper interface {
 	// UpdateTripInfo Update
 	UpdateTripInfo(info *TripInfo) error
 	// UpdateTripRecord	Update
-	UpdateTripRecord(record *Record) (uuid.UUID, error)
+	UpdateTripRecord(recordID uuid.UUID, changeLog diff.Changelog) (uuid.UUID, error)
 	// TripAddressListAdd Update
 	TripAddressListAdd(id uuid.UUID, address Address) error
 	// TripAddressListRemove Update

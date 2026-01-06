@@ -8,9 +8,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
+	"dtm/libs/diff"
 )
 
 // Helper function to get a test DSN.
@@ -255,9 +258,13 @@ func TestTripAddressListRemoveWithRestrict(t *testing.T) {
 	tripId := uuid.New()
 	err := wrapper.CreateTrip(&db.TripInfo{ID: tripId, Name: "Trip For Address Removal With Restrict"})
 	require.NoError(t, err)
-	err = wrapper.TripAddressListAdd(tripId, db.Address("addr1"))
+	err = wrapper.TripAddressListAdd(tripId, "addr1")
 	require.NoError(t, err)
-	err = wrapper.TripAddressListAdd(tripId, db.Address("addr2"))
+	err = wrapper.TripAddressListAdd(tripId, "addr2")
+	require.NoError(t, err)
+	err = wrapper.TripAddressListAdd(tripId, "addr3")
+	require.NoError(t, err)
+	err = wrapper.TripAddressListAdd(tripId, "addr4")
 	require.NoError(t, err)
 
 	// should not create record with not exist address
@@ -274,20 +281,23 @@ func TestTripAddressListRemoveWithRestrict(t *testing.T) {
 	require.NoError(t, err)
 
 	// should not rm address be records' owner
-	err = wrapper.TripAddressListRemove(tripId, db.Address("addr1"))
+	err = wrapper.TripAddressListRemove(tripId, "addr1")
 	require.Error(t, err)
 
 	// should not rm address in records' pay list
-	err = wrapper.TripAddressListRemove(tripId, db.Address("addr2"))
+	err = wrapper.TripAddressListRemove(tripId, "addr2")
 	require.Error(t, err)
 
 	// rm addr2 in pay list
-	sampleRecord[0].RecordData.ShouldPayAddress = []db.ExtendAddress{{Address: "addr1", ExtendMsg: 0.0}}
-	_, err = wrapper.UpdateTripRecord(&sampleRecord[0])
+	originalRecord := sampleRecord[0]
+	sampleRecord[0].RecordData.ShouldPayAddress = []db.ExtendAddress{{Address: "addr1", ExtendMsg: 0.0}, {Address: "addr3", ExtendMsg: 0.0}, {Address: "addr4", ExtendMsg: 0.0}}
+	cl, err := diff.GetCustomDiffer().Diff(originalRecord, sampleRecord[0])
+	require.NoError(t, err)
+	_, err = wrapper.UpdateTripRecord(sampleRecord[0].ID, cl)
 	require.NoError(t, err)
 
 	// can rm addr2
-	err = wrapper.TripAddressListRemove(tripId, db.Address("addr2"))
+	err = wrapper.TripAddressListRemove(tripId, "addr2")
 	require.NoError(t, err)
 
 	// delete record
@@ -343,12 +353,14 @@ func TestUpdateTripRecord(t *testing.T) {
 		}},
 	}
 	// should err as db constrain
-	tripId, err := wrapper.UpdateTripRecord(&updatedRecord)
+	cl, err := diff.GetCustomDiffer().Diff(db.Record{}, updatedRecord)
+	require.NoError(t, err)
+	tripId, err := wrapper.UpdateTripRecord(updatedRecordInfo.ID, cl)
 	require.Error(t, err)
 	assert.Empty(t, tripId)
 	// should success as insert address
-	require.NoError(t, wrapper.TripAddressListAdd(tripID, db.Address("shouldpay_for_update_test_utr"))) // Add a should pay address
-	tripId, err = wrapper.UpdateTripRecord(&updatedRecord)
+	require.NoError(t, wrapper.TripAddressListAdd(tripID, "shouldpay_for_update_test_utr")) // Add a should pay address
+	tripId, err = wrapper.UpdateTripRecord(updatedRecordInfo.ID, cl)
 	require.NoError(t, err)
 	assert.Equal(t, tripID, tripId)
 
