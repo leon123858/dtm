@@ -57,7 +57,7 @@ type ComplexityRoot struct {
 		CreateTrip    func(childComplexity int, input model.NewTrip) int
 		DeleteAddress func(childComplexity int, tripID string, address string) int
 		RemoveRecord  func(childComplexity int, recordID string) int
-		UpdateRecord  func(childComplexity int, recordID string, input model.NewRecord) int
+		UpdateRecord  func(childComplexity int, recordID string, input model.EditRecord) int
 		UpdateTrip    func(childComplexity int, tripID string, input model.NewTrip) int
 	}
 
@@ -109,7 +109,7 @@ type MutationResolver interface {
 	CreateTrip(ctx context.Context, input model.NewTrip) (*model.Trip, error)
 	UpdateTrip(ctx context.Context, tripID string, input model.NewTrip) (*model.Trip, error)
 	CreateRecord(ctx context.Context, tripID string, input model.NewRecord) (*model.Record, error)
-	UpdateRecord(ctx context.Context, recordID string, input model.NewRecord) (*model.Record, error)
+	UpdateRecord(ctx context.Context, recordID string, input model.EditRecord) (*model.Record, error)
 	RemoveRecord(ctx context.Context, recordID string) (string, error)
 	CreateAddress(ctx context.Context, tripID string, address string) (string, error)
 	DeleteAddress(ctx context.Context, tripID string, address string) (string, error)
@@ -226,7 +226,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.UpdateRecord(childComplexity, args["recordId"].(string), args["input"].(model.NewRecord)), true
+		return e.complexity.Mutation.UpdateRecord(childComplexity, args["recordId"].(string), args["input"].(model.EditRecord)), true
 
 	case "Mutation.updateTrip":
 		if e.complexity.Mutation.UpdateTrip == nil {
@@ -453,6 +453,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 	opCtx := graphql.GetOperationContext(ctx)
 	ec := executionContext{opCtx, e, 0, 0, make(chan graphql.DeferredResult)}
 	inputUnmarshalMap := graphql.BuildUnmarshalerMap(
+		ec.unmarshalInputEditRecord,
 		ec.unmarshalInputNewRecord,
 		ec.unmarshalInputNewTrip,
 	)
@@ -788,13 +789,13 @@ func (ec *executionContext) field_Mutation_updateRecord_argsRecordID(
 func (ec *executionContext) field_Mutation_updateRecord_argsInput(
 	ctx context.Context,
 	rawArgs map[string]any,
-) (model.NewRecord, error) {
+) (model.EditRecord, error) {
 	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("input"))
 	if tmp, ok := rawArgs["input"]; ok {
-		return ec.unmarshalNNewRecord2dtmᚋgraphᚋmodelᚐNewRecord(ctx, tmp)
+		return ec.unmarshalNEditRecord2dtmᚋgraphᚋmodelᚐEditRecord(ctx, tmp)
 	}
 
-	var zeroVal model.NewRecord
+	var zeroVal model.EditRecord
 	return zeroVal, nil
 }
 
@@ -1327,7 +1328,7 @@ func (ec *executionContext) _Mutation_updateRecord(ctx context.Context, field gr
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().UpdateRecord(rctx, fc.Args["recordId"].(string), fc.Args["input"].(model.NewRecord))
+		return ec.resolvers.Mutation().UpdateRecord(rctx, fc.Args["recordId"].(string), fc.Args["input"].(model.EditRecord))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -4960,6 +4961,40 @@ func (ec *executionContext) fieldContext___Type_isOneOf(_ context.Context, field
 
 // region    **************************** input.gotpl *****************************
 
+func (ec *executionContext) unmarshalInputEditRecord(ctx context.Context, obj any) (model.EditRecord, error) {
+	var it model.EditRecord
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"old", "new"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "old":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("old"))
+			data, err := ec.unmarshalONewRecord2ᚖdtmᚋgraphᚋmodelᚐNewRecord(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Old = data
+		case "new":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("new"))
+			data, err := ec.unmarshalONewRecord2ᚖdtmᚋgraphᚋmodelᚐNewRecord(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.New = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputNewRecord(ctx context.Context, obj any) (model.NewRecord, error) {
 	var it model.NewRecord
 	asMap := map[string]any{}
@@ -6051,6 +6086,11 @@ func (ec *executionContext) marshalNBoolean2bool(ctx context.Context, sel ast.Se
 	return res
 }
 
+func (ec *executionContext) unmarshalNEditRecord2dtmᚋgraphᚋmodelᚐEditRecord(ctx context.Context, v any) (model.EditRecord, error) {
+	res, err := ec.unmarshalInputEditRecord(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) unmarshalNFloat2float64(ctx context.Context, v any) (float64, error) {
 	res, err := graphql.UnmarshalFloatContext(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -6676,6 +6716,14 @@ func (ec *executionContext) marshalOFloat2ᚕfloat64ᚄ(ctx context.Context, sel
 	}
 
 	return ret
+}
+
+func (ec *executionContext) unmarshalONewRecord2ᚖdtmᚋgraphᚋmodelᚐNewRecord(ctx context.Context, v any) (*model.NewRecord, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputNewRecord(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) unmarshalORecordCategory2ᚖdtmᚋgraphᚋmodelᚐRecordCategory(ctx context.Context, v any) (*model.RecordCategory, error) {

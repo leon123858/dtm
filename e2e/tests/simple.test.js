@@ -13,6 +13,15 @@ describe('GraphQL API End-to-End Tests', () => {
 	let tripId;
 	let recordId;
 	const testTripName = `Test Trip - ${Date.now()}`;
+    const newRecord = {
+        name: 'Lunch',
+        amount: 150.75,
+        time: '1672531199',
+        prePayAddress: 'Alice',
+        shouldPayAddress: ['Alice'],
+        category: 'NORMAL',
+        extendPayMsg: [],
+    };
 
 	beforeAll(async () => {
 		const { data } = await client.mutate({
@@ -100,15 +109,6 @@ describe('GraphQL API End-to-End Tests', () => {
 
 	describe('Record Management (Create -> Update -> Delete)', () => {
 		it('should create a new record', async () => {
-			const newRecord = {
-				name: 'Lunch',
-				amount: 150.75,
-				time: '1672531199',
-				prePayAddress: 'Alice',
-				shouldPayAddress: ['Alice'],
-				category: 'NORMAL',
-				extendPayMsg: [],
-			};
 
 			const { data, error } = await client.mutate({
 				mutation: CREATE_RECORD,
@@ -151,7 +151,10 @@ describe('GraphQL API End-to-End Tests', () => {
 				mutation: UPDATE_RECORD,
 				variables: {
 					recordId,
-					input: updatedRecord,
+					input: {
+                        old: newRecord,
+                        new: updatedRecord,
+                    },
 				},
 			});
 

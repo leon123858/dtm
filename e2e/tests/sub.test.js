@@ -1,6 +1,5 @@
 import { client } from '../src/apolloClient';
 import {
-	GET_TRIP,
 	CREATE_TRIP,
 	CREATE_ADDRESS,
 	DELETE_ADDRESS,
@@ -109,6 +108,15 @@ describe('GraphQL API End-to-End Tests', () => {
 	describe('Subscription Tests', () => {
 		const commonAddressForSubRecords = `SubRecAddr-${Date.now()}`;
 		let recordIdForSubTests;
+        const newRecordPayload = {
+            name: 'Sub Test Record Create',
+            amount: 77.88,
+            time: '1672531399',
+            prePayAddress: commonAddressForSubRecords,
+            shouldPayAddress: [commonAddressForSubRecords],
+            category: 'NORMAL',
+            extendPayMsg: [],
+        };
 
 		beforeAll(async () => {
 			const { data, error } = await client.mutate({
@@ -329,7 +337,10 @@ describe('GraphQL API End-to-End Tests', () => {
 				mutation: UPDATE_RECORD,
 				variables: {
 					recordId: recordIdForSubTests,
-					input: updatedRecordPayload,
+					input: {
+                        old: newRecordPayload,
+                        new: updatedRecordPayload,
+                    },
 				},
 			});
 

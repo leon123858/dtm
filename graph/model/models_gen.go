@@ -9,6 +9,11 @@ import (
 	"strconv"
 )
 
+type EditRecord struct {
+	Old *NewRecord `json:"old,omitempty"`
+	New *NewRecord `json:"new,omitempty"`
+}
+
 type Mutation struct {
 }
 

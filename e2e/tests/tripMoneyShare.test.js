@@ -5,7 +5,6 @@ import {
 	CREATE_ADDRESS,
 	DELETE_ADDRESS,
 	CREATE_RECORD,
-	UPDATE_RECORD,
 } from './graphql';
 
 describe('Trip with Money Share Logic End-to-End Tests', () => {

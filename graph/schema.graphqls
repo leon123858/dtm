@@ -80,6 +80,11 @@ input NewRecord {
 	category: RecordCategory
 }
 
+input EditRecord {
+    old: NewRecord,
+    new: NewRecord,
+}
+
 input NewTrip {
 	name: String!
 }
@@ -88,7 +93,7 @@ type Mutation {
 	createTrip(input: NewTrip!): Trip!
 	updateTrip(tripId: ID!, input: NewTrip!): Trip!
 	createRecord(tripId: ID!, input: NewRecord!): Record!
-	updateRecord(recordId: ID!, input: NewRecord!): Record!
+	updateRecord(recordId: ID!, input: EditRecord!): Record!
 	removeRecord(recordId: ID!): ID!
 	createAddress(tripId: ID!, address: String!): String!
 	deleteAddress(tripId: ID!, address: String!): String!
