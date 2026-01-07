@@ -181,6 +181,16 @@ func (db *inMemoryTripDBWrapper) UpdateTripRecord(recordID uuid.UUID, changeLog 
 			if pl.HasErrors() {
 				return uuid.Nil, fmt.Errorf("trip with ID %s update fail", recordID)
 			}
+			// remove empty string (patch can not decrease array/map len)
+			tmpAddrArray := make([]dbt.ExtendAddress, 0, len(tripData.Records[foundIdx].ShouldPayAddress))
+			for _, extAddr := range tripData.Records[foundIdx].ShouldPayAddress {
+				if extAddr.Address != "" {
+					tmpAddrArray = append(tmpAddrArray, extAddr)
+				}
+			}
+			// set new array
+			tripData.Records[foundIdx].ShouldPayAddress = tmpAddrArray
+
 			return tripID, nil // Record found and updated, exit early
 		}
 	}
