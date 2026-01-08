@@ -317,7 +317,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 		});
 	});
 
-	// --- record mode (FIX & PART) ---
+	// --- record mode (Transfer & PART) ---
 	describe('Mixed Mode Money Share Calculation', () => {
 		let mixedTripId;
 		const mixAlice = 'MixAlice',
@@ -344,15 +344,15 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			});
 		});
 
-		it('should calculate moneyShare correctly with mixed NORMAL and PART records', async () => {
-			// Record 1 (NORMAL): Alice pay 150，average split
+		it('should calculate moneyShare correctly with mixed Transfer and PART records', async () => {
+			// Record 1 (Transfer): Alice pay 150
 			const recordNormal = {
-				name: 'NORMAL Lunch',
+				name: 'Transfer',
 				amount: 150,
 				prePayAddress: mixAlice,
 				shouldPayAddress: [mixAlice, mixBob, mixCharlie],
-				category: 'NORMAL',
-				extendPayMsg: [],
+				category: 'TRANSFER',
+				extendPayMsg: [30, 50, 70],
 			};
 			await client.mutate({
 				mutation: CREATE_RECORD,
@@ -360,7 +360,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			});
 
 			const recordFix = {
-				name: 'FIX Tickets',
+				name: 'Part Tickets',
 				amount: 100,
 				prePayAddress: mixBob,
 				shouldPayAddress: [mixAlice, mixBob, mixCharlie],
@@ -378,10 +378,10 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			});
 
 			// Expected result:
-			// Alice: paid 150. Should pay (150/3) + 20 = 50 + 20 = 70. Net: +80 (to receive)
-			// Bob:   paid 100. Should pay (150/3) + 30 = 50 + 30 = 80. Net: +20 (to receive)
-			// Charlie: paid 0. Should pay (150/3) + 50 = 50 + 50 = 100. Net: -100 (to pay)
-			// Final transactions: Charlie pays 100, with 80 to Alice and 20 to Bob
+			// Alice: +120 - 20 = +100
+			// Bob:   +20 (to receive)
+			// Charlie: paid 0. Net: -120 (to pay)
+			// Final transactions: Charlie pays 120, with 100 to Alice and 20 to Bob
 			expect(data.trip.moneyShare).toBeDefined();
 			expect(data.trip.moneyShare).toHaveLength(2);
 
@@ -400,7 +400,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			expect(paymentToAlice).toBeDefined();
 			expect(paymentToBob).toBeDefined();
 
-			expect(paymentToAlice.input[0].amount).toBeCloseTo(80);
+			expect(paymentToAlice.input[0].amount).toBeCloseTo(100);
 			expect(paymentToBob.input[0].amount).toBeCloseTo(20);
 		});
 	});

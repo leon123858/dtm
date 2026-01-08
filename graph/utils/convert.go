@@ -15,6 +15,7 @@ var (
 		model.RecordCategoryFix,
 		model.RecordCategoryPart,
 		model.RecordCategoryFixBeforeNormal,
+		model.RecordCategoryTransfer,
 	}
 	Category2IntMap = map[model.RecordCategory]int{}
 	Int2CategoryMap = map[int]model.RecordCategory{}

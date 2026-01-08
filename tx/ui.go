@@ -167,6 +167,10 @@ func FixBeforeAverageMoneySplitStrategy(up *UserPayment) (Tx, error) {
 	return tx, nil
 }
 
+func TransferMoneySplitStrategy(up *UserPayment) (Tx, error) {
+	return FixMoneySplitStrategy(up)
+}
+
 func ShareMoneyStrategyFactory(strategyEnum int) UserPaymentToTxStrategy {
 	switch strategyEnum {
 	case 0:
@@ -177,6 +181,8 @@ func ShareMoneyStrategyFactory(strategyEnum int) UserPaymentToTxStrategy {
 		return PartMoneySplitStrategy
 	case 3:
 		return FixBeforeAverageMoneySplitStrategy
+	case 4:
+		return TransferMoneySplitStrategy
 	default:
 		return nil
 	}
