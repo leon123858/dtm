@@ -5,12 +5,12 @@ const epsilon = 1e-9
 
 // UserPayment represents a user's intention to pay, with a single source and multiple potential destinations.
 type UserPayment struct {
-	Name             string                  // A descriptive name for this user payment
-	Amount           float64                 // The total amount the user is paying
-	PrePayAddress    string                  // The address from which the payment originates (pre-payment)
-	ShouldPayAddress []string                // A list of addresses that should receive a share of the payment
-	ExtendPayMsg     []float64               // Additional messages or metadata associated with each should-pay address
-	Strategy         UserPaymentToTxStrategy // Strategy for converting UserPayment to Tx
+	Name             string    // A descriptive name for this user payment
+	Amount           float64   // The total amount the user is paying
+	PrePayAddress    string    // The address from which the payment originates (pre-payment)
+	ShouldPayAddress []string  // A list of addresses that should receive a share of the payment
+	ExtendPayMsg     []float64 // Additional messages or metadata associated with each should-pay address
+	PaymentType      int       // let inner module choose strategy to calculate result
 }
 
 // Payment represents a single payment with an amount and an address.

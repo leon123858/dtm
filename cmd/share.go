@@ -129,7 +129,7 @@ func ParseCSVToUserPayments(csvContent [][]string) ([]tx.UserPayment, error) {
 			PrePayAddress:    row[2],
 			ShouldPayAddress: shouldPayAddresses,
 			ExtendPayMsg:     make([]float64, len(shouldPayAddresses)), // Initialize with zero values
-			Strategy:         tx.ShareMoneyStrategyFactory(0),          // Default to AverageSplitStrategy
+			PaymentType:      0,                                        // Default to AverageSplitStrategy
 		}
 		payments = append(payments, payment)
 	}

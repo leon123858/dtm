@@ -90,7 +90,7 @@ func (tp *Package) String() string {
 func UIList2TxList(uiList []UserPayment) ([]Tx, error) {
 	txList := make([]Tx, 0, len(uiList))
 	for _, up := range uiList {
-		tx, err := up.ToTx(up.Strategy)
+		tx, err := up.ToTx(ShareMoneyStrategyFactory(up.PaymentType))
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert UserPayment to Tx: %w", err)
 		}

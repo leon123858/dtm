@@ -72,7 +72,7 @@ func CalculateMoneyShare(ctx context.Context, obj *model.Trip) (*tx.Package, flo
 			PrePayAddress:    string(record.PrePayAddress),
 			ShouldPayAddress: make([]string, len(recordAddresses[i])),
 			ExtendPayMsg:     make([]float64, len(recordAddresses[i])),
-			Strategy:         tx.ShareMoneyStrategyFactory(int(record.Category)),
+			PaymentType:      int(record.Category),
 		}
 		for j, addr := range recordAddresses[i] {
 			payment.ShouldPayAddress[j] = string(addr.Address)

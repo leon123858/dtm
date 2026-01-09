@@ -328,14 +328,14 @@ func (r *recordResolver) IsValid(ctx context.Context, obj *model.Record) (bool, 
 		Amount:           obj.Amount,
 		ShouldPayAddress: make([]string, len(addresses)),
 		ExtendPayMsg:     make([]float64, len(addresses)),
-		Strategy:         tx.ShareMoneyStrategyFactory(utils.RecordCategory2Int(&obj.Category)),
+		PaymentType:      utils.RecordCategory2Int(&obj.Category),
 	}
 
 	for i, addr := range addresses {
 		payment.ShouldPayAddress[i] = string(addr.Address)
 		payment.ExtendPayMsg[i] = addr.ExtendMsg
 	}
-	if t, err := payment.ToTx(payment.Strategy); err != nil {
+	if t, err := payment.ToTx(tx.ShareMoneyStrategyFactory(payment.PaymentType)); err != nil {
 		// fmt.Printf("failed to convert UserPayment to Tx: %w", err)
 		return false, nil
 	} else if t.BoolValidate() {
