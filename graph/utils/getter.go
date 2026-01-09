@@ -81,7 +81,7 @@ func CalculateMoneyShare(ctx context.Context, obj *model.Trip) (*tx.Package, flo
 		payments = append(payments, payment)
 	}
 
-	txPackage, totalRemaining, err := tx.ShareMoneyEasyNoLog(payments)
+	txPackage, totalRemaining, err := tx.ShareMoneyEasy(payments)
 	if err == nil {
 		ctx = context.WithValue(ctx, TripMoneyShareKey, CalculateMoneyShareResult{
 			txPackage:      &txPackage,
@@ -104,7 +104,7 @@ func CalculateMoneyShare(ctx context.Context, obj *model.Trip) (*tx.Package, flo
 	if ctx == nil {
 		return &txPackage, totalRemaining, false, fmt.Errorf("context is nil after setting trip money share result")
 	}
-	// println("Error in ShareMoneyEasyNoLog:", err)
+	// println("Error in ShareMoneyEasy:", err)
 	return nil, 0, false, nil
 }
 

@@ -5,6 +5,8 @@ import (
 	"math"
 )
 
+const MinValueTxOutput = 0.01
+
 // Validate calculates the total amount of inputs and outputs,
 // It returns the total input amount, total output amount
 func (t *Tx) Validate() (float64, float64) {
@@ -86,6 +88,55 @@ func (tp *Package) String() string {
 	return result
 }
 
+// SetNoSmallValue remove too small value in output.Amount
+// minValue set to 0.01 is useful
+func (tp *Package) SetNoSmallValue(minValue float64) {
+	if minValue < epsilon {
+		panic("minValue < epsilon")
+	}
+	for i := range tp.TxList {
+		tx := &tp.TxList[i]
+		for j := range tx.Input {
+			input := &tx.Input[j]
+			if input.Amount < minValue {
+				if input.Amount < 0 {
+					panic(fmt.Sprintf("Input amount should not negative: %.2f", input.Amount))
+				}
+				tx.Output.Amount -= input.Amount
+				input.Amount = 0
+			}
+		}
+		if tx.Output.Amount < 0 {
+			panic(fmt.Sprintf("Output amount should not negative: %.2f", tx.Output.Amount))
+		}
+		if tx.Output.Amount < minValue {
+			tx.Output.Amount = 0
+		}
+	}
+}
+
+// DropZeroTx can drop the tx with zero output or tx.input is zero
+// can be used after SetNoSmallValue
+func (tp *Package) DropZeroTx() {
+	newTxList := tp.TxList[:0]
+	for i := range tp.TxList {
+		if tp.TxList[i].Output.Amount <= epsilon {
+			continue
+		}
+
+		tx := &tp.TxList[i]
+		newInputs := tx.Input[:0]
+		for _, input := range tx.Input {
+			if input.Amount > epsilon {
+				newInputs = append(newInputs, input)
+			}
+		}
+		tx.Input = newInputs
+		newTxList = append(newTxList, *tx)
+	}
+	tp.TxList = newTxList
+}
+
 // UIList2TxList converts a list of UserPayment to a list of Tx
 func UIList2TxList(uiList []UserPayment) ([]Tx, error) {
 	txList := make([]Tx, 0, len(uiList))
@@ -102,31 +153,7 @@ func UIList2TxList(uiList []UserPayment) ([]Tx, error) {
 	return txList, nil
 }
 
-// ShareMoneyEasyNoLog is a simplified version of ShareMoneyEasy without logging
-func ShareMoneyEasyNoLog(uiList []UserPayment) (Package, float64, error) {
-	txList, err := UIList2TxList(uiList)
-	if err != nil {
-		return Package{}, 0, fmt.Errorf("failed to convert UserPayment to TxList: %w", err)
-	}
-	// Create a TxPackage from the generated transactions
-	txPackage := Package{
-		Name:   "UserPaymentsPackage",
-		TxList: txList,
-	}
-	// Process the transactions to get the cash flow for each address
-	cashList := txPackage.ProcessTransactions()
-	// Normalize the cash
-	cashList = NormalizeCash(cashList)
-	// Convert the cash list to a TxPackage
-	txPackageFromCash, diff, err := CashListToTxPackage(cashList, "activity", ListTxGenerateWithMixMap)
-	if err != nil {
-		return Package{}, 0, fmt.Errorf("failed to convert cash list to TxPackage: %w", err)
-	}
-	// println(txPackageFromCash.String())
-	return txPackageFromCash, diff, nil
-}
-
-// ShareMoneyEasy is the main function to share money among users based on their payments
+// ShareMoneyEasy is a simplified version of ShareMoneyEasy without logging
 func ShareMoneyEasy(uiList []UserPayment) (Package, float64, error) {
 	txList, err := UIList2TxList(uiList)
 	if err != nil {
@@ -137,21 +164,18 @@ func ShareMoneyEasy(uiList []UserPayment) (Package, float64, error) {
 		Name:   "UserPaymentsPackage",
 		TxList: txList,
 	}
-
 	// Process the transactions to get the cash flow for each address
 	cashList := txPackage.ProcessTransactions()
-	// Print the cash flow for each address
-	println("Initial Cash List:")
-	PrintCash(cashList)
 	// Normalize the cash
-	println("Normalized Cash List:")
 	cashList = NormalizeCash(cashList)
-	PrintCash(cashList)
 	// Convert the cash list to a TxPackage
 	txPackageFromCash, diff, err := CashListToTxPackage(cashList, "activity", ListTxGenerateWithMixMap)
 	if err != nil {
 		return Package{}, 0, fmt.Errorf("failed to convert cash list to TxPackage: %w", err)
 	}
 	// println(txPackageFromCash.String())
+	txPackageFromCash.SetNoSmallValue(MinValueTxOutput)
+	txPackageFromCash.DropZeroTx()
+
 	return txPackageFromCash, diff, nil
 }
