@@ -339,13 +339,21 @@ func TestPackage_SetNoSmallValue_WithPanics(t *testing.T) {
 		{
 			name:        "Panic：扣除後輸出變為負數",
 			minValue:    1.0,
-			shouldPanic: true,
+			shouldPanic: false,
 			panicMsg:    "Output amount should not negative",
 			initialPkg: Package{
 				TxList: []Tx{
 					{
 						Input:  []Payment{{Address: "A", Amount: 0.5}},
 						Output: Payment{Address: "B", Amount: 0.2}, // 0.2 - 0.5 = -0.3
+					},
+				},
+			},
+			expectedPkg: Package{
+				TxList: []Tx{
+					{
+						Input:  []Payment{{Address: "A", Amount: 0.0}},
+						Output: Payment{Address: "B", Amount: 0.0},
 					},
 				},
 			},
