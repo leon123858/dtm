@@ -100,14 +100,22 @@ func (tp *Package) SetNoSmallValue(minValue float64) {
 			input := &tx.Input[j]
 			if input.Amount < minValue {
 				if input.Amount < 0 {
-					panic(fmt.Sprintf("Input amount should not negative: %.2f", input.Amount))
+					if -input.Amount < epsilon {
+						input.Amount = 0
+					} else {
+						panic(fmt.Sprintf("Input amount should not negative: %.2f", input.Amount))
+					}
 				}
 				tx.Output.Amount -= input.Amount
 				input.Amount = 0
 			}
 		}
 		if tx.Output.Amount < 0 {
-			panic(fmt.Sprintf("Output amount should not negative: %.2f", tx.Output.Amount))
+			if -tx.Output.Amount < epsilon {
+				tx.Output.Amount = 0
+			} else {
+				panic(fmt.Sprintf("Output amount should not negative: %.2f", tx.Output.Amount))
+			}
 		}
 		if tx.Output.Amount < minValue {
 			tx.Output.Amount = 0
