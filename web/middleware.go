@@ -99,7 +99,25 @@ func GraphQLBodyLogMiddleware(logger *slog.Logger) gin.HandlerFunc {
 		// gin body can read only once so write back
 		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
-		logger.Info("post", "body", json.RawMessage(bodyBytes))
+		jsonData := make(map[string]interface{})
+		err = json.Unmarshal(bodyBytes, &jsonData)
+		if err != nil {
+			logger.Error("Failed to unmarshal request body", "error", err)
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+			return
+		}
+
+		// rm query property, it is unused
+		delete(jsonData, "query")
+
+		jsonStr, err := json.Marshal(jsonData)
+		if err != nil {
+			logger.Error("Failed to marshal request body", "error", err)
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+			return
+		}
+
+		logger.Info("post", "body", string(jsonStr))
 
 		c.Next()
 	}
