@@ -23,7 +23,7 @@ locals {
   region     = "asia-east1"
   zone       = "asia-east1-b"
   DN_front   = "powerbunny.page"
-  DN_back    = "powerbunny.xyz"
+  DN_back    = "powercapibara.site"
 }
 
 provider "google" {
