@@ -12,16 +12,10 @@ import {
 describe('GraphQL API End-to-End Tests', () => {
 	let tripId;
 	let recordId;
+	let addressAlice;
+	let addressBob;
+	let newRecord;
 	const testTripName = `Test Trip - ${Date.now()}`;
-    const newRecord = {
-        name: 'Lunch',
-        amount: 150.75,
-        time: '1672531199',
-        prePayAddress: 'Alice',
-        shouldPayAddress: ['Alice'],
-        category: 'NORMAL',
-        extendPayMsg: [],
-    };
 
 	beforeAll(async () => {
 		const { data } = await client.mutate({
@@ -45,7 +39,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			expect(data.trip.name).toBe(testTripName);
 			expect(data.trip.isValid).toBe(true);
 			expect(data.trip.records).toEqual([]);
-			expect(data.trip.addressList).toEqual([]);
+			expect(data.trip.addresses).toEqual([]);
 		});
 
 		it('should throw an error for a non-existent trip', async () => {
@@ -67,43 +61,47 @@ describe('GraphQL API End-to-End Tests', () => {
 
 	// --- Address ---
 	describe('Address Management', () => {
-		const addressAlice = 'Alice';
-		const addressBob = 'Bob';
-
 		it('should create new addresses for the trip', async () => {
 			const resAlice = await client.mutate({
 				mutation: CREATE_ADDRESS,
-				variables: { tripId, address: addressAlice },
+				variables: { tripId, input: { name: 'Alice' } },
 			});
-			expect(resAlice.data.createAddress).toBe(addressAlice);
+			addressAlice = resAlice.data.createAddress;
+			expect(addressAlice.name).toBe('Alice');
 
 			const resBob = await client.mutate({
 				mutation: CREATE_ADDRESS,
-				variables: { tripId, address: addressBob },
+				variables: { tripId, input: { name: 'Bob' } },
 			});
-			expect(resBob.data.createAddress).toBe(addressBob);
+			addressBob = resBob.data.createAddress;
+			expect(addressBob.name).toBe('Bob');
+			newRecord = {
+				name: 'Lunch', amount: 150.75, time: '1672531199',
+				prePayAddressId: addressAlice.id,
+				shouldPayAddressIds: [addressAlice.id],
+				category: 'NORMAL', extendPayMsg: [],
+			};
 
 			const { data } = await client.query({
 				query: GET_TRIP,
 				variables: { tripId: tripId },
 			});
-			expect(data.trip.addressList).toContain(addressAlice);
-			expect(data.trip.addressList).toContain(addressBob);
+			expect(data.trip.addresses).toEqual(expect.arrayContaining([addressAlice, addressBob]));
 		});
 
 		it('should delete an address from the trip', async () => {
 			const { data: deleteData } = await client.mutate({
 				mutation: DELETE_ADDRESS,
-				variables: { tripId, address: addressBob },
+				variables: { tripId, addressId: addressBob.id },
 			});
-			expect(deleteData.deleteAddress).toBe(addressBob);
+			expect(deleteData.deleteAddress).toEqual(addressBob);
 
 			const { data: queryData } = await client.query({
 				query: GET_TRIP,
 				variables: { tripId },
 			});
-			expect(queryData.trip.addressList).toContain(addressAlice);
-			expect(queryData.trip.addressList).not.toContain(addressBob);
+			expect(queryData.trip.addresses).toContainEqual(addressAlice);
+			expect(queryData.trip.addresses).not.toContainEqual(addressBob);
 		});
 	});
 
@@ -141,8 +139,8 @@ describe('GraphQL API End-to-End Tests', () => {
 			const updatedRecord = {
 				name: 'Expensive Dinner',
 				amount: 500,
-				prePayAddress: 'Alice',
-				shouldPayAddress: ['Alice'],
+				prePayAddressId: addressAlice.id,
+				shouldPayAddressIds: [addressAlice.id],
 				category: 'FIX',
 				extendPayMsg: [500],
 			};

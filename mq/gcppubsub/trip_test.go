@@ -2,7 +2,7 @@ package gcppubsub_test
 
 import (
 	"context"
-	"dtm/db/db"
+	"dtm/domain"
 	"dtm/mq/gcppubsub" // Import the package to be tested
 	"dtm/mq/mq"
 	"log"
@@ -85,7 +85,7 @@ func setupTripRecordQueue(t *testing.T, action mq.Action) mq.TripRecordMessageQu
 	return trq
 }
 
-var testAddressValue = db.Address("123 Test St")
+var testAddressValue = domain.Address{ID: uuid.New(), Name: "123 Test St"}
 
 // --- Test Suite ---
 
@@ -156,9 +156,8 @@ func TestMQInterfacesWithGCPPubSub(t *testing.T) {
 				t.Errorf("Wrapper.GetTripAddressMessageQueue(%v) returned nil", action)
 			}
 		}
-		// Test ActionUpdate for AddressMQ, which is configured to be nil
-		if q := wrapper.GetTripAddressMessageQueue(mq.ActionUpdate); q != nil {
-			t.Errorf("Wrapper.GetTripAddressMessageQueue(ActionUpdate) expected nil, got %T", q)
+		if q := wrapper.GetTripAddressMessageQueue(mq.ActionUpdate); q == nil {
+			t.Error("Wrapper.GetTripAddressMessageQueue(ActionUpdate) is nil")
 		}
 	})
 }

@@ -8,7 +8,7 @@ export const CREATE_TRIP = gql`
 		createTrip(input: $input) {
 			id
 			name
-			addressList
+			addresses { id name }
 			isValid
 			records {
 				id
@@ -22,7 +22,7 @@ export const UPDATE_TRIP = gql`
 		updateTrip(tripId: $tripId, input: $input) {
 			id
 			name
-			addressList
+			addresses { id name }
 			isValid
 			records {
 				id
@@ -32,14 +32,20 @@ export const UPDATE_TRIP = gql`
 `;
 
 export const CREATE_ADDRESS = gql`
-	mutation CreateAddress($tripId: ID!, $address: String!) {
-		createAddress(tripId: $tripId, address: $address)
+	mutation CreateAddress($tripId: ID!, $input: NewAddress!) {
+		createAddress(tripId: $tripId, input: $input) { id name }
+	}
+`;
+
+export const UPDATE_ADDRESS = gql`
+	mutation UpdateAddress($tripId: ID!, $addressId: ID!, $input: NewAddress!) {
+		updateAddress(tripId: $tripId, addressId: $addressId, input: $input) { id name }
 	}
 `;
 
 export const DELETE_ADDRESS = gql`
-	mutation DeleteAddress($tripId: ID!, $address: String!) {
-		deleteAddress(tripId: $tripId, address: $address)
+	mutation DeleteAddress($tripId: ID!, $addressId: ID!) {
+		deleteAddress(tripId: $tripId, addressId: $addressId) { id name }
 	}
 `;
 
@@ -50,8 +56,8 @@ export const CREATE_RECORD = gql`
 			name
 			amount
 			time
-			prePayAddress
-			shouldPayAddress
+			prePayAddress { id name }
+			shouldPayAddress { id name }
 			extendPayMsg
 			category
 			isValid
@@ -66,8 +72,8 @@ export const UPDATE_RECORD = gql`
 			name
 			amount
 			time
-			prePayAddress
-			shouldPayAddress
+			prePayAddress { id name }
+			shouldPayAddress { id name }
 			extendPayMsg
 			category
 			isValid
@@ -87,15 +93,15 @@ export const GET_TRIP = gql`
 		trip(tripId: $tripId) {
 			id
 			name
-			addressList
+			addresses { id name }
 			isValid
 			records {
 				id
 				name
 				amount
 				time
-				prePayAddress
-				shouldPayAddress
+				prePayAddress { id name }
+				shouldPayAddress { id name }
 				extendPayMsg
 				category
 				isValid
@@ -103,11 +109,11 @@ export const GET_TRIP = gql`
 			moneyShare {
 				input {
 					amount
-					address
+					address { id name }
 				}
 				output {
 					amount
-					address
+					address { id name }
 				}
 			}
 		}
@@ -122,8 +128,8 @@ export const SUB_RECORD_CREATE = gql`
 			name
 			amount
 			time
-			prePayAddress
-			shouldPayAddress
+			prePayAddress { id name }
+			shouldPayAddress { id name }
 			extendPayMsg
 			category
 			isValid
@@ -138,8 +144,8 @@ export const SUB_RECORD_UPDATE = gql`
 			name
 			amount
 			time
-			prePayAddress
-			shouldPayAddress
+			prePayAddress { id name }
+			shouldPayAddress { id name }
 			extendPayMsg
 			category
 			isValid
@@ -155,12 +161,18 @@ export const SUB_RECORD_DELETE = gql`
 
 export const SUB_ADDRESS_CREATE = gql`
 	subscription SubAddressCreate($tripId: ID!) {
-		subAddressCreate(tripId: $tripId)
+		subAddressCreate(tripId: $tripId) { id name }
+	}
+`;
+
+export const SUB_ADDRESS_UPDATE = gql`
+	subscription SubAddressUpdate($tripId: ID!) {
+		subAddressUpdate(tripId: $tripId) { id name }
 	}
 `;
 
 export const SUB_ADDRESS_DELETE = gql`
 	subscription SubAddressDelete($tripId: ID!) {
-		subAddressDelete(tripId: $tripId)
+		subAddressDelete(tripId: $tripId) { id name }
 	}
 `;

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"sort"
+
+	"github.com/google/uuid"
 )
 
 // NormalizeCash aggregates the cash movements for each address.
@@ -12,14 +14,14 @@ import (
 // let cash will only have input or output amounts, not both.
 func NormalizeCash(cashList []Cash) []Cash {
 	// Create a map to aggregate amounts by address
-	addressMap := make(map[string]*Cash)
+	addressMap := make(map[uuid.UUID]*Cash)
 
 	for _, cash := range cashList {
-		if entry, exists := addressMap[cash.Address]; exists {
+		if entry, exists := addressMap[cash.Address.ID]; exists {
 			entry.InputAmount += cash.InputAmount
 			entry.OutputAmount += cash.OutputAmount
 		} else {
-			addressMap[cash.Address] = &Cash{
+			addressMap[cash.Address.ID] = &Cash{
 				Address:      cash.Address,
 				InputAmount:  cash.InputAmount,
 				OutputAmount: cash.OutputAmount,
@@ -69,17 +71,17 @@ func generateQueues(cashList []Cash) (*list.List, *list.List) {
 
 	// sort the input slice by InputAmount, descending, and by address for stable sorting
 	sort.SliceStable(tempInputSlice, func(i, j int) bool {
-		// Sort by address to ensure stable sorting for same InputAmount
+		// Address identity, unlike its display name, is stable across renames.
 		if tempInputSlice[i].InputAmount == tempInputSlice[j].InputAmount {
-			return tempInputSlice[i].Address < tempInputSlice[j].Address // Ascending order by address
+			return tempInputSlice[i].Address.ID.String() < tempInputSlice[j].Address.ID.String()
 		}
 		return tempInputSlice[i].InputAmount > tempInputSlice[j].InputAmount // Descending order by InputAmount
 	})
 	// Sort the output slice by OutputAmount, descending, and by address for stable sorting
 	sort.SliceStable(tempOutputSlice, func(i, j int) bool {
-		// Sort by address to ensure stable sorting for same OutputAmount
+		// Address identity, unlike its display name, is stable across renames.
 		if tempOutputSlice[i].OutputAmount == tempOutputSlice[j].OutputAmount {
-			return tempOutputSlice[i].Address < tempOutputSlice[j].Address // Ascending order by address
+			return tempOutputSlice[i].Address.ID.String() < tempOutputSlice[j].Address.ID.String()
 		}
 		return tempOutputSlice[i].OutputAmount > tempOutputSlice[j].OutputAmount // Descending order by OutputAmount
 	})
@@ -104,13 +106,13 @@ func PrintCash(cashList []Cash) {
 	for _, cash := range cashList {
 		if cash.InputAmount > 0 && cash.OutputAmount > 0 {
 			// If both input and output amounts are present, print both
-			fmt.Printf("Address: %s, Input: %.0f, Output: %.0f\n", cash.Address, cash.InputAmount, cash.OutputAmount)
+			fmt.Printf("Address: %s, Input: %.0f, Output: %.0f\n", cash.Address.Name, cash.InputAmount, cash.OutputAmount)
 		} else if cash.InputAmount > 0 {
 			// If only input amount is present, print input
-			fmt.Printf("Address: %s, Input: %.0f\n", cash.Address, cash.InputAmount)
+			fmt.Printf("Address: %s, Input: %.0f\n", cash.Address.Name, cash.InputAmount)
 		} else if cash.OutputAmount > 0 {
 			// If only output amount is present, print output
-			fmt.Printf("Address: %s, Output: %.0f\n", cash.Address, cash.OutputAmount)
+			fmt.Printf("Address: %s, Output: %.0f\n", cash.Address.Name, cash.OutputAmount)
 		}
 	}
 }
@@ -131,7 +133,7 @@ func ListTxGenerateWithMixMap(txList *[]Tx, cashList *[]Cash) (float64, error) {
 
 		// If for some reason output becomes zero or less (shouldn't happen with pre-processing), skip
 		if currentOutputCash.OutputAmount <= epsilon {
-			fmt.Printf("Warning: Output for %s is zero or negative, skipping.\n", currentOutputCash.Address)
+			fmt.Printf("Warning: Output for %s is zero or negative, skipping.\n", currentOutputCash.Address.Name)
 			continue // Skip this output
 		}
 
@@ -165,7 +167,7 @@ func ListTxGenerateWithMixMap(txList *[]Tx, cashList *[]Cash) (float64, error) {
 		if math.Abs(currentInputSum-currentOutputCash.OutputAmount) < epsilon {
 			// Inputs sum equals output. Use all collected inputs.
 			*txList = append(*txList, Tx{
-				Name:   fmt.Sprintf("Tx_M_to_%s", currentOutputCash.Address), // Simple naming
+				Name:   fmt.Sprintf("Tx_M_to_%s", currentOutputCash.Address.Name),
 				Input:  collectedInputs,
 				Output: txOutputPayment,
 			})
@@ -173,7 +175,7 @@ func ListTxGenerateWithMixMap(txList *[]Tx, cashList *[]Cash) (float64, error) {
 			// when input can not cover output
 			// This condition should not happen due to pre-processing, but let's handle it gracefully
 			return totalRemainingInputAmount, fmt.Errorf("unexpected condition: collected inputs sum %.2f is less than output %.2f for %s",
-				currentInputSum, currentOutputCash.OutputAmount, currentOutputCash.Address)
+				currentInputSum, currentOutputCash.OutputAmount, currentOutputCash.Address.Name)
 		} else { // currentInputSum > currentOutputCash.OutputAmount
 			// Inputs sum is greater than output. We need to split the last input.
 			lastInputPayment := collectedInputs[len(collectedInputs)-1]
@@ -201,7 +203,7 @@ func ListTxGenerateWithMixMap(txList *[]Tx, cashList *[]Cash) (float64, error) {
 
 			// Create the transaction
 			*txList = append(*txList, Tx{
-				Name:   fmt.Sprintf("Tx_M_to_%s", currentOutputCash.Address), // Simple naming
+				Name:   fmt.Sprintf("Tx_M_to_%s", currentOutputCash.Address.Name),
 				Input:  collectedInputs,
 				Output: txOutputPayment,
 			})

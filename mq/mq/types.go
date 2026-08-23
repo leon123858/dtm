@@ -1,7 +1,7 @@
 package mq
 
 import (
-	"dtm/db/db"
+	"dtm/domain"
 
 	"github.com/google/uuid"
 )
@@ -43,7 +43,7 @@ type TripRecordMessage struct {
 	Name          string
 	Amount        float64
 	Time          string // ISO format
-	PrePayAddress db.Address
+	PrePayAddress domain.Address
 	Category      int
 }
 
@@ -53,7 +53,7 @@ func (m TripRecordMessage) GetTopic() uuid.UUID {
 
 type TripAddressMessage struct {
 	TripID  uuid.UUID
-	Address db.Address
+	Address domain.Address
 }
 
 func (m TripAddressMessage) GetTopic() uuid.UUID {

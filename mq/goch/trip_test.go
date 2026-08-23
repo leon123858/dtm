@@ -2,7 +2,7 @@ package goch
 
 import (
 	// Assuming these paths are correct as per your project structure
-	"dtm/db/db"
+	"dtm/domain"
 	"dtm/mq/mq"
 
 	// For error comparison
@@ -529,10 +529,7 @@ func TestFanOutQueueCore_PublishNoSubscribers(t *testing.T) {
 
 // --- ChannelTripRecordMessageQueue Tests ---
 
-// Mock db.Address if not available from dtm/db/db for test environment
-// type dbAddress struct { Street string; City string }
-// For the test, we assume db.Address is available and can be instantiated.
-var testAddress = db.Address("testAddress")
+var testAddress = domain.Address{ID: uuid.New(), Name: "testAddress"}
 
 func TestNewChannelTripRecordMessageQueue(t *testing.T) {
 	t.Parallel()
@@ -711,9 +708,9 @@ func TestChannelTripAddressMessageQueue_PublishErrorIgnored(t *testing.T) {
 	topic := uuid.New()
 	_, blockerChan, _ := q.core.Subscribe(topic) // Block the core's fanOutRoutine.
 
-	msg1 := mq.TripAddressMessage{TripID: topic, Address: db.Address("testAddress1")}
-	msg2 := mq.TripAddressMessage{TripID: topic, Address: db.Address("testAddress2")}
-	msg3 := mq.TripAddressMessage{TripID: topic, Address: db.Address("testAddress3")}
+	msg1 := mq.TripAddressMessage{TripID: topic, Address: domain.Address{ID: uuid.New(), Name: "testAddress1"}}
+	msg2 := mq.TripAddressMessage{TripID: topic, Address: domain.Address{ID: uuid.New(), Name: "testAddress2"}}
+	msg3 := mq.TripAddressMessage{TripID: topic, Address: domain.Address{ID: uuid.New(), Name: "testAddress3"}}
 
 	// Publish msg1 -> core.publishChan, fanOut takes it, blocks. core.publishChan empty.
 	if err := q.Publish(msg1); err != nil { // Expected nil
@@ -777,8 +774,8 @@ func TestNewGoChanTripMessageQueueWrapper(t *testing.T) {
 		t.Errorf("AddressMQArray[ActionDelete] has action %v, expected %v", wrapper.AddressMQArray[mq.ActionDelete].GetAction(), mq.ActionDelete)
 	}
 	// Check that other address actions (like Update) are nil as per constructor logic
-	if wrapper.AddressMQArray[mq.ActionUpdate] != nil {
-		t.Errorf("AddressMQArray[ActionUpdate] should be nil, got %v", wrapper.AddressMQArray[mq.ActionUpdate])
+	if wrapper.AddressMQArray[mq.ActionUpdate] == nil {
+		t.Error("AddressMQArray[ActionUpdate] is nil")
 	}
 
 	// Verify Record MQs
@@ -856,9 +853,8 @@ func TestGoChanTripMessageQueueWrapper_GetQueues(t *testing.T) {
 			t.Errorf("GetTripAddressMessageQueue(%v) returned queue with action %v, expected %v", action, q.GetAction(), action)
 		}
 	}
-	// Test action not initialized for AddressMQ (e.g., ActionUpdate)
-	if q := wrapperIFace.GetTripAddressMessageQueue(mq.ActionUpdate); q != nil {
-		t.Errorf("GetTripAddressMessageQueue(ActionUpdate) expected nil, got %T", q)
+	if q := wrapperIFace.GetTripAddressMessageQueue(mq.ActionUpdate); q == nil {
+		t.Error("GetTripAddressMessageQueue(ActionUpdate) is nil")
 	}
 	// Test invalid/out-of-bounds actions for AddressMQ
 	if q := wrapperIFace.GetTripAddressMessageQueue(mq.Action(99)); q != nil {

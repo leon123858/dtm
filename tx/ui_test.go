@@ -20,16 +20,16 @@ func TestAverageSplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "FamilyDinnerSplit",
 				Amount:           100.0,
-				PrePayAddress:    "AliceAccount",
-				ShouldPayAddress: []string{"BobAccount", "CharlieAccount"},
+				PrePayAddress:    testAddress("AliceAccount"),
+				ShouldPayAddress: testAddresses("BobAccount", "CharlieAccount"),
 			},
 			expectedTx: Tx{
 				Name: "FamilyDinnerSplit",
 				Input: []Payment{
-					{Amount: 50.0, Address: "BobAccount"},
-					{Amount: 50.0, Address: "CharlieAccount"},
+					{Amount: 50.0, Address: testAddress("BobAccount")},
+					{Amount: 50.0, Address: testAddress("CharlieAccount")},
 				},
-				Output: Payment{Amount: 100.0, Address: "AliceAccount"},
+				Output: Payment{Amount: 100.0, Address: testAddress("AliceAccount")},
 			},
 			expectedErr:  nil,
 			expectingErr: false,
@@ -39,15 +39,15 @@ func TestAverageSplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "SinglePayment",
 				Amount:           75.0,
-				PrePayAddress:    "DavidAccount",
-				ShouldPayAddress: []string{"EveAccount"},
+				PrePayAddress:    testAddress("DavidAccount"),
+				ShouldPayAddress: testAddresses("EveAccount"),
 			},
 			expectedTx: Tx{
 				Name: "SinglePayment",
 				Input: []Payment{
-					{Amount: 75.0, Address: "EveAccount"},
+					{Amount: 75.0, Address: testAddress("EveAccount")},
 				},
-				Output: Payment{Amount: 75.0, Address: "DavidAccount"},
+				Output: Payment{Amount: 75.0, Address: testAddress("DavidAccount")},
 			},
 			expectedErr:  nil,
 			expectingErr: false,
@@ -57,17 +57,17 @@ func TestAverageSplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "DecimalSplit",
 				Amount:           99.99,
-				PrePayAddress:    "FrankAccount",
-				ShouldPayAddress: []string{"GraceAccount", "HannahAccount", "IvanAccount"},
+				PrePayAddress:    testAddress("FrankAccount"),
+				ShouldPayAddress: testAddresses("GraceAccount", "HannahAccount", "IvanAccount"),
 			},
 			expectedTx: Tx{
 				Name: "DecimalSplit",
 				Input: []Payment{
-					{Amount: 33.33, Address: "GraceAccount"},
-					{Amount: 33.33, Address: "HannahAccount"},
-					{Amount: 33.33, Address: "IvanAccount"},
+					{Amount: 33.33, Address: testAddress("GraceAccount")},
+					{Amount: 33.33, Address: testAddress("HannahAccount")},
+					{Amount: 33.33, Address: testAddress("IvanAccount")},
 				},
-				Output: Payment{Amount: 99.99, Address: "FrankAccount"},
+				Output: Payment{Amount: 99.99, Address: testAddress("FrankAccount")},
 			},
 			expectedErr:  nil,
 			expectingErr: false,
@@ -77,17 +77,17 @@ func TestAverageSplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "PrePaymentTest",
 				Amount:           150.0,
-				PrePayAddress:    "GraceAccount",
-				ShouldPayAddress: []string{"GraceAccount", "HannahAccount", "IvanAccount"},
+				PrePayAddress:    testAddress("GraceAccount"),
+				ShouldPayAddress: testAddresses("GraceAccount", "HannahAccount", "IvanAccount"),
 			},
 			expectedTx: Tx{
 				Name: "PrePaymentTest",
 				Input: []Payment{
-					{Amount: 50.0, Address: "GraceAccount"},
-					{Amount: 50.0, Address: "HannahAccount"},
-					{Amount: 50.0, Address: "IvanAccount"},
+					{Amount: 50.0, Address: testAddress("GraceAccount")},
+					{Amount: 50.0, Address: testAddress("HannahAccount")},
+					{Amount: 50.0, Address: testAddress("IvanAccount")},
 				},
-				Output: Payment{Amount: 150.0, Address: "GraceAccount"},
+				Output: Payment{Amount: 150.0, Address: testAddress("GraceAccount")},
 			},
 			expectedErr:  nil,
 			expectingErr: false,
@@ -134,8 +134,8 @@ func TestUserPayment_ToTx(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "ValidPayment",
 				Amount:           100.0,
-				PrePayAddress:    "Sender",
-				ShouldPayAddress: []string{"Receiver"},
+				PrePayAddress:    testAddress("Sender"),
+				ShouldPayAddress: testAddresses("Receiver"),
 			},
 			strategy:     dummyStrategy, // Use a dummy strategy here
 			expectedTx:   Tx{Name: "ValidPayment_converted"},
@@ -147,8 +147,8 @@ func TestUserPayment_ToTx(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "NilStrategyPayment",
 				Amount:           10.0,
-				PrePayAddress:    "Sender",
-				ShouldPayAddress: []string{"Receiver"},
+				PrePayAddress:    testAddress("Sender"),
+				ShouldPayAddress: testAddresses("Receiver"),
 			},
 			strategy:     nil, // Strategy is nil
 			expectedTx:   Tx{},
@@ -160,8 +160,8 @@ func TestUserPayment_ToTx(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "MissingPrePay",
 				Amount:           20.0,
-				PrePayAddress:    "", // Missing PrePayAddress
-				ShouldPayAddress: []string{"Receiver"},
+				PrePayAddress:    testAddress(""), // Missing PrePayAddress
+				ShouldPayAddress: testAddresses("Receiver"),
 			},
 			strategy:     dummyStrategy,
 			expectedTx:   Tx{},
@@ -173,8 +173,8 @@ func TestUserPayment_ToTx(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "EmptyShouldPay",
 				Amount:           30.0,
-				PrePayAddress:    "Sender",
-				ShouldPayAddress: []string{}, // Empty ShouldPayAddress
+				PrePayAddress:    testAddress("Sender"),
+				ShouldPayAddress: testAddresses(), // Empty ShouldPayAddress
 			},
 			strategy: dummyStrategy,
 			expectedTx: Tx{
@@ -188,8 +188,8 @@ func TestUserPayment_ToTx(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "ZeroAmount",
 				Amount:           0.0, // Zero amount
-				PrePayAddress:    "Sender",
-				ShouldPayAddress: []string{"Receiver"},
+				PrePayAddress:    testAddress("Sender"),
+				ShouldPayAddress: testAddresses("Receiver"),
 			},
 			strategy:     dummyStrategy,
 			expectedTx:   Tx{},
@@ -201,8 +201,8 @@ func TestUserPayment_ToTx(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "NegativeAmount",
 				Amount:           -5.0, // Negative amount
-				PrePayAddress:    "Sender",
-				ShouldPayAddress: []string{"Receiver"},
+				PrePayAddress:    testAddress("Sender"),
+				ShouldPayAddress: testAddresses("Receiver"),
 			},
 			strategy:     dummyStrategy,
 			expectedTx:   Tx{},
@@ -214,17 +214,17 @@ func TestUserPayment_ToTx(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "AvgSplitPayment",
 				Amount:           120.0,
-				PrePayAddress:    "AliceAccount",
-				ShouldPayAddress: []string{"BobAccount", "CharlieAccount"},
+				PrePayAddress:    testAddress("AliceAccount"),
+				ShouldPayAddress: testAddresses("BobAccount", "CharlieAccount"),
 			},
 			strategy: AverageSplitStrategy, // Use the AverageSplitStrategy directly
 			expectedTx: Tx{
 				Name: "AvgSplitPayment",
 				Input: []Payment{
-					{Amount: 60.0, Address: "BobAccount"},
-					{Amount: 60.0, Address: "CharlieAccount"},
+					{Amount: 60.0, Address: testAddress("BobAccount")},
+					{Amount: 60.0, Address: testAddress("CharlieAccount")},
 				},
-				Output: Payment{Amount: 120.0, Address: "AliceAccount"},
+				Output: Payment{Amount: 120.0, Address: testAddress("AliceAccount")},
 			},
 			expectedErr:  nil,
 			expectingErr: false,
@@ -269,17 +269,17 @@ func TestFixMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "FixedDinnerSplit",
 				Amount:           150.0,
-				PrePayAddress:    "AliceAccount",
-				ShouldPayAddress: []string{"BobAccount", "CharlieAccount"},
+				PrePayAddress:    testAddress("AliceAccount"),
+				ShouldPayAddress: testAddresses("BobAccount", "CharlieAccount"),
 				ExtendPayMsg:     []float64{100.0, 50.0},
 			},
 			expectedTx: Tx{
 				Name: "FixedDinnerSplit",
 				Input: []Payment{
-					{Amount: 100.0, Address: "BobAccount"},
-					{Amount: 50.0, Address: "CharlieAccount"},
+					{Amount: 100.0, Address: testAddress("BobAccount")},
+					{Amount: 50.0, Address: testAddress("CharlieAccount")},
 				},
-				Output: Payment{Amount: 150.0, Address: "AliceAccount"},
+				Output: Payment{Amount: 150.0, Address: testAddress("AliceAccount")},
 			},
 			expectedErr:  nil,
 			expectingErr: false,
@@ -289,8 +289,8 @@ func TestFixMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "NoRecipients",
 				Amount:           100.0,
-				PrePayAddress:    "AliceAccount",
-				ShouldPayAddress: []string{},
+				PrePayAddress:    testAddress("AliceAccount"),
+				ShouldPayAddress: testAddresses(),
 				ExtendPayMsg:     []float64{},
 			},
 			expectedTx:   Tx{},
@@ -302,8 +302,8 @@ func TestFixMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "MismatchedLengths",
 				Amount:           100.0,
-				PrePayAddress:    "AliceAccount",
-				ShouldPayAddress: []string{"BobAccount", "CharlieAccount"},
+				PrePayAddress:    testAddress("AliceAccount"),
+				ShouldPayAddress: testAddresses("BobAccount", "CharlieAccount"),
 				ExtendPayMsg:     []float64{100.0},
 			},
 			expectedTx:   Tx{},
@@ -315,8 +315,8 @@ func TestFixMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "NegativeAmount",
 				Amount:           100.0,
-				PrePayAddress:    "AliceAccount",
-				ShouldPayAddress: []string{"BobAccount", "CharlieAccount"},
+				PrePayAddress:    testAddress("AliceAccount"),
+				ShouldPayAddress: testAddresses("BobAccount", "CharlieAccount"),
 				ExtendPayMsg:     []float64{120.0, -20.0},
 			},
 			expectedTx:   Tx{},
@@ -328,17 +328,17 @@ func TestFixMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "ZeroPaymentSplit",
 				Amount:           100.0,
-				PrePayAddress:    "AliceAccount",
-				ShouldPayAddress: []string{"BobAccount", "CharlieAccount"},
+				PrePayAddress:    testAddress("AliceAccount"),
+				ShouldPayAddress: testAddresses("BobAccount", "CharlieAccount"),
 				ExtendPayMsg:     []float64{100.0, 0.0},
 			},
 			expectedTx: Tx{
 				Name: "ZeroPaymentSplit",
 				Input: []Payment{
-					{Amount: 100.0, Address: "BobAccount"},
-					{Amount: 0.0, Address: "CharlieAccount"},
+					{Amount: 100.0, Address: testAddress("BobAccount")},
+					{Amount: 0.0, Address: testAddress("CharlieAccount")},
 				},
-				Output: Payment{Amount: 100.0, Address: "AliceAccount"},
+				Output: Payment{Amount: 100.0, Address: testAddress("AliceAccount")},
 			},
 			expectedErr:  nil,
 			expectingErr: false,
@@ -380,17 +380,17 @@ func TestTransferMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "FixedDinnerSplit",
 				Amount:           150.0,
-				PrePayAddress:    "AliceAccount",
-				ShouldPayAddress: []string{"BobAccount", "CharlieAccount"},
+				PrePayAddress:    testAddress("AliceAccount"),
+				ShouldPayAddress: testAddresses("BobAccount", "CharlieAccount"),
 				ExtendPayMsg:     []float64{100.0, 50.0},
 			},
 			expectedTx: Tx{
 				Name: "FixedDinnerSplit",
 				Input: []Payment{
-					{Amount: 100.0, Address: "BobAccount"},
-					{Amount: 50.0, Address: "CharlieAccount"},
+					{Amount: 100.0, Address: testAddress("BobAccount")},
+					{Amount: 50.0, Address: testAddress("CharlieAccount")},
 				},
-				Output: Payment{Amount: 150.0, Address: "AliceAccount"},
+				Output: Payment{Amount: 150.0, Address: testAddress("AliceAccount")},
 			},
 			expectedErr:  nil,
 			expectingErr: false,
@@ -400,8 +400,8 @@ func TestTransferMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "NoRecipients",
 				Amount:           100.0,
-				PrePayAddress:    "AliceAccount",
-				ShouldPayAddress: []string{},
+				PrePayAddress:    testAddress("AliceAccount"),
+				ShouldPayAddress: testAddresses(),
 				ExtendPayMsg:     []float64{},
 			},
 			expectedTx:   Tx{},
@@ -413,8 +413,8 @@ func TestTransferMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "MismatchedLengths",
 				Amount:           100.0,
-				PrePayAddress:    "AliceAccount",
-				ShouldPayAddress: []string{"BobAccount", "CharlieAccount"},
+				PrePayAddress:    testAddress("AliceAccount"),
+				ShouldPayAddress: testAddresses("BobAccount", "CharlieAccount"),
 				ExtendPayMsg:     []float64{100.0},
 			},
 			expectedTx:   Tx{},
@@ -426,8 +426,8 @@ func TestTransferMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "NegativeAmount",
 				Amount:           100.0,
-				PrePayAddress:    "AliceAccount",
-				ShouldPayAddress: []string{"BobAccount", "CharlieAccount"},
+				PrePayAddress:    testAddress("AliceAccount"),
+				ShouldPayAddress: testAddresses("BobAccount", "CharlieAccount"),
 				ExtendPayMsg:     []float64{120.0, -20.0},
 			},
 			expectedTx:   Tx{},
@@ -439,17 +439,17 @@ func TestTransferMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "ZeroPaymentSplit",
 				Amount:           100.0,
-				PrePayAddress:    "AliceAccount",
-				ShouldPayAddress: []string{"BobAccount", "CharlieAccount"},
+				PrePayAddress:    testAddress("AliceAccount"),
+				ShouldPayAddress: testAddresses("BobAccount", "CharlieAccount"),
 				ExtendPayMsg:     []float64{100.0, 0.0},
 			},
 			expectedTx: Tx{
 				Name: "ZeroPaymentSplit",
 				Input: []Payment{
-					{Amount: 100.0, Address: "BobAccount"},
-					{Amount: 0.0, Address: "CharlieAccount"},
+					{Amount: 100.0, Address: testAddress("BobAccount")},
+					{Amount: 0.0, Address: testAddress("CharlieAccount")},
 				},
-				Output: Payment{Amount: 100.0, Address: "AliceAccount"},
+				Output: Payment{Amount: 100.0, Address: testAddress("AliceAccount")},
 			},
 			expectedErr:  nil,
 			expectingErr: false,
@@ -491,18 +491,18 @@ func TestPartMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "DinnerSplitByPortion",
 				Amount:           100.0,
-				PrePayAddress:    "AliceAccount",
-				ShouldPayAddress: []string{"BobAccount", "CharlieAccount", "DavidAccount"},
+				PrePayAddress:    testAddress("AliceAccount"),
+				ShouldPayAddress: testAddresses("BobAccount", "CharlieAccount", "DavidAccount"),
 				ExtendPayMsg:     []float64{1, 2, 2}, // Total parts: 5
 			},
 			expectedTx: Tx{
 				Name: "DinnerSplitByPortion",
 				Input: []Payment{
-					{Amount: 20.0, Address: "BobAccount"},     // 100 * (1/5)
-					{Amount: 40.0, Address: "CharlieAccount"}, // 100 * (2/5)
-					{Amount: 40.0, Address: "DavidAccount"},   // 100 * (2/5)
+					{Amount: 20.0, Address: testAddress("BobAccount")},     // 100 * (1/5)
+					{Amount: 40.0, Address: testAddress("CharlieAccount")}, // 100 * (2/5)
+					{Amount: 40.0, Address: testAddress("DavidAccount")},   // 100 * (2/5)
 				},
-				Output: Payment{Amount: 100.0, Address: "AliceAccount"},
+				Output: Payment{Amount: 100.0, Address: testAddress("AliceAccount")},
 			},
 			expectedErr:  nil,
 			expectingErr: false,
@@ -512,8 +512,8 @@ func TestPartMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "NoRecipients",
 				Amount:           100.0,
-				PrePayAddress:    "AliceAccount",
-				ShouldPayAddress: []string{},
+				PrePayAddress:    testAddress("AliceAccount"),
+				ShouldPayAddress: testAddresses(),
 				ExtendPayMsg:     []float64{},
 			},
 			expectedTx:   Tx{},
@@ -525,8 +525,8 @@ func TestPartMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "MismatchedLengths",
 				Amount:           100.0,
-				PrePayAddress:    "AliceAccount",
-				ShouldPayAddress: []string{"BobAccount"},
+				PrePayAddress:    testAddress("AliceAccount"),
+				ShouldPayAddress: testAddresses("BobAccount"),
 				ExtendPayMsg:     []float64{1, 2},
 			},
 			expectedTx:   Tx{},
@@ -538,8 +538,8 @@ func TestPartMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "NegativePart",
 				Amount:           100.0,
-				PrePayAddress:    "AliceAccount",
-				ShouldPayAddress: []string{"BobAccount", "CharlieAccount"},
+				PrePayAddress:    testAddress("AliceAccount"),
+				ShouldPayAddress: testAddresses("BobAccount", "CharlieAccount"),
 				ExtendPayMsg:     []float64{1, -1},
 			},
 			expectedTx:   Tx{},
@@ -551,18 +551,18 @@ func TestPartMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "ZeroPartSplit",
 				Amount:           120.0,
-				PrePayAddress:    "AliceAccount",
-				ShouldPayAddress: []string{"BobAccount", "CharlieAccount", "DavidAccount"},
+				PrePayAddress:    testAddress("AliceAccount"),
+				ShouldPayAddress: testAddresses("BobAccount", "CharlieAccount", "DavidAccount"),
 				ExtendPayMsg:     []float64{3, 0, 1}, // Total parts: 4
 			},
 			expectedTx: Tx{
 				Name: "ZeroPartSplit",
 				Input: []Payment{
-					{Amount: 90.0, Address: "BobAccount"},    // 120 * (3/4)
-					{Amount: 0.0, Address: "CharlieAccount"}, // 120 * (0/4)
-					{Amount: 30.0, Address: "DavidAccount"},  // 120 * (1/4)
+					{Amount: 90.0, Address: testAddress("BobAccount")},    // 120 * (3/4)
+					{Amount: 0.0, Address: testAddress("CharlieAccount")}, // 120 * (0/4)
+					{Amount: 30.0, Address: testAddress("DavidAccount")},  // 120 * (1/4)
 				},
-				Output: Payment{Amount: 120.0, Address: "AliceAccount"},
+				Output: Payment{Amount: 120.0, Address: testAddress("AliceAccount")},
 			},
 			expectedErr:  nil,
 			expectingErr: false,
@@ -572,14 +572,14 @@ func TestPartMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "ZeroPartSplit",
 				Amount:           120.0,
-				PrePayAddress:    "AliceAccount",
-				ShouldPayAddress: []string{"BobAccount", "CharlieAccount", "DavidAccount"},
+				PrePayAddress:    testAddress("AliceAccount"),
+				ShouldPayAddress: testAddresses("BobAccount", "CharlieAccount", "DavidAccount"),
 				ExtendPayMsg:     []float64{0, 0, 0}, // Total parts: 4
 			},
 			expectedTx: Tx{
 				Name:   "ZeroPartSplit",
 				Input:  []Payment{},
-				Output: Payment{Amount: 120.0, Address: "AliceAccount"},
+				Output: Payment{Amount: 120.0, Address: testAddress("AliceAccount")},
 			},
 			expectedErr:  fmt.Errorf("ExtendPayMsg must have a positive sum"),
 			expectingErr: true,
@@ -621,18 +621,18 @@ func TestFixBeforeAverageMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "MixedSplit",
 				Amount:           100.0,
-				PrePayAddress:    "Alice",
-				ShouldPayAddress: []string{"Bob", "Charlie", "David"},
+				PrePayAddress:    testAddress("Alice"),
+				ShouldPayAddress: testAddresses("Bob", "Charlie", "David"),
 				ExtendPayMsg:     []float64{-20, 0, 10},
 			},
 			want: Tx{
 				Name: "MixedSplit",
 				Input: []Payment{
-					{Amount: 20, Address: "Bob"},
-					{Amount: 35, Address: "Charlie"},
-					{Amount: 45, Address: "David"},
+					{Amount: 20, Address: testAddress("Bob")},
+					{Amount: 35, Address: testAddress("Charlie")},
+					{Amount: 45, Address: testAddress("David")},
 				},
-				Output: Payment{Amount: 100.0, Address: "Alice"},
+				Output: Payment{Amount: 100.0, Address: testAddress("Alice")},
 			},
 			wantErr: false,
 		},
@@ -641,18 +641,18 @@ func TestFixBeforeAverageMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "AllAdjusted",
 				Amount:           120.0,
-				PrePayAddress:    "Alice",
-				ShouldPayAddress: []string{"Bob", "Charlie", "David"},
+				PrePayAddress:    testAddress("Alice"),
+				ShouldPayAddress: testAddresses("Bob", "Charlie", "David"),
 				ExtendPayMsg:     []float64{10, 0, 20},
 			},
 			want: Tx{
 				Name: "AllAdjusted",
 				Input: []Payment{
-					{Amount: 40, Address: "Bob"},
-					{Amount: 30, Address: "Charlie"},
-					{Amount: 50, Address: "David"},
+					{Amount: 40, Address: testAddress("Bob")},
+					{Amount: 30, Address: testAddress("Charlie")},
+					{Amount: 50, Address: testAddress("David")},
 				},
-				Output: Payment{Amount: 120.0, Address: "Alice"},
+				Output: Payment{Amount: 120.0, Address: testAddress("Alice")},
 			},
 			wantErr: false,
 		},
@@ -661,17 +661,17 @@ func TestFixBeforeAverageMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "NoAveragePayers",
 				Amount:           100.0,
-				PrePayAddress:    "Alice",
-				ShouldPayAddress: []string{"Bob", "Charlie"},
+				PrePayAddress:    testAddress("Alice"),
+				ShouldPayAddress: testAddresses("Bob", "Charlie"),
 				ExtendPayMsg:     []float64{-50, -50},
 			},
 			want: Tx{
 				Name: "NoAveragePayers",
 				Input: []Payment{
-					{Amount: 50, Address: "Bob"},
-					{Amount: 50, Address: "Charlie"},
+					{Amount: 50, Address: testAddress("Bob")},
+					{Amount: 50, Address: testAddress("Charlie")},
 				},
-				Output: Payment{Amount: 100.0, Address: "Alice"},
+				Output: Payment{Amount: 100.0, Address: testAddress("Alice")},
 			},
 			wantErr: false,
 		},
@@ -680,8 +680,8 @@ func TestFixBeforeAverageMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "NegativeLastMoney",
 				Amount:           100.0,
-				PrePayAddress:    "Alice",
-				ShouldPayAddress: []string{"Bob", "Charlie"},
+				PrePayAddress:    testAddress("Alice"),
+				ShouldPayAddress: testAddresses("Bob", "Charlie"),
 				ExtendPayMsg:     []float64{0, 110}, // 100 - 110 = -10
 			},
 
@@ -694,8 +694,8 @@ func TestFixBeforeAverageMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "EmptyShouldPay",
 				Amount:           100.0,
-				PrePayAddress:    "Alice",
-				ShouldPayAddress: []string{},
+				PrePayAddress:    testAddress("Alice"),
+				ShouldPayAddress: testAddresses(),
 				ExtendPayMsg:     []float64{},
 			},
 			want:        Tx{},
@@ -707,8 +707,8 @@ func TestFixBeforeAverageMoneySplitStrategy(t *testing.T) {
 			userPayment: &UserPayment{
 				Name:             "MismatchedLengths",
 				Amount:           100.0,
-				PrePayAddress:    "Alice",
-				ShouldPayAddress: []string{"Bob", "Charlie"},
+				PrePayAddress:    testAddress("Alice"),
+				ShouldPayAddress: testAddresses("Bob", "Charlie"),
 				ExtendPayMsg:     []float64{-50},
 			},
 			want:        Tx{},
@@ -733,10 +733,10 @@ func TestFixBeforeAverageMoneySplitStrategy(t *testing.T) {
 
 			// Sort inputs for consistent comparison
 			sort.Slice(got.Input, func(i, j int) bool {
-				return got.Input[i].Address < got.Input[j].Address
+				return got.Input[i].Address.ID.String() < got.Input[j].Address.ID.String()
 			})
 			sort.Slice(tt.want.Input, func(i, j int) bool {
-				return tt.want.Input[i].Address < tt.want.Input[j].Address
+				return tt.want.Input[i].Address.ID.String() < tt.want.Input[j].Address.ID.String()
 			})
 
 			if !reflect.DeepEqual(got, tt.want) {

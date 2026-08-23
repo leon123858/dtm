@@ -268,12 +268,15 @@ func NewGCPTripMessageQueueWrapper(ctx context.Context, projectID string) (mq.Tr
 
 	wrapper := &GCPTripMessageQueueWrapper{}
 
-	// Address: Create, Delete
+	// Address: Create, Update, Delete
 	wrapper.AddressMQArray[mq.ActionCreate], err = NewTripAddressMessageQueue(ctx, client, mq.ActionCreate)
 	if err != nil {
 		return nil, err
 	}
-	wrapper.AddressMQArray[mq.ActionUpdate] = nil // Not implemented for Address
+	wrapper.AddressMQArray[mq.ActionUpdate], err = NewTripAddressMessageQueue(ctx, client, mq.ActionUpdate)
+	if err != nil {
+		return nil, err
+	}
 	wrapper.AddressMQArray[mq.ActionDelete], err = NewTripAddressMessageQueue(ctx, client, mq.ActionDelete)
 	if err != nil {
 		return nil, err

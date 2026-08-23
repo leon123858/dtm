@@ -1,4 +1,4 @@
-package db
+package domain
 
 import (
 	"time"
@@ -13,7 +13,12 @@ const (
 	CategoryFix
 )
 
-type Address string
+// Address is a trip-scoped participant. ID is the stable identity; Name is
+// display data and may be changed without affecting financial relationships.
+type Address struct {
+	ID   uuid.UUID
+	Name string
+}
 
 type ExtendAddress struct {
 	Address   Address

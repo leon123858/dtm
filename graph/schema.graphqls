@@ -29,12 +29,12 @@ type Record {
 	id: ID!
 	name: String!
 	amount: Float!
-	prePayAddress: String!
+	prePayAddress: Address!
 	"""
 	time: by JS Date().getTime().toString()
 	"""
 	time: String!
-	shouldPayAddress: [String!]!
+	shouldPayAddress: [Address!]!
 	extendPayMsg: [Float!]!
 	category: RecordCategory!
 	isValid: Boolean!
@@ -42,7 +42,12 @@ type Record {
 
 type Payment {
 	amount: Float!
-	address: String!
+	address: Address!
+}
+
+type Address {
+	id: ID!
+	name: String!
 }
 
 type Tx {
@@ -55,7 +60,7 @@ type Trip {
 	name: String!
 	records: [Record!]!
 	moneyShare: [Tx!]!
-	addressList: [String!]!
+	addresses: [Address!]!
 	isValid: Boolean!
 }
 
@@ -63,8 +68,9 @@ type Subscription {
 	subRecordCreate(tripId: ID!): Record!
 	subRecordDelete(tripId: ID!): ID!
 	subRecordUpdate(tripId: ID!): Record!
-	subAddressCreate(tripId: ID!): String!
-	subAddressDelete(tripId: ID!): String!
+	subAddressCreate(tripId: ID!): Address!
+	subAddressUpdate(tripId: ID!): Address!
+	subAddressDelete(tripId: ID!): Address!
 }
 
 type Query {
@@ -74,12 +80,12 @@ type Query {
 input NewRecord {
 	name: String!
 	amount: Float!
-	prePayAddress: String!
+	prePayAddressId: ID!
 	"""
 	time: by JS Date().getTime().toString()
 	"""
 	time: String
-	shouldPayAddress: [String!]!
+	shouldPayAddressIds: [ID!]!
 	extendPayMsg: [Float!]
 	category: RecordCategory
 }
@@ -93,12 +99,17 @@ input NewTrip {
 	name: String!
 }
 
+input NewAddress {
+	name: String!
+}
+
 type Mutation {
 	createTrip(input: NewTrip!): Trip!
 	updateTrip(tripId: ID!, input: NewTrip!): Trip!
 	createRecord(tripId: ID!, input: NewRecord!): Record!
 	updateRecord(recordId: ID!, input: EditRecord!): Record!
 	removeRecord(recordId: ID!): ID!
-	createAddress(tripId: ID!, address: String!): String!
-	deleteAddress(tripId: ID!, address: String!): String!
+	createAddress(tripId: ID!, input: NewAddress!): Address!
+	updateAddress(tripId: ID!, addressId: ID!, input: NewAddress!): Address!
+	deleteAddress(tripId: ID!, addressId: ID!): Address!
 }

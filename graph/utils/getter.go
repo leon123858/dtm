@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"dtm/domain"
 	"dtm/graph/model"
 	"dtm/tx"
 	"fmt"
@@ -48,7 +49,7 @@ func CalculateMoneyShare(ctx context.Context, obj *model.Trip) (*tx.Package, flo
 		return nil, 0, false, fmt.Errorf("failed to get records for trip %s: %w", tripID, err)
 	}
 
-	recordAddresses := make([][]db.ExtendAddress, len(records))
+	recordAddresses := make([][]domain.ExtendAddress, len(records))
 	for i, record := range records {
 		recordAddresses[i], err = dataLoader.GetRecordShouldPayList.Load(ctx, record.ID)
 		if err != nil {
@@ -69,13 +70,13 @@ func CalculateMoneyShare(ctx context.Context, obj *model.Trip) (*tx.Package, flo
 		payment := tx.UserPayment{
 			Name:             record.Name,
 			Amount:           record.Amount,
-			PrePayAddress:    string(record.PrePayAddress),
-			ShouldPayAddress: make([]string, len(recordAddresses[i])),
+			PrePayAddress:    record.PrePayAddress,
+			ShouldPayAddress: make([]domain.Address, len(recordAddresses[i])),
 			ExtendPayMsg:     make([]float64, len(recordAddresses[i])),
 			PaymentType:      int(record.Category),
 		}
 		for j, addr := range recordAddresses[i] {
-			payment.ShouldPayAddress[j] = string(addr.Address)
+			payment.ShouldPayAddress[j] = addr.Address
 			payment.ExtendPayMsg[j] = addr.ExtendMsg
 		}
 		payments = append(payments, payment)
@@ -108,7 +109,7 @@ func CalculateMoneyShare(ctx context.Context, obj *model.Trip) (*tx.Package, flo
 	return nil, 0, false, nil
 }
 
-func GetShouldPayList(ctx context.Context, obj *model.Record) ([]db.ExtendAddress, error) {
+func GetShouldPayList(ctx context.Context, obj *model.Record) ([]domain.ExtendAddress, error) {
 	ginCtx, err := GinContextFromContext(ctx)
 	if err != nil {
 		return nil, err

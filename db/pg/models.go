@@ -20,13 +20,13 @@ func (TripInfoModel) TableName() string {
 }
 
 type RecordModel struct {
-	ID            uuid.UUID `gorm:"type:uuid;primaryKey"`
-	TripID        uuid.UUID `gorm:"type:uuid;not null"`
-	Name          string    `gorm:"size:255;not null"`
-	Amount        float64   `gorm:"type:numeric(10,2);not null"`
-	Time          time.Time `gorm:"not null"` // Use time.Time to store the timestamp
-	PrePayAddress string    `gorm:"size:255;not null"`
-	Category      int       `gorm:"not null"` // Use int to store the category
+	ID              uuid.UUID `gorm:"type:uuid;primaryKey"`
+	TripID          uuid.UUID `gorm:"type:uuid;not null"`
+	Name            string    `gorm:"size:255;not null"`
+	Amount          float64   `gorm:"type:numeric(10,2);not null"`
+	Time            time.Time `gorm:"not null"` // Use time.Time to store the timestamp
+	PrePayAddressID uuid.UUID `gorm:"type:uuid;not null"`
+	Category        int       `gorm:"not null"` // Use int to store the category
 	// meta data
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -39,8 +39,8 @@ func (RecordModel) TableName() string {
 
 type RecordShouldPayAddressListModel struct {
 	RecordID    uuid.UUID `gorm:"type:uuid;primaryKey"`
-	TripID      uuid.UUID `gorm:"type:uuid;primaryKey"`
-	Address     string    `gorm:"size:255;primaryKey"`
+	TripID      uuid.UUID `gorm:"type:uuid;not null"`
+	AddressID   uuid.UUID `gorm:"type:uuid;primaryKey"`
 	ExtendedMsg float64   `gorm:"type:numeric(10,2)"`
 	// meta data
 	CreatedAt time.Time
@@ -51,15 +51,16 @@ func (RecordShouldPayAddressListModel) TableName() string {
 	return "record_should_pay_address_lists"
 }
 
-type TripAddressListModel struct {
-	TripID  uuid.UUID `gorm:"type:uuid;primaryKey"`
-	Address string    `gorm:"size:255;primaryKey"`
+type AddressModel struct {
+	ID     uuid.UUID `gorm:"type:uuid;primaryKey"`
+	TripID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_addresses_trip_name,priority:1"`
+	Name   string    `gorm:"size:255;not null;uniqueIndex:idx_addresses_trip_name,priority:2"`
 	// meta data
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
 
-// TableName returns the table name for TripAddressListModel.
-func (TripAddressListModel) TableName() string {
-	return "trip_address_lists"
+// TableName returns the table name for AddressModel.
+func (AddressModel) TableName() string {
+	return "addresses"
 }

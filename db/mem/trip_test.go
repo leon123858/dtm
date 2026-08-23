@@ -2,38 +2,72 @@ package mem
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"testing"
 	"time"
 
+	"dtm/db/db"
+	"dtm/domain"
 	"dtm/libs/diff"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
-
-	dbt "dtm/db/db"
 )
 
 // Helper function to create a new TripInfo
-func newTripInfo(name string) *dbt.TripInfo {
-	return &dbt.TripInfo{
+func newTripInfo(name string) *domain.TripInfo {
+	return &domain.TripInfo{
 		ID:   uuid.New(),
 		Name: name,
 	}
 }
 
+func addr(name string) domain.Address {
+	return domain.Address{ID: uuid.NewSHA1(uuid.Nil, []byte(name)), Name: name}
+}
+
+func createRecords(t *testing.T, wrapper db.TripDBWrapper, tripID uuid.UUID, records []domain.Record) error {
+	t.Helper()
+	memory := wrapper.(*inMemoryTripDBWrapper)
+	memory.mu.Lock()
+	tripData, exists := memory.tripsData[tripID]
+	if !exists {
+		memory.mu.Unlock()
+		return fmt.Errorf("trip with ID %s not found", tripID)
+	}
+	known := make(map[uuid.UUID]struct{}, len(tripData.AddressList))
+	for _, address := range tripData.AddressList {
+		known[address.ID] = struct{}{}
+	}
+	add := func(address domain.Address) {
+		if _, ok := known[address.ID]; !ok {
+			tripData.AddressList = append(tripData.AddressList, address)
+			known[address.ID] = struct{}{}
+		}
+	}
+	for _, record := range records {
+		add(record.PrePayAddress)
+		for _, address := range record.ShouldPayAddress {
+			add(address.Address)
+		}
+	}
+	memory.mu.Unlock()
+	return wrapper.CreateTripRecords(tripID, records)
+}
+
 // Helper function to create a new Record
-func newRecord(name string, amount float64, prePayAddress dbt.Address, shouldPayAddresses []dbt.ExtendAddress) dbt.Record {
-	return dbt.Record{
-		RecordInfo: dbt.RecordInfo{
+func newRecord(name string, amount float64, prePayAddress domain.Address, shouldPayAddresses []domain.ExtendAddress) domain.Record {
+	return domain.Record{
+		RecordInfo: domain.RecordInfo{
 			ID:            uuid.New(),
 			Name:          name,
 			Amount:        amount,
 			Time:          time.Now(),
 			PrePayAddress: prePayAddress,
-			Category:      dbt.CategoryNormal, // Default category
+			Category:      domain.CategoryNormal, // Default category
 		},
-		RecordData: dbt.RecordData{
+		RecordData: domain.RecordData{
 			ShouldPayAddress: shouldPayAddresses,
 		},
 	}
@@ -80,16 +114,16 @@ func TestCreateTripRecords(t *testing.T) {
 	_ = db.CreateTrip(tripInfo)
 
 	t.Run("Successfully add records to a trip", func(t *testing.T) {
-		records := []dbt.Record{
-			newRecord("Record 1", 100.0, "Address A", []dbt.ExtendAddress{
-				{Address: "Address X", ExtendMsg: 10.0},
-				{Address: "Address Y", ExtendMsg: 20.0},
+		records := []domain.Record{
+			newRecord("Record 1", 100.0, addr("Address A"), []domain.ExtendAddress{
+				{Address: addr("Address X"), ExtendMsg: 10.0},
+				{Address: addr("Address Y"), ExtendMsg: 20.0},
 			}),
-			newRecord("Record 2", 50.0, "Address B", []dbt.ExtendAddress{
-				{Address: "Address Z", ExtendMsg: 30.0},
+			newRecord("Record 2", 50.0, addr("Address B"), []domain.ExtendAddress{
+				{Address: addr("Address Z"), ExtendMsg: 30.0},
 			}),
 		}
-		err := db.CreateTripRecords(tripInfo.ID, records)
+		err := createRecords(t, db, tripInfo.ID, records)
 		assert.NoError(t, err)
 
 		retrievedRecords, err := db.GetTripRecords(tripInfo.ID)
@@ -100,16 +134,16 @@ func TestCreateTripRecords(t *testing.T) {
 		assert.Contains(t, retrievedRecords, records[0].RecordInfo)
 		assert.Contains(t, retrievedRecords, records[1].RecordInfo)
 
-		assert.Equal(t, records[0].Category, dbt.CategoryNormal, "Category should be normal by default")
-		assert.Equal(t, records[1].Category, dbt.CategoryNormal, "Category should be normal by default")
+		assert.Equal(t, records[0].Category, domain.CategoryNormal, "Category should be normal by default")
+		assert.Equal(t, records[1].Category, domain.CategoryNormal, "Category should be normal by default")
 
 		// Add more records
-		moreRecords := []dbt.Record{
-			newRecord("Record 3", 75.0, "Address C", []dbt.ExtendAddress{
-				{Address: "Address W", ExtendMsg: 15.0},
+		moreRecords := []domain.Record{
+			newRecord("Record 3", 75.0, addr("Address C"), []domain.ExtendAddress{
+				{Address: addr("Address W"), ExtendMsg: 15.0},
 			}),
 		}
-		err = db.CreateTripRecords(tripInfo.ID, moreRecords)
+		err = createRecords(t, db, tripInfo.ID, moreRecords)
 		assert.NoError(t, err)
 
 		retrievedRecords, err = db.GetTripRecords(tripInfo.ID)
@@ -121,12 +155,46 @@ func TestCreateTripRecords(t *testing.T) {
 
 	t.Run("Fail to add records to non-existent trip", func(t *testing.T) {
 		nonExistentID := uuid.New()
-		records := []dbt.Record{newRecord("Record 4", 20.0, "Address D", nil)}
-		err := db.CreateTripRecords(nonExistentID, records)
+		records := []domain.Record{newRecord("Record 4", 20.0, addr("Address D"), nil)}
+		err := createRecords(t, db, nonExistentID, records)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "trip with ID")
 		assert.Contains(t, err.Error(), "not found")
 	})
+}
+
+func TestCreateTripRecordsRejectsBatchAtomically(t *testing.T) {
+	db := NewInMemoryTripDBWrapper()
+	trip := newTripInfo("Atomic batch")
+	otherTrip := newTripInfo("Other atomic batch")
+	assert.NoError(t, db.CreateTrip(trip))
+	assert.NoError(t, db.CreateTrip(otherTrip))
+
+	prePay, err := db.CreateAddress(trip.ID, "Atomic pre-pay")
+	assert.NoError(t, err)
+	shouldPay, err := db.CreateAddress(trip.ID, "Atomic should-pay")
+	assert.NoError(t, err)
+	foreign, err := db.CreateAddress(otherTrip.ID, "Foreign atomic address")
+	assert.NoError(t, err)
+
+	valid := newRecord(
+		"Valid record",
+		10,
+		*prePay,
+		[]domain.ExtendAddress{{Address: *shouldPay}},
+	)
+	invalid := newRecord(
+		"Invalid record",
+		20,
+		*prePay,
+		[]domain.ExtendAddress{{Address: *foreign}},
+	)
+
+	err = db.CreateTripRecords(trip.ID, []domain.Record{valid, invalid})
+	assert.Error(t, err)
+	records, getErr := db.GetTripRecords(trip.ID)
+	assert.NoError(t, getErr)
+	assert.Empty(t, records, "failed batch must not persist earlier valid records")
 }
 
 func TestGetTripInfo(t *testing.T) {
@@ -158,14 +226,14 @@ func TestGetTripRecords(t *testing.T) {
 	tripInfo := newTripInfo("Trip Zeta")
 	_ = db.CreateTrip(tripInfo)
 
-	record1 := newRecord("Zeta Record 1", 10.0, "Addr1", []dbt.ExtendAddress{
-		{Address: "Pay1", ExtendMsg: 5.0},
+	record1 := newRecord("Zeta Record 1", 10.0, addr("Addr1"), []domain.ExtendAddress{
+		{Address: addr("Pay1"), ExtendMsg: 5.0},
 	})
-	record2 := newRecord("Zeta Record 2", 20.0, "Addr2", []dbt.ExtendAddress{
-		{Address: "Pay2", ExtendMsg: 10.0},
-		{Address: "Pay3", ExtendMsg: 15.0},
+	record2 := newRecord("Zeta Record 2", 20.0, addr("Addr2"), []domain.ExtendAddress{
+		{Address: addr("Pay2"), ExtendMsg: 10.0},
+		{Address: addr("Pay3"), ExtendMsg: 15.0},
 	})
-	_ = db.CreateTripRecords(tripInfo.ID, []dbt.Record{record1, record2})
+	_ = createRecords(t, db, tripInfo.ID, []domain.Record{record1, record2})
 
 	t.Run("Successfully retrieve trip records", func(t *testing.T) {
 		retrievedRecords, err := db.GetTripRecords(tripInfo.ID)
@@ -173,7 +241,7 @@ func TestGetTripRecords(t *testing.T) {
 		assert.Len(t, retrievedRecords, 2)
 
 		// Convert original records to RecordInfo for comparison
-		expectedRecords := []dbt.RecordInfo{record1.RecordInfo, record2.RecordInfo}
+		expectedRecords := []domain.RecordInfo{record1.RecordInfo, record2.RecordInfo}
 		sort.Slice(retrievedRecords, func(i, j int) bool {
 			return retrievedRecords[i].ID.String() < retrievedRecords[j].ID.String()
 		})
@@ -205,15 +273,15 @@ func TestGetTripAddressList(t *testing.T) {
 	tripInfo := newTripInfo("Trip Eta")
 	_ = db.CreateTrip(tripInfo)
 
-	_ = db.TripAddressListAdd(tripInfo.ID, "Addr A")
-	_ = db.TripAddressListAdd(tripInfo.ID, "Addr B")
+	addrA, _ := db.CreateAddress(tripInfo.ID, "Addr A")
+	addrB, _ := db.CreateAddress(tripInfo.ID, "Addr B")
 
 	t.Run("Successfully retrieve trip address list", func(t *testing.T) {
 		addressList, err := db.GetTripAddressList(tripInfo.ID)
 		assert.NoError(t, err)
 		assert.Len(t, addressList, 2)
-		assert.Contains(t, addressList, dbt.Address("Addr A"))
-		assert.Contains(t, addressList, dbt.Address("Addr B"))
+		assert.Contains(t, addressList, *addrA)
+		assert.Contains(t, addressList, *addrB)
 	})
 
 	t.Run("Retrieve address list for trip with no addresses", func(t *testing.T) {
@@ -238,31 +306,35 @@ func TestGetRecordAddressList(t *testing.T) {
 	tripInfo := newTripInfo("Trip Theta")
 	_ = db.CreateTrip(tripInfo)
 
-	record1 := newRecord("Rec Theta 1", 10.0, "PrePay1", []dbt.ExtendAddress{
-		{Address: "ShouldPay1", ExtendMsg: 5.0},
-		{Address: "ShouldPay2", ExtendMsg: 10.0},
+	record1 := newRecord("Rec Theta 1", 10.0, addr("PrePay1"), []domain.ExtendAddress{
+		{Address: addr("ShouldPay1"), ExtendMsg: 5.0},
+		{Address: addr("ShouldPay2"), ExtendMsg: 10.0},
 	})
-	record2 := newRecord("Rec Theta 2", 20.0, "PrePay2", []dbt.ExtendAddress{
-		{Address: "ShouldPay3", ExtendMsg: 15.0},
+	record2 := newRecord("Rec Theta 2", 20.0, addr("PrePay2"), []domain.ExtendAddress{
+		{Address: addr("ShouldPay3"), ExtendMsg: 15.0},
 	})
-	_ = db.CreateTripRecords(tripInfo.ID, []dbt.Record{record1, record2})
+	_ = createRecords(t, db, tripInfo.ID, []domain.Record{record1, record2})
 
 	t.Run("Successfully retrieve record's should pay address list", func(t *testing.T) {
+		recordTripID, err := db.GetRecordTripID(record1.ID)
+		assert.NoError(t, err)
+		assert.Equal(t, tripInfo.ID, recordTripID)
+
 		addressList, err := db.GetRecordAddressList(record1.ID)
 		assert.NoError(t, err)
 		assert.Len(t, addressList, 2)
-		assert.Contains(t, addressList, dbt.ExtendAddress{Address: "ShouldPay1", ExtendMsg: 5.0})
-		assert.Contains(t, addressList, dbt.ExtendAddress{Address: "ShouldPay2", ExtendMsg: 10.0})
+		assert.Contains(t, addressList, domain.ExtendAddress{Address: addr("ShouldPay1"), ExtendMsg: 5.0})
+		assert.Contains(t, addressList, domain.ExtendAddress{Address: addr("ShouldPay2"), ExtendMsg: 10.0})
 
 		addressList, err = db.GetRecordAddressList(record2.ID)
 		assert.NoError(t, err)
 		assert.Len(t, addressList, 1)
-		assert.Contains(t, addressList, dbt.ExtendAddress{Address: "ShouldPay3", ExtendMsg: 15.0})
+		assert.Contains(t, addressList, domain.ExtendAddress{Address: addr("ShouldPay3"), ExtendMsg: 15.0})
 	})
 
 	t.Run("Retrieve should pay address list for record with no should pay addresses", func(t *testing.T) {
-		recordEmpty := newRecord("Rec Empty", 5.0, "PrePay", nil)
-		_ = db.CreateTripRecords(tripInfo.ID, []dbt.Record{recordEmpty})
+		recordEmpty := newRecord("Rec Empty", 5.0, addr("PrePay"), nil)
+		_ = createRecords(t, db, tripInfo.ID, []domain.Record{recordEmpty})
 		addressList, err := db.GetRecordAddressList(recordEmpty.ID)
 		assert.NoError(t, err)
 		assert.Empty(t, addressList)
@@ -270,6 +342,10 @@ func TestGetRecordAddressList(t *testing.T) {
 
 	t.Run("Fail to retrieve record's should pay address list for non-existent record", func(t *testing.T) {
 		nonExistentID := uuid.New()
+		recordTripID, tripErr := db.GetRecordTripID(nonExistentID)
+		assert.Error(t, tripErr)
+		assert.Equal(t, uuid.Nil, recordTripID)
+
 		addressList, err := db.GetRecordAddressList(nonExistentID)
 		assert.Error(t, err)
 		assert.Nil(t, addressList)
@@ -283,7 +359,7 @@ func TestUpdateTripInfo(t *testing.T) {
 	_ = db.CreateTrip(info)
 
 	t.Run("Successfully update trip info", func(t *testing.T) {
-		updatedInfo := &dbt.TripInfo{
+		updatedInfo := &domain.TripInfo{
 			ID:   info.ID,
 			Name: "Updated Trip Name",
 		}
@@ -298,7 +374,7 @@ func TestUpdateTripInfo(t *testing.T) {
 
 	t.Run("Fail to update non-existent trip info", func(t *testing.T) {
 		nonExistentID := uuid.New()
-		updatedInfo := &dbt.TripInfo{
+		updatedInfo := &domain.TripInfo{
 			ID:   nonExistentID,
 			Name: "Non-existent Update",
 		}
@@ -313,27 +389,31 @@ func TestUpdateTripRecord(t *testing.T) {
 	tripInfo := newTripInfo("Trip Iota")
 	_ = db.CreateTrip(tripInfo)
 
-	record1 := newRecord("Rec Iota 1", 10.0, "PrePay1", []dbt.ExtendAddress{
-		{Address: "PayA"},
+	record1 := newRecord("Rec Iota 1", 10.0, addr("PrePay1"), []domain.ExtendAddress{
+		{Address: addr("PayA")},
 	})
-	record2 := newRecord("Rec Iota 2", 20.0, "PrePay2", []dbt.ExtendAddress{
-		{Address: "PayB"},
+	record2 := newRecord("Rec Iota 2", 20.0, addr("PrePay2"), []domain.ExtendAddress{
+		{Address: addr("PayB")},
 	})
-	_ = db.CreateTripRecords(tripInfo.ID, []dbt.Record{record1, record2})
+	_ = createRecords(t, db, tripInfo.ID, []domain.Record{record1, record2})
 
 	t.Run("Successfully update an existing record", func(t *testing.T) {
-		updatedRecordInfo := dbt.RecordInfo{
+		newPrePay, err := db.CreateAddress(tripInfo.ID, "NewPrePay1")
+		assert.NoError(t, err)
+		payU, err := db.CreateAddress(tripInfo.ID, "PayU")
+		assert.NoError(t, err)
+		updatedRecordInfo := domain.RecordInfo{
 			ID:            record1.ID,
 			Name:          "Updated Rec Iota 1",
 			Amount:        15.0,
-			PrePayAddress: "NewPrePay1",
+			PrePayAddress: *newPrePay,
 			Time:          time.Now(),
-			Category:      dbt.CategoryFix, // Change category to Fix for this test
+			Category:      domain.CategoryFix, // Change category to Fix for this test
 		}
-		updatedRecord := dbt.Record{
+		updatedRecord := domain.Record{
 			RecordInfo: updatedRecordInfo,
-			RecordData: dbt.RecordData{
-				ShouldPayAddress: []dbt.ExtendAddress{{Address: "PayU"}},
+			RecordData: domain.RecordData{
+				ShouldPayAddress: []domain.ExtendAddress{{Address: *payU}},
 			},
 		}
 		cl, err := diff.GetCustomDiffer().Diff(record1, updatedRecord)
@@ -364,19 +444,19 @@ func TestUpdateTripRecord(t *testing.T) {
 		// Verify that RecordData (ShouldPayAddress)
 		shouldPayList, err := db.GetRecordAddressList(record1.ID)
 		assert.NoError(t, err)
-		assert.Equal(t, []dbt.ExtendAddress{{Address: "PayU", ExtendMsg: 0}}, shouldPayList) // Should be updated to "PayU"
+		assert.Equal(t, []domain.ExtendAddress{{Address: *payU, ExtendMsg: 0}}, shouldPayList)
 	})
 
 	t.Run("Fail to update non-existent record", func(t *testing.T) {
-		nonExistentRecordInfo := dbt.RecordInfo{
+		nonExistentRecordInfo := domain.RecordInfo{
 			ID:   uuid.New(),
 			Name: "Non-existent Record",
 		}
 
-		cl, err := diff.GetCustomDiffer().Diff(record1, dbt.Record{
+		cl, err := diff.GetCustomDiffer().Diff(record1, domain.Record{
 			RecordInfo: nonExistentRecordInfo,
-			RecordData: dbt.RecordData{
-				ShouldPayAddress: []dbt.ExtendAddress{{Address: "PayX"}},
+			RecordData: domain.RecordData{
+				ShouldPayAddress: []domain.ExtendAddress{{Address: addr("PayX")}},
 			},
 		})
 		assert.NoError(t, err)
@@ -387,65 +467,129 @@ func TestUpdateTripRecord(t *testing.T) {
 	})
 }
 
-func TestTripAddressListAdd(t *testing.T) {
+func TestUpdateTripRecordRejectsInvalidAddressAtomically(t *testing.T) {
+	db := NewInMemoryTripDBWrapper()
+	trip := newTripInfo("Atomic update")
+	otherTrip := newTripInfo("Other atomic update")
+	assert.NoError(t, db.CreateTrip(trip))
+	assert.NoError(t, db.CreateTrip(otherTrip))
+
+	prePay, err := db.CreateAddress(trip.ID, "Update pre-pay")
+	assert.NoError(t, err)
+	shouldPay, err := db.CreateAddress(trip.ID, "Update should-pay")
+	assert.NoError(t, err)
+	foreign, err := db.CreateAddress(otherTrip.ID, "Foreign update address")
+	assert.NoError(t, err)
+
+	record := newRecord(
+		"Atomic record",
+		10,
+		*prePay,
+		[]domain.ExtendAddress{{Address: *shouldPay, ExtendMsg: 3}},
+	)
+	assert.NoError(t, db.CreateTripRecords(trip.ID, []domain.Record{record}))
+
+	updated := record
+	updated.ShouldPayAddress = []domain.ExtendAddress{{Address: *foreign, ExtendMsg: 7}}
+	changeLog, err := diff.GetCustomDiffer().Diff(record, updated)
+	assert.NoError(t, err)
+	_, err = db.UpdateTripRecord(record.ID, changeLog)
+	assert.Error(t, err)
+
+	addresses, getErr := db.GetRecordAddressList(record.ID)
+	assert.NoError(t, getErr)
+	assert.Equal(
+		t,
+		[]domain.ExtendAddress{{Address: *shouldPay, ExtendMsg: 3}},
+		addresses,
+		"rejected update must not mutate the stored slice",
+	)
+}
+
+func TestAddressCreateUpdate(t *testing.T) {
 	db := NewInMemoryTripDBWrapper()
 	tripInfo := newTripInfo("Trip Kappa")
 	_ = db.CreateTrip(tripInfo)
 
 	t.Run("Successfully add address to list", func(t *testing.T) {
-		err := db.TripAddressListAdd(tripInfo.ID, "Address Alpha")
+		alpha, err := db.CreateAddress(tripInfo.ID, "Address Alpha")
 		assert.NoError(t, err)
 		list, _ := db.GetTripAddressList(tripInfo.ID)
-		assert.Contains(t, list, dbt.Address("Address Alpha"))
+		assert.Contains(t, list, *alpha)
 		assert.Len(t, list, 1)
 
-		err = db.TripAddressListAdd(tripInfo.ID, "Address Beta")
+		beta, err := db.CreateAddress(tripInfo.ID, "Address Beta")
 		assert.NoError(t, err)
 		list, _ = db.GetTripAddressList(tripInfo.ID)
-		assert.Contains(t, list, dbt.Address("Address Beta"))
+		assert.Contains(t, list, *beta)
 		assert.Len(t, list, 2)
 	})
 
 	t.Run("Fail to add existing address", func(t *testing.T) {
-		err := db.TripAddressListAdd(tripInfo.ID, "Address Alpha") // Try to add again
+		_, err := db.CreateAddress(tripInfo.ID, "Address Alpha")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "already exists")
 		list, _ := db.GetTripAddressList(tripInfo.ID)
 		assert.Len(t, list, 2) // Should still be 2
 	})
 
+	t.Run("Rename keeps identity and updates record views", func(t *testing.T) {
+		address, err := db.CreateAddress(tripInfo.ID, "Address Gamma")
+		assert.NoError(t, err)
+		record := newRecord("Rename record", 10, *address, []domain.ExtendAddress{{Address: *address}})
+		assert.NoError(t, db.CreateTripRecords(tripInfo.ID, []domain.Record{record}))
+
+		updated, err := db.UpdateAddress(tripInfo.ID, address.ID, "Address Renamed")
+		assert.NoError(t, err)
+		assert.Equal(t, address.ID, updated.ID)
+		records, err := db.GetTripRecords(tripInfo.ID)
+		assert.NoError(t, err)
+		assert.Equal(t, "Address Renamed", records[len(records)-1].PrePayAddress.Name)
+		_, err = db.DeleteAddress(tripInfo.ID, address.ID)
+		assert.Error(t, err)
+	})
+
+	t.Run("Reject address identity from another trip", func(t *testing.T) {
+		otherTrip := newTripInfo("Other Trip")
+		assert.NoError(t, db.CreateTrip(otherTrip))
+		foreignAddress, err := db.CreateAddress(otherTrip.ID, "Foreign")
+		assert.NoError(t, err)
+		record := newRecord("Cross-trip", 10, *foreignAddress, []domain.ExtendAddress{{Address: *foreignAddress}})
+		assert.Error(t, db.CreateTripRecords(tripInfo.ID, []domain.Record{record}))
+	})
+
 	t.Run("Fail to add address to non-existent trip", func(t *testing.T) {
 		nonExistentID := uuid.New()
-		err := db.TripAddressListAdd(nonExistentID, "Address Gamma")
+		_, err := db.CreateAddress(nonExistentID, "Address Gamma")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not found")
 	})
 }
 
-func TestTripAddressListRemove(t *testing.T) {
+func TestDeleteAddress(t *testing.T) {
 	db := NewInMemoryTripDBWrapper()
 	tripInfo := newTripInfo("Trip Lambda")
 	_ = db.CreateTrip(tripInfo)
-	_ = db.TripAddressListAdd(tripInfo.ID, "Address X")
-	_ = db.TripAddressListAdd(tripInfo.ID, "Address Y")
-	_ = db.TripAddressListAdd(tripInfo.ID, "Address Z")
+	addressX, _ := db.CreateAddress(tripInfo.ID, "Address X")
+	addressY, _ := db.CreateAddress(tripInfo.ID, "Address Y")
+	addressZ, _ := db.CreateAddress(tripInfo.ID, "Address Z")
 
 	t.Run("Successfully remove address from list", func(t *testing.T) {
-		err := db.TripAddressListRemove(tripInfo.ID, "Address Y")
+		_, err := db.DeleteAddress(tripInfo.ID, addressY.ID)
 		assert.NoError(t, err)
 		list, _ := db.GetTripAddressList(tripInfo.ID)
-		assert.NotContains(t, list, dbt.Address("Address Y"))
+		assert.NotContains(t, list, *addressY)
 		assert.Len(t, list, 2)
 
-		err = db.TripAddressListRemove(tripInfo.ID, "Address X")
+		_, err = db.DeleteAddress(tripInfo.ID, addressX.ID)
 		assert.NoError(t, err)
 		list, _ = db.GetTripAddressList(tripInfo.ID)
-		assert.NotContains(t, list, dbt.Address("Address X"))
+		assert.NotContains(t, list, *addressX)
 		assert.Len(t, list, 1)
 	})
 
 	t.Run("Fail to remove non-existent address", func(t *testing.T) {
-		err := db.TripAddressListRemove(tripInfo.ID, "Address W")
+		_, err := db.DeleteAddress(tripInfo.ID, uuid.New())
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not found")
 		list, _ := db.GetTripAddressList(tripInfo.ID)
@@ -454,7 +598,7 @@ func TestTripAddressListRemove(t *testing.T) {
 
 	t.Run("Fail to remove address from non-existent trip", func(t *testing.T) {
 		nonExistentID := uuid.New()
-		err := db.TripAddressListRemove(nonExistentID, "Address Z")
+		_, err := db.DeleteAddress(nonExistentID, addressZ.ID)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not found")
 	})
@@ -464,9 +608,9 @@ func TestDeleteTrip(t *testing.T) {
 	db := NewInMemoryTripDBWrapper()
 	trip1 := newTripInfo("Trip Mu")
 	_ = db.CreateTrip(trip1)
-	record1 := newRecord("Rec Mu 1", 10.0, "P1", []dbt.ExtendAddress{{Address: "S1"}})
-	_ = db.CreateTripRecords(trip1.ID, []dbt.Record{record1})
-	_ = db.TripAddressListAdd(trip1.ID, "AddrM1")
+	record1 := newRecord("Rec Mu 1", 10.0, addr("P1"), []domain.ExtendAddress{{Address: addr("S1")}})
+	_ = createRecords(t, db, trip1.ID, []domain.Record{record1})
+	_, _ = db.CreateAddress(trip1.ID, "AddrM1")
 
 	trip2 := newTripInfo("Trip Nu")
 	_ = db.CreateTrip(trip2)
@@ -506,10 +650,10 @@ func TestDeleteTripRecord(t *testing.T) {
 	tripInfo := newTripInfo("Trip Xi")
 	_ = db.CreateTrip(tripInfo)
 
-	record1 := newRecord("Rec Xi 1", 10.0, "P1", []dbt.ExtendAddress{{Address: "S1"}})
-	record2 := newRecord("Rec Xi 2", 20.0, "P2", []dbt.ExtendAddress{{Address: "S2"}})
-	record3 := newRecord("Rec Xi 3", 30.0, "P3", []dbt.ExtendAddress{{Address: "S3"}})
-	_ = db.CreateTripRecords(tripInfo.ID, []dbt.Record{record1, record2, record3})
+	record1 := newRecord("Rec Xi 1", 10.0, addr("P1"), []domain.ExtendAddress{{Address: addr("S1")}})
+	record2 := newRecord("Rec Xi 2", 20.0, addr("P2"), []domain.ExtendAddress{{Address: addr("S2")}})
+	record3 := newRecord("Rec Xi 3", 30.0, addr("P3"), []domain.ExtendAddress{{Address: addr("S3")}})
+	_ = createRecords(t, db, tripInfo.ID, []domain.Record{record1, record2, record3})
 
 	t.Run("Successfully delete an existing record", func(t *testing.T) {
 		tripId, err := db.DeleteTripRecord(record2.ID)
@@ -544,14 +688,14 @@ func TestDataLoaderGetRecordInfoList(t *testing.T) {
 
 	trip1 := newTripInfo("Trip Omicron")
 	_ = db.CreateTrip(trip1)
-	rec1 := newRecord("Rec Omi 1", 1.0, "P1", nil)
-	rec2 := newRecord("Rec Omi 2", 2.0, "P2", nil)
-	_ = db.CreateTripRecords(trip1.ID, []dbt.Record{rec1, rec2})
+	rec1 := newRecord("Rec Omi 1", 1.0, addr("P1"), nil)
+	rec2 := newRecord("Rec Omi 2", 2.0, addr("P2"), nil)
+	_ = createRecords(t, db, trip1.ID, []domain.Record{rec1, rec2})
 
 	trip2 := newTripInfo("Trip Pi")
 	_ = db.CreateTrip(trip2)
-	rec3 := newRecord("Rec Pi 1", 3.0, "P3", nil)
-	_ = db.CreateTripRecords(trip2.ID, []dbt.Record{rec3})
+	rec3 := newRecord("Rec Pi 1", 3.0, addr("P3"), nil)
+	_ = createRecords(t, db, trip2.ID, []domain.Record{rec3})
 
 	t.Run("Successfully load existing record infos", func(t *testing.T) {
 		keys := []uuid.UUID{trip1.ID, trip2.ID}
@@ -579,7 +723,7 @@ func TestDataLoaderGetRecordInfoList(t *testing.T) {
 		assert.Equal(t, rec1.RecordInfo, result[trip1.ID][0])
 
 		assert.Contains(t, result, nonExistentID)
-		assert.Equal(t, result[nonExistentID], []dbt.RecordInfo{}) // Missing key should have nil value
+		assert.Equal(t, result[nonExistentID], []domain.RecordInfo{}) // Missing key should have nil value
 		assert.Contains(t, err.Error(), nonExistentID.String()+" not found")
 	})
 }
@@ -590,8 +734,8 @@ func TestDataLoaderGetTripAddressList(t *testing.T) {
 
 	trip1 := newTripInfo("Trip Rho")
 	_ = db.CreateTrip(trip1)
-	_ = db.TripAddressListAdd(trip1.ID, "A1")
-	_ = db.TripAddressListAdd(trip1.ID, "A2")
+	a1, _ := db.CreateAddress(trip1.ID, "A1")
+	a2, _ := db.CreateAddress(trip1.ID, "A2")
 
 	trip2 := newTripInfo("Trip Sigma")
 	_ = db.CreateTrip(trip2)
@@ -603,7 +747,7 @@ func TestDataLoaderGetTripAddressList(t *testing.T) {
 		assert.Len(t, result, 2)
 
 		assert.Contains(t, result, trip1.ID)
-		assert.ElementsMatch(t, []dbt.Address{"A1", "A2"}, result[trip1.ID])
+		assert.ElementsMatch(t, []domain.Address{*a1, *a2}, result[trip1.ID])
 
 		assert.Contains(t, result, trip2.ID)
 		assert.Empty(t, result[trip2.ID]) // Empty list for trip2
@@ -617,10 +761,10 @@ func TestDataLoaderGetTripAddressList(t *testing.T) {
 		assert.Len(t, result, 2)
 
 		assert.Contains(t, result, trip1.ID)
-		assert.ElementsMatch(t, []dbt.Address{"A1", "A2"}, result[trip1.ID])
+		assert.ElementsMatch(t, []domain.Address{*a1, *a2}, result[trip1.ID])
 
 		assert.Contains(t, result, nonExistentID)
-		assert.Equal(t, result[nonExistentID], []dbt.Address{}) // Missing key should have empty slice
+		assert.Equal(t, result[nonExistentID], []domain.Address{}) // Missing key should have empty slice
 		assert.Contains(t, err.Error(), nonExistentID.String()+" not found")
 	})
 }
@@ -631,15 +775,15 @@ func TestDataLoaderGetRecordShouldPayList(t *testing.T) {
 
 	trip1 := newTripInfo("Trip Tau")
 	_ = db.CreateTrip(trip1)
-	rec1 := newRecord("Rec Tau 1", 100.0, "P1", []dbt.ExtendAddress{
-		{Address: "SP1", ExtendMsg: 0.5},
-		{Address: "SP2", ExtendMsg: 1.0},
+	rec1 := newRecord("Rec Tau 1", 100.0, addr("P1"), []domain.ExtendAddress{
+		{Address: addr("SP1"), ExtendMsg: 0.5},
+		{Address: addr("SP2"), ExtendMsg: 1.0},
 	})
-	rec2 := newRecord("Rec Tau 2", 200.0, "P2", []dbt.ExtendAddress{
-		{Address: "SP3", ExtendMsg: 2.0},
+	rec2 := newRecord("Rec Tau 2", 200.0, addr("P2"), []domain.ExtendAddress{
+		{Address: addr("SP3"), ExtendMsg: 2.0},
 	})
-	rec3 := newRecord("Rec Tau 3", 300.0, "P3", nil) // No should pay addresses
-	_ = db.CreateTripRecords(trip1.ID, []dbt.Record{rec1, rec2, rec3})
+	rec3 := newRecord("Rec Tau 3", 300.0, addr("P3"), nil) // No should pay addresses
+	_ = createRecords(t, db, trip1.ID, []domain.Record{rec1, rec2, rec3})
 
 	t.Run("Successfully load existing record should pay lists", func(t *testing.T) {
 		keys := []uuid.UUID{rec1.ID, rec2.ID, rec3.ID}
@@ -648,13 +792,13 @@ func TestDataLoaderGetRecordShouldPayList(t *testing.T) {
 		assert.Len(t, result, 3)
 
 		assert.Contains(t, result, rec1.ID)
-		assert.ElementsMatch(t, []dbt.ExtendAddress{
-			{Address: "SP1", ExtendMsg: 0.5},
-			{Address: "SP2", ExtendMsg: 1.0},
+		assert.ElementsMatch(t, []domain.ExtendAddress{
+			{Address: addr("SP1"), ExtendMsg: 0.5},
+			{Address: addr("SP2"), ExtendMsg: 1.0},
 		}, result[rec1.ID])
 		assert.Contains(t, result, rec2.ID)
-		assert.ElementsMatch(t, []dbt.ExtendAddress{
-			{Address: "SP3", ExtendMsg: 2.0},
+		assert.ElementsMatch(t, []domain.ExtendAddress{
+			{Address: addr("SP3"), ExtendMsg: 2.0},
 		}, result[rec2.ID])
 		assert.Contains(t, result, rec3.ID)
 		assert.Empty(t, result[rec3.ID]) // No should pay addresses for this record
@@ -668,13 +812,13 @@ func TestDataLoaderGetRecordShouldPayList(t *testing.T) {
 		assert.Len(t, result, 2)
 
 		assert.Contains(t, result, rec1.ID)
-		assert.ElementsMatch(t, []dbt.ExtendAddress{
-			{Address: "SP1", ExtendMsg: 0.5},
-			{Address: "SP2", ExtendMsg: 1.0},
+		assert.ElementsMatch(t, []domain.ExtendAddress{
+			{Address: addr("SP1"), ExtendMsg: 0.5},
+			{Address: addr("SP2"), ExtendMsg: 1.0},
 		}, result[rec1.ID])
 
 		assert.Contains(t, result, nonExistentID)
-		assert.Equal(t, result[nonExistentID], []dbt.ExtendAddress{}) // Missing key should have empty slice
+		assert.Equal(t, result[nonExistentID], []domain.ExtendAddress{}) // Missing key should have empty slice
 		assert.Contains(t, err.Error(), nonExistentID.String()+" not found")
 	})
 }

@@ -3,7 +3,6 @@ package utils
 import (
 	"dtm/graph/model"
 	"dtm/mq/mq"
-	"fmt"
 
 	"github.com/google/uuid"
 )
@@ -19,7 +18,7 @@ func TripRecordMQ2GQL(msg mq.TripRecordMessage) (*model.Record, bool, error) {
 		Name:          msg.Name,
 		Amount:        msg.Amount,
 		Time:          msg.Time,
-		PrePayAddress: string(msg.PrePayAddress),
+		PrePayAddress: ToModelAddress(msg.PrePayAddress),
 		Category:      Int2RecordCategory(msg.Category),
 	}
 
@@ -34,12 +33,9 @@ func TripRecordIdMQ2GQL(msg mq.TripRecordMessage) (string, bool, error) {
 	return msg.ID.String(), false, nil
 }
 
-func TripAddressMQ2GQL(msg mq.TripAddressMessage) (string, bool, error) {
-	if len(msg.Address) == 0 {
-		fmt.Println("TripAddressMQ2GQL: Empty address in message, skipping.")
-		return "", true, nil
+func TripAddressMQ2GQL(msg mq.TripAddressMessage) (*model.Address, bool, error) {
+	if msg.Address.ID == uuid.Nil {
+		return nil, true, nil
 	}
-	address := string(msg.Address)
-
-	return address, false, nil
+	return ToModelAddress(msg.Address), false, nil
 }

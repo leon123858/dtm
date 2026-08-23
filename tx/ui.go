@@ -3,6 +3,8 @@ package tx
 import (
 	"fmt"
 	"math"
+
+	"github.com/google/uuid"
 )
 
 func AverageSplitStrategy(up *UserPayment) (Tx, error) {
@@ -193,7 +195,7 @@ func (up *UserPayment) ToTx(strategy UserPaymentToTxStrategy) (Tx, error) {
 		return Tx{}, fmt.Errorf("conversion strategy cannot be nil")
 	}
 
-	if up.PrePayAddress == "" {
+	if up.PrePayAddress.ID == uuid.Nil {
 		return Tx{}, fmt.Errorf("UserPayment '%s' must have a PrePayAddress", up.Name)
 	}
 	if up.Amount <= 0 {

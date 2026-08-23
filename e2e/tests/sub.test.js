@@ -1,7 +1,8 @@
 import { client } from '../src/apolloClient';
 import {
 	CREATE_TRIP,
-	CREATE_ADDRESS,
+		CREATE_ADDRESS,
+		UPDATE_ADDRESS,
 	DELETE_ADDRESS,
 	CREATE_RECORD,
 	UPDATE_RECORD,
@@ -9,7 +10,8 @@ import {
 	SUB_RECORD_CREATE,
 	SUB_RECORD_UPDATE,
 	SUB_RECORD_DELETE,
-	SUB_ADDRESS_CREATE,
+		SUB_ADDRESS_CREATE,
+		SUB_ADDRESS_UPDATE,
 	SUB_ADDRESS_DELETE,
 } from './graphql';
 
@@ -107,38 +109,27 @@ describe('GraphQL API End-to-End Tests', () => {
 	// --- Subscription ---
 	describe('Subscription Tests', () => {
 		const commonAddressForSubRecords = `SubRecAddr-${Date.now()}`;
+		let commonAddress;
 		let recordIdForSubTests;
-        const newRecordPayload = {
-            name: 'Sub Test Record Create',
-            amount: 77.88,
-            time: '1672531399',
-            prePayAddress: commonAddressForSubRecords,
-            shouldPayAddress: [commonAddressForSubRecords],
-            category: 'NORMAL',
-            extendPayMsg: [],
-        };
+		let newRecordPayload;
 
 		beforeAll(async () => {
 			const { data, error } = await client.mutate({
 				mutation: CREATE_ADDRESS,
-				variables: { tripId, address: commonAddressForSubRecords },
+				variables: { tripId, input: { name: commonAddressForSubRecords } },
 			});
 			expect(error).toBeUndefined();
-			expect(data.createAddress).toBe(commonAddressForSubRecords);
+			commonAddress = data.createAddress;
+			expect(commonAddress.name).toBe(commonAddressForSubRecords);
+			newRecordPayload = {
+				name: 'Sub Test Record Create', amount: 77.88, time: '1672531399',
+				prePayAddressId: commonAddress.id,
+				shouldPayAddressIds: [commonAddress.id],
+				category: 'NORMAL', extendPayMsg: [],
+			};
 		});
 
 		afterAll(async () => {
-			try {
-				await client.mutate({
-					mutation: DELETE_ADDRESS,
-					variables: { tripId, address: commonAddressForSubRecords },
-				});
-			} catch (e) {
-				console.warn(
-					`Could not clean up commonAddressForSubRecords: ${commonAddressForSubRecords}. Error: ${e.message}`
-				);
-			}
-
 			if (recordIdForSubTests) {
 				try {
 					await client.mutate({
@@ -150,6 +141,16 @@ describe('GraphQL API End-to-End Tests', () => {
 						`Could not clean up recordIdForSubTests: ${recordIdForSubTests}. Error: ${e.message}`
 					);
 				}
+			}
+			try {
+				await client.mutate({
+					mutation: DELETE_ADDRESS,
+					variables: { tripId, addressId: commonAddress.id },
+				});
+			} catch (e) {
+				console.warn(
+					`Could not clean up commonAddressForSubRecords: ${commonAddressForSubRecords}. Error: ${e.message}`
+				);
 			}
 		});
 
@@ -168,21 +169,22 @@ describe('GraphQL API End-to-End Tests', () => {
 			// mutation
 			const { data: mutationData, error: mutationError } = await client.mutate({
 				mutation: CREATE_ADDRESS,
-				variables: { tripId, address: newAddressName },
+				variables: { tripId, input: { name: newAddressName } },
 			});
 
 			expect(mutationError).toBeUndefined();
-			expect(mutationData.createAddress).toBe(newAddressName);
+			const createdAddress = mutationData.createAddress;
+			expect(createdAddress.name).toBe(newAddressName);
 
 			// wait and verify subscription
 			const { data: subData, errors: subErrors } = await subscriptionPromise;
 			expect(subErrors).toBeUndefined();
-			expect(subData.subAddressCreate).toBe(newAddressName);
+			expect(subData.subAddressCreate).toEqual(createdAddress);
 
 			// clear
 			await client.mutate({
 				mutation: DELETE_ADDRESS,
-				variables: { tripId, address: newAddressName },
+				variables: { tripId, addressId: createdAddress.id },
 			});
 		});
 
@@ -204,30 +206,50 @@ describe('GraphQL API End-to-End Tests', () => {
 			const mutationPromises = newAddressNames.map((address) =>
 				client.mutate({
 					mutation: CREATE_ADDRESS,
-					variables: { tripId, address },
+					variables: { tripId, input: { name: address } },
 				})
 			);
 			const mutationResults = await Promise.all(mutationPromises);
 			mutationResults.forEach((result, index) => {
 				expect(result.error).toBeUndefined();
-				expect(result.data.createAddress).toBe(newAddressNames[index]);
+				expect(result.data.createAddress.name).toBe(newAddressNames[index]);
 			});
 			// subscription
 			const subscriptionResults = await subscriptionPromise;
 			expect(subscriptionResults.length).toBe(2);
 			// just check include
-			expect(subscriptionResults.map((r) => r.data.subAddressCreate)).toEqual(
+			expect(subscriptionResults.map((r) => r.data.subAddressCreate.name)).toEqual(
 				expect.arrayContaining(newAddressNames)
 			);
 
 			await Promise.all(
-				newAddressNames.map((address) =>
+				mutationResults.map((result) =>
 					client.mutate({
 						mutation: DELETE_ADDRESS,
-						variables: { tripId, address },
+						variables: { tripId, addressId: result.data.createAddress.id },
 					})
 				)
 			);
+		});
+
+		it('should receive the same address ID when an address is renamed', async () => {
+			const address = (await client.mutate({
+				mutation: CREATE_ADDRESS,
+				variables: { tripId, input: { name: `BeforeRename-${Date.now()}` } },
+			})).data.createAddress;
+			const subscriptionPromise = waitForSubscription(client.subscribe({
+				query: SUB_ADDRESS_UPDATE,
+				variables: { tripId },
+			}));
+			await sleep(1000);
+			const renamed = (await client.mutate({
+				mutation: UPDATE_ADDRESS,
+				variables: { tripId, addressId: address.id, input: { name: `AfterRename-${Date.now()}` } },
+			})).data.updateAddress;
+			const { data } = await subscriptionPromise;
+			expect(renamed.id).toBe(address.id);
+			expect(data.subAddressUpdate).toEqual(renamed);
+			await client.mutate({ mutation: DELETE_ADDRESS, variables: { tripId, addressId: address.id } });
 		});
 
 		it('should not receive a notification when a new address is created (because not tripId)', async () => {
@@ -245,11 +267,12 @@ describe('GraphQL API End-to-End Tests', () => {
 			// mutation
 			const { data: mutationData, error: mutationError } = await client.mutate({
 				mutation: CREATE_ADDRESS,
-				variables: { tripId, address: newAddressName },
+				variables: { tripId, input: { name: newAddressName } },
 			});
 
 			expect(mutationError).toBeUndefined();
-			expect(mutationData.createAddress).toBe(newAddressName);
+			const createdAddress = mutationData.createAddress;
+			expect(createdAddress.name).toBe(newAddressName);
 
 			// subscription
 			try {
@@ -261,21 +284,11 @@ describe('GraphQL API End-to-End Tests', () => {
 
 			await client.mutate({
 				mutation: DELETE_ADDRESS,
-				variables: { tripId, address: newAddressName },
+				variables: { tripId, addressId: createdAddress.id },
 			});
 		});
 
 		it('should receive a notification when a new record is created (subRecordCreate)', async () => {
-			const newRecordPayload = {
-				name: 'Sub Test Record Create',
-				amount: 77.88,
-				time: '1672531399',
-				prePayAddress: commonAddressForSubRecords,
-				shouldPayAddress: [commonAddressForSubRecords],
-				category: 'NORMAL',
-				extendPayMsg: [],
-			};
-
 			const subObservable = client.subscribe({
 				query: SUB_RECORD_CREATE,
 				variables: { tripId },
@@ -301,12 +314,8 @@ describe('GraphQL API End-to-End Tests', () => {
 			expect(subData.subRecordCreate.name).toBe(newRecordPayload.name);
 			expect(subData.subRecordCreate.amount).toBe(newRecordPayload.amount);
 			expect(subData.subRecordCreate.time).toBe(newRecordPayload.time);
-			expect(subData.subRecordCreate.prePayAddress).toBe(
-				newRecordPayload.prePayAddress
-			);
-			expect(subData.subRecordCreate.shouldPayAddress).toEqual(
-				newRecordPayload.shouldPayAddress
-			);
+			expect(subData.subRecordCreate.prePayAddress).toEqual(commonAddress);
+			expect(subData.subRecordCreate.shouldPayAddress).toEqual([commonAddress]);
 			expect(subData.subRecordCreate.category).toBe('NORMAL');
 			expect(subData.subRecordCreate.isValid).toBe(true);
 		});
@@ -318,8 +327,8 @@ describe('GraphQL API End-to-End Tests', () => {
 				name: 'Sub Test Record Updated',
 				amount: 99.55,
 				time: '1672531499',
-				prePayAddress: commonAddressForSubRecords,
-				shouldPayAddress: [commonAddressForSubRecords],
+				prePayAddressId: commonAddress.id,
+				shouldPayAddressIds: [commonAddress.id],
 				category: 'FIX',
 				extendPayMsg: [99.55],
 			};
@@ -385,12 +394,12 @@ describe('GraphQL API End-to-End Tests', () => {
 		});
 
 		it('should receive a notification when an address is deleted (subAddressDelete)', async () => {
-			const addressToDelete = `SubAddrDelete-${Date.now()}`;
+			const addressNameToDelete = `SubAddrDelete-${Date.now()}`;
 
-			await client.mutate({
+			const addressToDelete = (await client.mutate({
 				mutation: CREATE_ADDRESS,
-				variables: { tripId, address: addressToDelete },
-			});
+				variables: { tripId, input: { name: addressNameToDelete } },
+			})).data.createAddress;
 
 			const subObservable = client.subscribe({
 				query: SUB_ADDRESS_DELETE,
@@ -403,15 +412,15 @@ describe('GraphQL API End-to-End Tests', () => {
 
 			const { data: mutationData, error: mutationError } = await client.mutate({
 				mutation: DELETE_ADDRESS,
-				variables: { tripId, address: addressToDelete },
+				variables: { tripId, addressId: addressToDelete.id },
 			});
 
 			expect(mutationError).toBeUndefined();
-			expect(mutationData.deleteAddress).toBe(addressToDelete);
+			expect(mutationData.deleteAddress).toEqual(addressToDelete);
 
 			const { data: subData, errors: subErrors } = await subscriptionPromise;
 			expect(subErrors).toBeUndefined();
-			expect(subData.subAddressDelete).toBe(addressToDelete);
+			expect(subData.subAddressDelete).toEqual(addressToDelete);
 		});
 	});
 });

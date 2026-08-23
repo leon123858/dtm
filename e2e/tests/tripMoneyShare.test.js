@@ -7,12 +7,19 @@ import {
 	CREATE_RECORD,
 } from './graphql';
 
+async function createAddress(tripId, name) {
+	return (await client.mutate({
+		mutation: CREATE_ADDRESS,
+		variables: { tripId, input: { name } },
+	})).data.createAddress;
+}
+
 describe('Trip with Money Share Logic End-to-End Tests', () => {
 	let tripId;
 	const testTripName = `Money Share Trip - ${Date.now()}`;
-	const addressAlice = 'Alice';
-	const addressBob = 'Bob';
-	const addressCharlie = 'Charlie';
+	let addressAlice;
+	let addressBob;
+	let addressCharlie;
 
 	beforeAll(async () => {
 		// 1. create trip
@@ -24,25 +31,25 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 		tripId = tripData.createTrip.id;
 
 		// 2. create addresses
-		await client.mutate({
+		addressAlice = (await client.mutate({
 			mutation: CREATE_ADDRESS,
-			variables: { tripId, address: addressAlice },
-		});
-		await client.mutate({
+			variables: { tripId, input: { name: 'Alice' } },
+		})).data.createAddress;
+		addressBob = (await client.mutate({
 			mutation: CREATE_ADDRESS,
-			variables: { tripId, address: addressBob },
-		});
-		await client.mutate({
+			variables: { tripId, input: { name: 'Bob' } },
+		})).data.createAddress;
+		addressCharlie = (await client.mutate({
 			mutation: CREATE_ADDRESS,
-			variables: { tripId, address: addressCharlie },
-		});
+			variables: { tripId, input: { name: 'Charlie' } },
+		})).data.createAddress;
 
 		// verify addresses are added to trip
 		const { data: fetchedTripData } = await client.query({
 			query: GET_TRIP,
 			variables: { tripId },
 		});
-		expect(fetchedTripData.trip.addressList).toEqual(
+		expect(fetchedTripData.trip.addresses).toEqual(
 			expect.arrayContaining([addressAlice, addressBob, addressCharlie])
 		);
 	});
@@ -55,8 +62,8 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 				name: 'Dinner',
 				amount: 100,
 				time: '1672531199',
-				prePayAddress: addressAlice,
-				shouldPayAddress: [addressAlice, addressBob],
+				prePayAddressId: addressAlice.id,
+				shouldPayAddressIds: [addressAlice.id, addressBob.id],
 				category: 'NORMAL',
 				extendPayMsg: [],
 			};
@@ -70,8 +77,8 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 				name: 'Transport',
 				amount: 60,
 				time: '1672531299',
-				prePayAddress: addressBob,
-				shouldPayAddress: [addressAlice, addressCharlie],
+				prePayAddressId: addressBob.id,
+				shouldPayAddressIds: [addressAlice.id, addressCharlie.id],
 				category: 'NORMAL',
 				extendPayMsg: [],
 			};
@@ -85,8 +92,8 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 				name: 'Accommodation',
 				amount: 90,
 				time: '1672531399',
-				prePayAddress: addressCharlie,
-				shouldPayAddress: [addressAlice, addressBob, addressCharlie],
+				prePayAddressId: addressCharlie.id,
+				shouldPayAddressIds: [addressAlice.id, addressBob.id, addressCharlie.id],
 				category: 'NORMAL',
 				extendPayMsg: [],
 			};
@@ -116,14 +123,14 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			const transaction = data.trip.moneyShare[0];
 
 			expect(transaction.input).toHaveLength(2);
-			const alicePayment = transaction.input.find((p) => p.address === 'Alice');
-			const bobPayment = transaction.input.find((p) => p.address === 'Bob');
+			const alicePayment = transaction.input.find((p) => p.address.id === addressAlice.id);
+			const bobPayment = transaction.input.find((p) => p.address.id === addressBob.id);
 			expect(alicePayment).toBeDefined();
 			expect(bobPayment).toBeDefined();
 			expect(alicePayment.amount).toBeCloseTo(10);
 			expect(bobPayment.amount).toBeCloseTo(20);
 
-			expect(transaction.output.address).toBe('Charlie');
+			expect(transaction.output.address).toEqual(addressCharlie);
 			expect(transaction.output.amount).toBeCloseTo(30);
 		});
 	});
@@ -142,22 +149,20 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 
 		it.skip('should fail when remove addr have dependency', async () => {
 			// only on DB with dependency
-			const tempAddress = 'TempPayer';
-			const Payer = 'SinglePayer';
-			await client.mutate({
+			const tempAddress = (await client.mutate({
 				mutation: CREATE_ADDRESS,
-				variables: { tripId: localTripId, address: tempAddress },
-			});
-			await client.mutate({
+				variables: { tripId: localTripId, input: { name: 'TempPayer' } },
+			})).data.createAddress;
+			const payer = (await client.mutate({
 				mutation: CREATE_ADDRESS,
-				variables: { tripId: localTripId, address: Payer },
-			});
+				variables: { tripId: localTripId, input: { name: 'SinglePayer' } },
+			})).data.createAddress;
 
 			const record = {
 				name: 'Valid Record initially',
 				amount: 100,
-				prePayAddress: Payer,
-				shouldPayAddress: [tempAddress],
+				prePayAddressId: payer.id,
+				shouldPayAddressIds: [tempAddress.id],
 				category: 'NORMAL',
 				extendPayMsg: [],
 			};
@@ -179,7 +184,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			try {
 				await client.mutate({
 					mutation: DELETE_ADDRESS,
-					variables: { tripId: localTripId, address: tempAddress },
+					variables: { tripId: localTripId, addressId: tempAddress.id },
 				});
 				throw new Error('Should not get this Error');
 			} catch (err) {
@@ -188,22 +193,20 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 		});
 
 		it('should mark a FIX record as invalid if amounts do not sum up', async () => {
-			const addr1 = 'FixPayer1';
-			const addr2 = 'FixPayer2';
-			await client.mutate({
+			const addr1 = (await client.mutate({
 				mutation: CREATE_ADDRESS,
-				variables: { tripId: localTripId, address: addr1 },
-			});
-			await client.mutate({
+				variables: { tripId: localTripId, input: { name: 'FixPayer1' } },
+			})).data.createAddress;
+			const addr2 = (await client.mutate({
 				mutation: CREATE_ADDRESS,
-				variables: { tripId: localTripId, address: addr2 },
-			});
+				variables: { tripId: localTripId, input: { name: 'FixPayer2' } },
+			})).data.createAddress;
 
 			const record = {
 				name: 'Invalid FIX Record',
 				amount: 100,
-				prePayAddress: addr1,
-				shouldPayAddress: [addr1, addr2],
+				prePayAddressId: addr1.id,
+				shouldPayAddressIds: [addr1.id, addr2.id],
 				category: 'FIX',
 				extendPayMsg: [40, 50], // total 90，not equal to amount 100
 			};
@@ -231,9 +234,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 	// --- record mode (FIX & NORMAL) ---
 	describe('Mixed Mode Money Share Calculation', () => {
 		let mixedTripId;
-		const mixAlice = 'MixAlice',
-			mixBob = 'MixBob',
-			mixCharlie = 'MixCharlie';
+		let mixAlice, mixBob, mixCharlie;
 
 		beforeAll(async () => {
 			const { data } = await client.mutate({
@@ -241,18 +242,9 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 				variables: { input: { name: 'Mixed Mode Test Trip' } },
 			});
 			mixedTripId = data.createTrip.id;
-			await client.mutate({
-				mutation: CREATE_ADDRESS,
-				variables: { tripId: mixedTripId, address: mixAlice },
-			});
-			await client.mutate({
-				mutation: CREATE_ADDRESS,
-				variables: { tripId: mixedTripId, address: mixBob },
-			});
-			await client.mutate({
-				mutation: CREATE_ADDRESS,
-				variables: { tripId: mixedTripId, address: mixCharlie },
-			});
+			mixAlice = await createAddress(mixedTripId, 'MixAlice');
+			mixBob = await createAddress(mixedTripId, 'MixBob');
+			mixCharlie = await createAddress(mixedTripId, 'MixCharlie');
 		});
 
 		it('should calculate moneyShare correctly with mixed NORMAL and FIX records', async () => {
@@ -260,8 +252,8 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			const recordNormal = {
 				name: 'NORMAL Lunch',
 				amount: 150,
-				prePayAddress: mixAlice,
-				shouldPayAddress: [mixAlice, mixBob, mixCharlie],
+				prePayAddressId: mixAlice.id,
+				shouldPayAddressIds: [mixAlice.id, mixBob.id, mixCharlie.id],
 				category: 'NORMAL',
 				extendPayMsg: [],
 			};
@@ -274,8 +266,8 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			const recordFix = {
 				name: 'FIX Tickets',
 				amount: 100,
-				prePayAddress: mixBob,
-				shouldPayAddress: [mixAlice, mixBob, mixCharlie],
+				prePayAddressId: mixBob.id,
+				shouldPayAddressIds: [mixAlice.id, mixBob.id, mixCharlie.id],
 				category: 'FIX',
 				extendPayMsg: [20, 30, 50], // Alice:20, Bob:30, Charlie:50
 			};
@@ -298,15 +290,15 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			expect(data.trip.moneyShare).toHaveLength(2);
 
 			const charliePays = data.trip.moneyShare.filter(
-				(tx) => tx.input[0].address === mixCharlie
+				(tx) => tx.input[0].address.id === mixCharlie.id
 			);
 			expect(charliePays).toHaveLength(2);
 
 			const paymentToAlice = charliePays.find(
-				(tx) => tx.output.address === mixAlice
+				(tx) => tx.output.address.id === mixAlice.id
 			);
 			const paymentToBob = charliePays.find(
-				(tx) => tx.output.address === mixBob
+				(tx) => tx.output.address.id === mixBob.id
 			);
 
 			expect(paymentToAlice).toBeDefined();
@@ -320,9 +312,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 	// --- record mode (Transfer & PART) ---
 	describe('Mixed Mode Money Share Calculation', () => {
 		let mixedTripId;
-		const mixAlice = 'MixAlice',
-			mixBob = 'MixBob',
-			mixCharlie = 'MixCharlie';
+		let mixAlice, mixBob, mixCharlie;
 
 		beforeAll(async () => {
 			const { data } = await client.mutate({
@@ -330,18 +320,9 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 				variables: { input: { name: 'Mixed Mode Test Trip' } },
 			});
 			mixedTripId = data.createTrip.id;
-			await client.mutate({
-				mutation: CREATE_ADDRESS,
-				variables: { tripId: mixedTripId, address: mixAlice },
-			});
-			await client.mutate({
-				mutation: CREATE_ADDRESS,
-				variables: { tripId: mixedTripId, address: mixBob },
-			});
-			await client.mutate({
-				mutation: CREATE_ADDRESS,
-				variables: { tripId: mixedTripId, address: mixCharlie },
-			});
+			mixAlice = await createAddress(mixedTripId, 'MixAlice');
+			mixBob = await createAddress(mixedTripId, 'MixBob');
+			mixCharlie = await createAddress(mixedTripId, 'MixCharlie');
 		});
 
 		it('should calculate moneyShare correctly with mixed Transfer and PART records', async () => {
@@ -349,8 +330,8 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			const recordNormal = {
 				name: 'Transfer',
 				amount: 150,
-				prePayAddress: mixAlice,
-				shouldPayAddress: [mixAlice, mixBob, mixCharlie],
+				prePayAddressId: mixAlice.id,
+				shouldPayAddressIds: [mixAlice.id, mixBob.id, mixCharlie.id],
 				category: 'TRANSFER',
 				extendPayMsg: [30, 50, 70],
 			};
@@ -362,8 +343,8 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			const recordFix = {
 				name: 'Part Tickets',
 				amount: 100,
-				prePayAddress: mixBob,
-				shouldPayAddress: [mixAlice, mixBob, mixCharlie],
+				prePayAddressId: mixBob.id,
+				shouldPayAddressIds: [mixAlice.id, mixBob.id, mixCharlie.id],
 				category: 'PART',
 				extendPayMsg: [2, 3, 5],
 			};
@@ -386,15 +367,15 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			expect(data.trip.moneyShare).toHaveLength(2);
 
 			const charliePays = data.trip.moneyShare.filter(
-				(tx) => tx.input[0].address === mixCharlie
+				(tx) => tx.input[0].address.id === mixCharlie.id
 			);
 			expect(charliePays).toHaveLength(2);
 
 			const paymentToAlice = charliePays.find(
-				(tx) => tx.output.address === mixAlice
+				(tx) => tx.output.address.id === mixAlice.id
 			);
 			const paymentToBob = charliePays.find(
-				(tx) => tx.output.address === mixBob
+				(tx) => tx.output.address.id === mixBob.id
 			);
 
 			expect(paymentToAlice).toBeDefined();
@@ -408,9 +389,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 	// --- record mode (FIX_BEFORE_AVERAGE) ---
 	describe('FIX_BEFORE_AVERAGE Mode Money Share Calculation', () => {
 		let mixedTripId;
-		const mixAlice = 'MixAlice',
-			mixBob = 'MixBob',
-			mixCharlie = 'MixCharlie';
+		let mixAlice, mixBob, mixCharlie;
 
 		beforeAll(async () => {
 			const { data } = await client.mutate({
@@ -418,18 +397,9 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 				variables: { input: { name: 'Fix Before Average Mode Test Trip' } },
 			});
 			mixedTripId = data.createTrip.id;
-			await client.mutate({
-				mutation: CREATE_ADDRESS,
-				variables: { tripId: mixedTripId, address: mixAlice },
-			});
-			await client.mutate({
-				mutation: CREATE_ADDRESS,
-				variables: { tripId: mixedTripId, address: mixBob },
-			});
-			await client.mutate({
-				mutation: CREATE_ADDRESS,
-				variables: { tripId: mixedTripId, address: mixCharlie },
-			});
+			mixAlice = await createAddress(mixedTripId, 'MixAlice');
+			mixBob = await createAddress(mixedTripId, 'MixBob');
+			mixCharlie = await createAddress(mixedTripId, 'MixCharlie');
 		});
 
 		it('should calculate moneyShare correctly with FIX_BEFORE_AVERAGE record', async () => {
@@ -440,8 +410,8 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			const record = {
 				name: 'FIX_BEFORE_AVERAGE Dinner',
 				amount: 200,
-				prePayAddress: mixAlice,
-				shouldPayAddress: [mixAlice, mixBob, mixCharlie],
+				prePayAddressId: mixAlice.id,
+				shouldPayAddressIds: [mixAlice.id, mixBob.id, mixCharlie.id],
 				category: 'FIX_BEFORE_NORMAL',
 				extendPayMsg: [0, -20, 40],
 			};
@@ -472,20 +442,20 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			expect(data.trip.moneyShare).toHaveLength(1);
 
 			const paymentToAlice = data.trip.moneyShare.filter(
-				(tx) => tx.output.address === mixAlice
+				(tx) => tx.output.address.id === mixAlice.id
 			);
 			expect(paymentToAlice).toHaveLength(1);
 
 			// console.log(JSON.stringify(data.trip.moneyShare, null, 2));
-			expect(data.trip.moneyShare[0].output.address).toBe(mixAlice);
+			expect(data.trip.moneyShare[0].output.address).toEqual(mixAlice);
 			expect(data.trip.moneyShare[0].output.amount).toBeCloseTo(130);
 
 			expect(data.trip.moneyShare[0].input).toHaveLength(2);
 			const bobPayment = data.trip.moneyShare[0].input.find(
-				(p) => p.address === mixBob
+				(p) => p.address.id === mixBob.id
 			);
 			const charliePayment = data.trip.moneyShare[0].input.find(
-				(p) => p.address === mixCharlie
+				(p) => p.address.id === mixCharlie.id
 			);
 			expect(bobPayment).toBeDefined();
 			expect(charliePayment).toBeDefined();

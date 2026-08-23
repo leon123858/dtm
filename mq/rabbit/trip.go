@@ -284,7 +284,10 @@ func NewRabbitTripMessageQueueWrapper(conn *amqp.Connection) (mq.TripMessageQueu
 	if err != nil {
 		return nil, fmt.Errorf("error creating TripAddressMessageQueue for ActionCreate: %w", err)
 	}
-	wrapper.AddressMQArray[mq.ActionUpdate] = nil
+	wrapper.AddressMQArray[mq.ActionUpdate], err = NewTripAddressMessageQueue(conn, fmt.Sprintf("trip_address_exchange_%d", mq.ActionUpdate), mq.ActionUpdate)
+	if err != nil {
+		return nil, fmt.Errorf("error creating TripAddressMessageQueue for ActionUpdate: %w", err)
+	}
 	wrapper.AddressMQArray[mq.ActionDelete], err = NewTripAddressMessageQueue(conn, fmt.Sprintf("trip_address_exchange_%d", mq.ActionDelete), mq.ActionDelete)
 	if err != nil {
 		return nil, fmt.Errorf("error creating TripAddressMessageQueue for ActionDelete: %w", err)

@@ -1,8 +1,11 @@
 package tx
 
 import (
+	"dtm/domain"
 	"fmt"
 	"math"
+
+	"github.com/google/uuid"
 )
 
 const MinValueTxOutput = 0.01
@@ -38,15 +41,15 @@ func (tp *Package) ProcessTransactions() []Cash {
 	// Use a map to aggregate amounts by address
 	// The key is the address (string), and the value is a pointer to a Cash struct.
 	// Using a pointer allows us to modify the struct fields directly.
-	addressCashMap := make(map[string]*Cash)
+	addressCashMap := make(map[uuid.UUID]*Cash)
 
 	// Helper function to get or create a Cash entry for an address
-	getCashEntry := func(addr string) *Cash {
-		if entry, ok := addressCashMap[addr]; ok {
+	getCashEntry := func(addr domain.Address) *Cash {
+		if entry, ok := addressCashMap[addr.ID]; ok {
 			return entry
 		}
-		newEntry := &Cash{Address: addr} // Create a new Cash struct
-		addressCashMap[addr] = newEntry  // Store it in the map
+		newEntry := &Cash{Address: addr}   // Create a new Cash struct
+		addressCashMap[addr.ID] = newEntry // Store it in the map
 		return newEntry
 	}
 
@@ -80,10 +83,10 @@ func (tp *Package) String() string {
 		result += "  Tx: " + tx.Name + "\n"
 		result += "    Inputs:\n"
 		for _, input := range tx.Input {
-			result += "      - " + input.Address + ": " + fmt.Sprintf("%.2f", input.Amount) + "\n"
+			result += "      - " + input.Address.Name + ": " + fmt.Sprintf("%.2f", input.Amount) + "\n"
 		}
 		result += "    Output:\n"
-		result += "      - " + tx.Output.Address + ": " + fmt.Sprintf("%.2f", tx.Output.Amount) + "\n"
+		result += "      - " + tx.Output.Address.Name + ": " + fmt.Sprintf("%.2f", tx.Output.Amount) + "\n"
 	}
 	return result
 }

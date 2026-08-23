@@ -17,15 +17,19 @@ type EditRecord struct {
 type Mutation struct {
 }
 
+type NewAddress struct {
+	Name string `json:"name"`
+}
+
 type NewRecord struct {
-	Name          string  `json:"name"`
-	Amount        float64 `json:"amount"`
-	PrePayAddress string  `json:"prePayAddress"`
+	Name            string  `json:"name"`
+	Amount          float64 `json:"amount"`
+	PrePayAddressID string  `json:"prePayAddressId"`
 	// time: by JS Date().getTime().toString()
-	Time             *string         `json:"time,omitempty"`
-	ShouldPayAddress []string        `json:"shouldPayAddress"`
-	ExtendPayMsg     []float64       `json:"extendPayMsg,omitempty"`
-	Category         *RecordCategory `json:"category,omitempty"`
+	Time                *string         `json:"time,omitempty"`
+	ShouldPayAddressIds []string        `json:"shouldPayAddressIds"`
+	ExtendPayMsg        []float64       `json:"extendPayMsg,omitempty"`
+	Category            *RecordCategory `json:"category,omitempty"`
 }
 
 type NewTrip struct {
@@ -33,8 +37,8 @@ type NewTrip struct {
 }
 
 type Payment struct {
-	Amount  float64 `json:"amount"`
-	Address string  `json:"address"`
+	Amount  float64  `json:"amount"`
+	Address *Address `json:"address"`
 }
 
 type Query struct {

@@ -51,12 +51,18 @@ type DirectiveRoot struct {
 }
 
 type ComplexityRoot struct {
+	Address struct {
+		ID   func(childComplexity int) int
+		Name func(childComplexity int) int
+	}
+
 	Mutation struct {
-		CreateAddress func(childComplexity int, tripID string, address string) int
+		CreateAddress func(childComplexity int, tripID string, input model.NewAddress) int
 		CreateRecord  func(childComplexity int, tripID string, input model.NewRecord) int
 		CreateTrip    func(childComplexity int, input model.NewTrip) int
-		DeleteAddress func(childComplexity int, tripID string, address string) int
+		DeleteAddress func(childComplexity int, tripID string, addressID string) int
 		RemoveRecord  func(childComplexity int, recordID string) int
+		UpdateAddress func(childComplexity int, tripID string, addressID string, input model.NewAddress) int
 		UpdateRecord  func(childComplexity int, recordID string, input model.EditRecord) int
 		UpdateTrip    func(childComplexity int, tripID string, input model.NewTrip) int
 	}
@@ -85,18 +91,19 @@ type ComplexityRoot struct {
 	Subscription struct {
 		SubAddressCreate func(childComplexity int, tripID string) int
 		SubAddressDelete func(childComplexity int, tripID string) int
+		SubAddressUpdate func(childComplexity int, tripID string) int
 		SubRecordCreate  func(childComplexity int, tripID string) int
 		SubRecordDelete  func(childComplexity int, tripID string) int
 		SubRecordUpdate  func(childComplexity int, tripID string) int
 	}
 
 	Trip struct {
-		AddressList func(childComplexity int) int
-		ID          func(childComplexity int) int
-		IsValid     func(childComplexity int) int
-		MoneyShare  func(childComplexity int) int
-		Name        func(childComplexity int) int
-		Records     func(childComplexity int) int
+		Addresses  func(childComplexity int) int
+		ID         func(childComplexity int) int
+		IsValid    func(childComplexity int) int
+		MoneyShare func(childComplexity int) int
+		Name       func(childComplexity int) int
+		Records    func(childComplexity int) int
 	}
 
 	Tx struct {
@@ -111,14 +118,15 @@ type MutationResolver interface {
 	CreateRecord(ctx context.Context, tripID string, input model.NewRecord) (*model.Record, error)
 	UpdateRecord(ctx context.Context, recordID string, input model.EditRecord) (*model.Record, error)
 	RemoveRecord(ctx context.Context, recordID string) (string, error)
-	CreateAddress(ctx context.Context, tripID string, address string) (string, error)
-	DeleteAddress(ctx context.Context, tripID string, address string) (string, error)
+	CreateAddress(ctx context.Context, tripID string, input model.NewAddress) (*model.Address, error)
+	UpdateAddress(ctx context.Context, tripID string, addressID string, input model.NewAddress) (*model.Address, error)
+	DeleteAddress(ctx context.Context, tripID string, addressID string) (*model.Address, error)
 }
 type QueryResolver interface {
 	Trip(ctx context.Context, tripID string) (*model.Trip, error)
 }
 type RecordResolver interface {
-	ShouldPayAddress(ctx context.Context, obj *model.Record) ([]string, error)
+	ShouldPayAddress(ctx context.Context, obj *model.Record) ([]*model.Address, error)
 	ExtendPayMsg(ctx context.Context, obj *model.Record) ([]float64, error)
 
 	IsValid(ctx context.Context, obj *model.Record) (bool, error)
@@ -127,13 +135,14 @@ type SubscriptionResolver interface {
 	SubRecordCreate(ctx context.Context, tripID string) (<-chan *model.Record, error)
 	SubRecordDelete(ctx context.Context, tripID string) (<-chan string, error)
 	SubRecordUpdate(ctx context.Context, tripID string) (<-chan *model.Record, error)
-	SubAddressCreate(ctx context.Context, tripID string) (<-chan string, error)
-	SubAddressDelete(ctx context.Context, tripID string) (<-chan string, error)
+	SubAddressCreate(ctx context.Context, tripID string) (<-chan *model.Address, error)
+	SubAddressUpdate(ctx context.Context, tripID string) (<-chan *model.Address, error)
+	SubAddressDelete(ctx context.Context, tripID string) (<-chan *model.Address, error)
 }
 type TripResolver interface {
 	Records(ctx context.Context, obj *model.Trip) ([]*model.Record, error)
 	MoneyShare(ctx context.Context, obj *model.Trip) ([]*model.Tx, error)
-	AddressList(ctx context.Context, obj *model.Trip) ([]string, error)
+	Addresses(ctx context.Context, obj *model.Trip) ([]*model.Address, error)
 	IsValid(ctx context.Context, obj *model.Trip) (bool, error)
 }
 
@@ -156,6 +165,20 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 	_ = ec
 	switch typeName + "." + field {
 
+	case "Address.id":
+		if e.complexity.Address.ID == nil {
+			break
+		}
+
+		return e.complexity.Address.ID(childComplexity), true
+
+	case "Address.name":
+		if e.complexity.Address.Name == nil {
+			break
+		}
+
+		return e.complexity.Address.Name(childComplexity), true
+
 	case "Mutation.createAddress":
 		if e.complexity.Mutation.CreateAddress == nil {
 			break
@@ -166,7 +189,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.CreateAddress(childComplexity, args["tripId"].(string), args["address"].(string)), true
+		return e.complexity.Mutation.CreateAddress(childComplexity, args["tripId"].(string), args["input"].(model.NewAddress)), true
 
 	case "Mutation.createRecord":
 		if e.complexity.Mutation.CreateRecord == nil {
@@ -202,7 +225,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.DeleteAddress(childComplexity, args["tripId"].(string), args["address"].(string)), true
+		return e.complexity.Mutation.DeleteAddress(childComplexity, args["tripId"].(string), args["addressId"].(string)), true
 
 	case "Mutation.removeRecord":
 		if e.complexity.Mutation.RemoveRecord == nil {
@@ -215,6 +238,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.RemoveRecord(childComplexity, args["recordId"].(string)), true
+
+	case "Mutation.updateAddress":
+		if e.complexity.Mutation.UpdateAddress == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_updateAddress_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UpdateAddress(childComplexity, args["tripId"].(string), args["addressId"].(string), args["input"].(model.NewAddress)), true
 
 	case "Mutation.updateRecord":
 		if e.complexity.Mutation.UpdateRecord == nil {
@@ -353,6 +388,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Subscription.SubAddressDelete(childComplexity, args["tripId"].(string)), true
 
+	case "Subscription.subAddressUpdate":
+		if e.complexity.Subscription.SubAddressUpdate == nil {
+			break
+		}
+
+		args, err := ec.field_Subscription_subAddressUpdate_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Subscription.SubAddressUpdate(childComplexity, args["tripId"].(string)), true
+
 	case "Subscription.subRecordCreate":
 		if e.complexity.Subscription.SubRecordCreate == nil {
 			break
@@ -389,12 +436,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Subscription.SubRecordUpdate(childComplexity, args["tripId"].(string)), true
 
-	case "Trip.addressList":
-		if e.complexity.Trip.AddressList == nil {
+	case "Trip.addresses":
+		if e.complexity.Trip.Addresses == nil {
 			break
 		}
 
-		return e.complexity.Trip.AddressList(childComplexity), true
+		return e.complexity.Trip.Addresses(childComplexity), true
 
 	case "Trip.id":
 		if e.complexity.Trip.ID == nil {
@@ -454,6 +501,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 	ec := executionContext{opCtx, e, 0, 0, make(chan graphql.DeferredResult)}
 	inputUnmarshalMap := graphql.BuildUnmarshalerMap(
 		ec.unmarshalInputEditRecord,
+		ec.unmarshalInputNewAddress,
 		ec.unmarshalInputNewRecord,
 		ec.unmarshalInputNewTrip,
 	)
@@ -597,11 +645,11 @@ func (ec *executionContext) field_Mutation_createAddress_args(ctx context.Contex
 		return nil, err
 	}
 	args["tripId"] = arg0
-	arg1, err := ec.field_Mutation_createAddress_argsAddress(ctx, rawArgs)
+	arg1, err := ec.field_Mutation_createAddress_argsInput(ctx, rawArgs)
 	if err != nil {
 		return nil, err
 	}
-	args["address"] = arg1
+	args["input"] = arg1
 	return args, nil
 }
 func (ec *executionContext) field_Mutation_createAddress_argsTripID(
@@ -617,16 +665,16 @@ func (ec *executionContext) field_Mutation_createAddress_argsTripID(
 	return zeroVal, nil
 }
 
-func (ec *executionContext) field_Mutation_createAddress_argsAddress(
+func (ec *executionContext) field_Mutation_createAddress_argsInput(
 	ctx context.Context,
 	rawArgs map[string]any,
-) (string, error) {
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("address"))
-	if tmp, ok := rawArgs["address"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
+) (model.NewAddress, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("input"))
+	if tmp, ok := rawArgs["input"]; ok {
+		return ec.unmarshalNNewAddress2dtmᚋgraphᚋmodelᚐNewAddress(ctx, tmp)
 	}
 
-	var zeroVal string
+	var zeroVal model.NewAddress
 	return zeroVal, nil
 }
 
@@ -702,11 +750,11 @@ func (ec *executionContext) field_Mutation_deleteAddress_args(ctx context.Contex
 		return nil, err
 	}
 	args["tripId"] = arg0
-	arg1, err := ec.field_Mutation_deleteAddress_argsAddress(ctx, rawArgs)
+	arg1, err := ec.field_Mutation_deleteAddress_argsAddressID(ctx, rawArgs)
 	if err != nil {
 		return nil, err
 	}
-	args["address"] = arg1
+	args["addressId"] = arg1
 	return args, nil
 }
 func (ec *executionContext) field_Mutation_deleteAddress_argsTripID(
@@ -722,13 +770,13 @@ func (ec *executionContext) field_Mutation_deleteAddress_argsTripID(
 	return zeroVal, nil
 }
 
-func (ec *executionContext) field_Mutation_deleteAddress_argsAddress(
+func (ec *executionContext) field_Mutation_deleteAddress_argsAddressID(
 	ctx context.Context,
 	rawArgs map[string]any,
 ) (string, error) {
-	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("address"))
-	if tmp, ok := rawArgs["address"]; ok {
-		return ec.unmarshalNString2string(ctx, tmp)
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("addressId"))
+	if tmp, ok := rawArgs["addressId"]; ok {
+		return ec.unmarshalNID2string(ctx, tmp)
 	}
 
 	var zeroVal string
@@ -755,6 +803,65 @@ func (ec *executionContext) field_Mutation_removeRecord_argsRecordID(
 	}
 
 	var zeroVal string
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Mutation_updateAddress_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := ec.field_Mutation_updateAddress_argsTripID(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["tripId"] = arg0
+	arg1, err := ec.field_Mutation_updateAddress_argsAddressID(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["addressId"] = arg1
+	arg2, err := ec.field_Mutation_updateAddress_argsInput(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg2
+	return args, nil
+}
+func (ec *executionContext) field_Mutation_updateAddress_argsTripID(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (string, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tripId"))
+	if tmp, ok := rawArgs["tripId"]; ok {
+		return ec.unmarshalNID2string(ctx, tmp)
+	}
+
+	var zeroVal string
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Mutation_updateAddress_argsAddressID(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (string, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("addressId"))
+	if tmp, ok := rawArgs["addressId"]; ok {
+		return ec.unmarshalNID2string(ctx, tmp)
+	}
+
+	var zeroVal string
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Mutation_updateAddress_argsInput(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (model.NewAddress, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("input"))
+	if tmp, ok := rawArgs["input"]; ok {
+		return ec.unmarshalNNewAddress2dtmᚋgraphᚋmodelᚐNewAddress(ctx, tmp)
+	}
+
+	var zeroVal model.NewAddress
 	return zeroVal, nil
 }
 
@@ -920,6 +1027,29 @@ func (ec *executionContext) field_Subscription_subAddressDelete_args(ctx context
 	return args, nil
 }
 func (ec *executionContext) field_Subscription_subAddressDelete_argsTripID(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (string, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tripId"))
+	if tmp, ok := rawArgs["tripId"]; ok {
+		return ec.unmarshalNID2string(ctx, tmp)
+	}
+
+	var zeroVal string
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Subscription_subAddressUpdate_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := ec.field_Subscription_subAddressUpdate_argsTripID(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["tripId"] = arg0
+	return args, nil
+}
+func (ec *executionContext) field_Subscription_subAddressUpdate_argsTripID(
 	ctx context.Context,
 	rawArgs map[string]any,
 ) (string, error) {
@@ -1101,6 +1231,94 @@ func (ec *executionContext) field___Type_fields_argsIncludeDeprecated(
 
 // region    **************************** field.gotpl *****************************
 
+func (ec *executionContext) _Address_id(ctx context.Context, field graphql.CollectedField, obj *model.Address) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Address_id(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Address_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Address",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Address_name(ctx context.Context, field graphql.CollectedField, obj *model.Address) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Address_name(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Name, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Address_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Address",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_createTrip(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Mutation_createTrip(ctx, field)
 	if err != nil {
@@ -1148,8 +1366,8 @@ func (ec *executionContext) fieldContext_Mutation_createTrip(ctx context.Context
 				return ec.fieldContext_Trip_records(ctx, field)
 			case "moneyShare":
 				return ec.fieldContext_Trip_moneyShare(ctx, field)
-			case "addressList":
-				return ec.fieldContext_Trip_addressList(ctx, field)
+			case "addresses":
+				return ec.fieldContext_Trip_addresses(ctx, field)
 			case "isValid":
 				return ec.fieldContext_Trip_isValid(ctx, field)
 			}
@@ -1217,8 +1435,8 @@ func (ec *executionContext) fieldContext_Mutation_updateTrip(ctx context.Context
 				return ec.fieldContext_Trip_records(ctx, field)
 			case "moneyShare":
 				return ec.fieldContext_Trip_moneyShare(ctx, field)
-			case "addressList":
-				return ec.fieldContext_Trip_addressList(ctx, field)
+			case "addresses":
+				return ec.fieldContext_Trip_addresses(ctx, field)
 			case "isValid":
 				return ec.fieldContext_Trip_isValid(ctx, field)
 			}
@@ -1458,7 +1676,7 @@ func (ec *executionContext) _Mutation_createAddress(ctx context.Context, field g
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().CreateAddress(rctx, fc.Args["tripId"].(string), fc.Args["address"].(string))
+		return ec.resolvers.Mutation().CreateAddress(rctx, fc.Args["tripId"].(string), fc.Args["input"].(model.NewAddress))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -1470,9 +1688,9 @@ func (ec *executionContext) _Mutation_createAddress(ctx context.Context, field g
 		}
 		return graphql.Null
 	}
-	res := resTmp.(string)
+	res := resTmp.(*model.Address)
 	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return ec.marshalNAddress2ᚖdtmᚋgraphᚋmodelᚐAddress(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) fieldContext_Mutation_createAddress(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -1482,7 +1700,13 @@ func (ec *executionContext) fieldContext_Mutation_createAddress(ctx context.Cont
 		IsMethod:   true,
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return nil, errors.New("field of type String does not have child fields")
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Address_id(ctx, field)
+			case "name":
+				return ec.fieldContext_Address_name(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
 		},
 	}
 	defer func() {
@@ -1493,6 +1717,67 @@ func (ec *executionContext) fieldContext_Mutation_createAddress(ctx context.Cont
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_createAddress_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_updateAddress(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_updateAddress(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().UpdateAddress(rctx, fc.Args["tripId"].(string), fc.Args["addressId"].(string), fc.Args["input"].(model.NewAddress))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.Address)
+	fc.Result = res
+	return ec.marshalNAddress2ᚖdtmᚋgraphᚋmodelᚐAddress(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_updateAddress(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Address_id(ctx, field)
+			case "name":
+				return ec.fieldContext_Address_name(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_updateAddress_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -1513,7 +1798,7 @@ func (ec *executionContext) _Mutation_deleteAddress(ctx context.Context, field g
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().DeleteAddress(rctx, fc.Args["tripId"].(string), fc.Args["address"].(string))
+		return ec.resolvers.Mutation().DeleteAddress(rctx, fc.Args["tripId"].(string), fc.Args["addressId"].(string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -1525,9 +1810,9 @@ func (ec *executionContext) _Mutation_deleteAddress(ctx context.Context, field g
 		}
 		return graphql.Null
 	}
-	res := resTmp.(string)
+	res := resTmp.(*model.Address)
 	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return ec.marshalNAddress2ᚖdtmᚋgraphᚋmodelᚐAddress(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) fieldContext_Mutation_deleteAddress(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -1537,7 +1822,13 @@ func (ec *executionContext) fieldContext_Mutation_deleteAddress(ctx context.Cont
 		IsMethod:   true,
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return nil, errors.New("field of type String does not have child fields")
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Address_id(ctx, field)
+			case "name":
+				return ec.fieldContext_Address_name(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
 		},
 	}
 	defer func() {
@@ -1624,9 +1915,9 @@ func (ec *executionContext) _Payment_address(ctx context.Context, field graphql.
 		}
 		return graphql.Null
 	}
-	res := resTmp.(string)
+	res := resTmp.(*model.Address)
 	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return ec.marshalNAddress2ᚖdtmᚋgraphᚋmodelᚐAddress(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) fieldContext_Payment_address(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -1636,7 +1927,13 @@ func (ec *executionContext) fieldContext_Payment_address(_ context.Context, fiel
 		IsMethod:   false,
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return nil, errors.New("field of type String does not have child fields")
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Address_id(ctx, field)
+			case "name":
+				return ec.fieldContext_Address_name(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
 		},
 	}
 	return fc, nil
@@ -1686,8 +1983,8 @@ func (ec *executionContext) fieldContext_Query_trip(ctx context.Context, field g
 				return ec.fieldContext_Trip_records(ctx, field)
 			case "moneyShare":
 				return ec.fieldContext_Trip_moneyShare(ctx, field)
-			case "addressList":
-				return ec.fieldContext_Trip_addressList(ctx, field)
+			case "addresses":
+				return ec.fieldContext_Trip_addresses(ctx, field)
 			case "isValid":
 				return ec.fieldContext_Trip_isValid(ctx, field)
 			}
@@ -1997,9 +2294,9 @@ func (ec *executionContext) _Record_prePayAddress(ctx context.Context, field gra
 		}
 		return graphql.Null
 	}
-	res := resTmp.(string)
+	res := resTmp.(*model.Address)
 	fc.Result = res
-	return ec.marshalNString2string(ctx, field.Selections, res)
+	return ec.marshalNAddress2ᚖdtmᚋgraphᚋmodelᚐAddress(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) fieldContext_Record_prePayAddress(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -2009,7 +2306,13 @@ func (ec *executionContext) fieldContext_Record_prePayAddress(_ context.Context,
 		IsMethod:   false,
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return nil, errors.New("field of type String does not have child fields")
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Address_id(ctx, field)
+			case "name":
+				return ec.fieldContext_Address_name(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
 		},
 	}
 	return fc, nil
@@ -2085,9 +2388,9 @@ func (ec *executionContext) _Record_shouldPayAddress(ctx context.Context, field 
 		}
 		return graphql.Null
 	}
-	res := resTmp.([]string)
+	res := resTmp.([]*model.Address)
 	fc.Result = res
-	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+	return ec.marshalNAddress2ᚕᚖdtmᚋgraphᚋmodelᚐAddressᚄ(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) fieldContext_Record_shouldPayAddress(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -2097,7 +2400,13 @@ func (ec *executionContext) fieldContext_Record_shouldPayAddress(_ context.Conte
 		IsMethod:   true,
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return nil, errors.New("field of type String does not have child fields")
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Address_id(ctx, field)
+			case "name":
+				return ec.fieldContext_Address_name(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
 		},
 	}
 	return fc, nil
@@ -2510,7 +2819,7 @@ func (ec *executionContext) _Subscription_subAddressCreate(ctx context.Context, 
 	}
 	return func(ctx context.Context) graphql.Marshaler {
 		select {
-		case res, ok := <-resTmp.(<-chan string):
+		case res, ok := <-resTmp.(<-chan *model.Address):
 			if !ok {
 				return nil
 			}
@@ -2518,7 +2827,7 @@ func (ec *executionContext) _Subscription_subAddressCreate(ctx context.Context, 
 				w.Write([]byte{'{'})
 				graphql.MarshalString(field.Alias).MarshalGQL(w)
 				w.Write([]byte{':'})
-				ec.marshalNString2string(ctx, field.Selections, res).MarshalGQL(w)
+				ec.marshalNAddress2ᚖdtmᚋgraphᚋmodelᚐAddress(ctx, field.Selections, res).MarshalGQL(w)
 				w.Write([]byte{'}'})
 			})
 		case <-ctx.Done():
@@ -2534,7 +2843,13 @@ func (ec *executionContext) fieldContext_Subscription_subAddressCreate(ctx conte
 		IsMethod:   true,
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return nil, errors.New("field of type String does not have child fields")
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Address_id(ctx, field)
+			case "name":
+				return ec.fieldContext_Address_name(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
 		},
 	}
 	defer func() {
@@ -2545,6 +2860,81 @@ func (ec *executionContext) fieldContext_Subscription_subAddressCreate(ctx conte
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Subscription_subAddressCreate_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Subscription_subAddressUpdate(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
+	fc, err := ec.fieldContext_Subscription_subAddressUpdate(ctx, field)
+	if err != nil {
+		return nil
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = nil
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Subscription().SubAddressUpdate(rctx, fc.Args["tripId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return nil
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return nil
+	}
+	return func(ctx context.Context) graphql.Marshaler {
+		select {
+		case res, ok := <-resTmp.(<-chan *model.Address):
+			if !ok {
+				return nil
+			}
+			return graphql.WriterFunc(func(w io.Writer) {
+				w.Write([]byte{'{'})
+				graphql.MarshalString(field.Alias).MarshalGQL(w)
+				w.Write([]byte{':'})
+				ec.marshalNAddress2ᚖdtmᚋgraphᚋmodelᚐAddress(ctx, field.Selections, res).MarshalGQL(w)
+				w.Write([]byte{'}'})
+			})
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
+
+func (ec *executionContext) fieldContext_Subscription_subAddressUpdate(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Subscription",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Address_id(ctx, field)
+			case "name":
+				return ec.fieldContext_Address_name(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Subscription_subAddressUpdate_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -2579,7 +2969,7 @@ func (ec *executionContext) _Subscription_subAddressDelete(ctx context.Context, 
 	}
 	return func(ctx context.Context) graphql.Marshaler {
 		select {
-		case res, ok := <-resTmp.(<-chan string):
+		case res, ok := <-resTmp.(<-chan *model.Address):
 			if !ok {
 				return nil
 			}
@@ -2587,7 +2977,7 @@ func (ec *executionContext) _Subscription_subAddressDelete(ctx context.Context, 
 				w.Write([]byte{'{'})
 				graphql.MarshalString(field.Alias).MarshalGQL(w)
 				w.Write([]byte{':'})
-				ec.marshalNString2string(ctx, field.Selections, res).MarshalGQL(w)
+				ec.marshalNAddress2ᚖdtmᚋgraphᚋmodelᚐAddress(ctx, field.Selections, res).MarshalGQL(w)
 				w.Write([]byte{'}'})
 			})
 		case <-ctx.Done():
@@ -2603,7 +2993,13 @@ func (ec *executionContext) fieldContext_Subscription_subAddressDelete(ctx conte
 		IsMethod:   true,
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return nil, errors.New("field of type String does not have child fields")
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Address_id(ctx, field)
+			case "name":
+				return ec.fieldContext_Address_name(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
 		},
 	}
 	defer func() {
@@ -2822,8 +3218,8 @@ func (ec *executionContext) fieldContext_Trip_moneyShare(_ context.Context, fiel
 	return fc, nil
 }
 
-func (ec *executionContext) _Trip_addressList(ctx context.Context, field graphql.CollectedField, obj *model.Trip) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Trip_addressList(ctx, field)
+func (ec *executionContext) _Trip_addresses(ctx context.Context, field graphql.CollectedField, obj *model.Trip) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Trip_addresses(ctx, field)
 	if err != nil {
 		return graphql.Null
 	}
@@ -2836,7 +3232,7 @@ func (ec *executionContext) _Trip_addressList(ctx context.Context, field graphql
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Trip().AddressList(rctx, obj)
+		return ec.resolvers.Trip().Addresses(rctx, obj)
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -2848,19 +3244,25 @@ func (ec *executionContext) _Trip_addressList(ctx context.Context, field graphql
 		}
 		return graphql.Null
 	}
-	res := resTmp.([]string)
+	res := resTmp.([]*model.Address)
 	fc.Result = res
-	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+	return ec.marshalNAddress2ᚕᚖdtmᚋgraphᚋmodelᚐAddressᚄ(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) fieldContext_Trip_addressList(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+func (ec *executionContext) fieldContext_Trip_addresses(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Trip",
 		Field:      field,
 		IsMethod:   true,
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return nil, errors.New("field of type String does not have child fields")
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Address_id(ctx, field)
+			case "name":
+				return ec.fieldContext_Address_name(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
 		},
 	}
 	return fc, nil
@@ -4995,6 +5397,33 @@ func (ec *executionContext) unmarshalInputEditRecord(ctx context.Context, obj an
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputNewAddress(ctx context.Context, obj any) (model.NewAddress, error) {
+	var it model.NewAddress
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"name"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "name":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("name"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Name = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputNewRecord(ctx context.Context, obj any) (model.NewRecord, error) {
 	var it model.NewRecord
 	asMap := map[string]any{}
@@ -5002,7 +5431,7 @@ func (ec *executionContext) unmarshalInputNewRecord(ctx context.Context, obj any
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"name", "amount", "prePayAddress", "time", "shouldPayAddress", "extendPayMsg", "category"}
+	fieldsInOrder := [...]string{"name", "amount", "prePayAddressId", "time", "shouldPayAddressIds", "extendPayMsg", "category"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -5023,13 +5452,13 @@ func (ec *executionContext) unmarshalInputNewRecord(ctx context.Context, obj any
 				return it, err
 			}
 			it.Amount = data
-		case "prePayAddress":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("prePayAddress"))
-			data, err := ec.unmarshalNString2string(ctx, v)
+		case "prePayAddressId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("prePayAddressId"))
+			data, err := ec.unmarshalNID2string(ctx, v)
 			if err != nil {
 				return it, err
 			}
-			it.PrePayAddress = data
+			it.PrePayAddressID = data
 		case "time":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("time"))
 			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
@@ -5037,13 +5466,13 @@ func (ec *executionContext) unmarshalInputNewRecord(ctx context.Context, obj any
 				return it, err
 			}
 			it.Time = data
-		case "shouldPayAddress":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("shouldPayAddress"))
-			data, err := ec.unmarshalNString2ᚕstringᚄ(ctx, v)
+		case "shouldPayAddressIds":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("shouldPayAddressIds"))
+			data, err := ec.unmarshalNID2ᚕstringᚄ(ctx, v)
 			if err != nil {
 				return it, err
 			}
-			it.ShouldPayAddress = data
+			it.ShouldPayAddressIds = data
 		case "extendPayMsg":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("extendPayMsg"))
 			data, err := ec.unmarshalOFloat2ᚕfloat64ᚄ(ctx, v)
@@ -5098,6 +5527,50 @@ func (ec *executionContext) unmarshalInputNewTrip(ctx context.Context, obj any) 
 // endregion ************************** interface.gotpl ***************************
 
 // region    **************************** object.gotpl ****************************
+
+var addressImplementors = []string{"Address"}
+
+func (ec *executionContext) _Address(ctx context.Context, sel ast.SelectionSet, obj *model.Address) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, addressImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Address")
+		case "id":
+			out.Values[i] = ec._Address_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "name":
+			out.Values[i] = ec._Address_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
 
 var mutationImplementors = []string{"Mutation"}
 
@@ -5156,6 +5629,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "createAddress":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_createAddress(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "updateAddress":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_updateAddress(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -5496,6 +5976,8 @@ func (ec *executionContext) _Subscription(ctx context.Context, sel ast.Selection
 		return ec._Subscription_subRecordUpdate(ctx, fields[0])
 	case "subAddressCreate":
 		return ec._Subscription_subAddressCreate(ctx, fields[0])
+	case "subAddressUpdate":
+		return ec._Subscription_subAddressUpdate(ctx, fields[0])
 	case "subAddressDelete":
 		return ec._Subscription_subAddressDelete(ctx, fields[0])
 	default:
@@ -5596,7 +6078,7 @@ func (ec *executionContext) _Trip(ctx context.Context, sel ast.SelectionSet, obj
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
-		case "addressList":
+		case "addresses":
 			field := field
 
 			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
@@ -5605,7 +6087,7 @@ func (ec *executionContext) _Trip(ctx context.Context, sel ast.SelectionSet, obj
 						ec.Error(ctx, ec.Recover(ctx, r))
 					}
 				}()
-				res = ec._Trip_addressList(ctx, field, obj)
+				res = ec._Trip_addresses(ctx, field, obj)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -6070,6 +6552,64 @@ func (ec *executionContext) ___Type(ctx context.Context, sel ast.SelectionSet, o
 
 // region    ***************************** type.gotpl *****************************
 
+func (ec *executionContext) marshalNAddress2dtmᚋgraphᚋmodelᚐAddress(ctx context.Context, sel ast.SelectionSet, v model.Address) graphql.Marshaler {
+	return ec._Address(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNAddress2ᚕᚖdtmᚋgraphᚋmodelᚐAddressᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Address) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNAddress2ᚖdtmᚋgraphᚋmodelᚐAddress(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNAddress2ᚖdtmᚋgraphᚋmodelᚐAddress(ctx context.Context, sel ast.SelectionSet, v *model.Address) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._Address(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNBoolean2bool(ctx context.Context, v any) (bool, error) {
 	res, err := graphql.UnmarshalBoolean(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -6151,6 +6691,41 @@ func (ec *executionContext) marshalNID2string(ctx context.Context, sel ast.Selec
 		}
 	}
 	return res
+}
+
+func (ec *executionContext) unmarshalNID2ᚕstringᚄ(ctx context.Context, v any) ([]string, error) {
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]string, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNID2string(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) marshalNID2ᚕstringᚄ(ctx context.Context, sel ast.SelectionSet, v []string) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	for i := range v {
+		ret[i] = ec.marshalNID2string(ctx, sel, v[i])
+	}
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) unmarshalNNewAddress2dtmᚋgraphᚋmodelᚐNewAddress(ctx context.Context, v any) (model.NewAddress, error) {
+	res, err := ec.unmarshalInputNewAddress(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) unmarshalNNewRecord2dtmᚋgraphᚋmodelᚐNewRecord(ctx context.Context, v any) (model.NewRecord, error) {
@@ -6299,36 +6874,6 @@ func (ec *executionContext) marshalNString2string(ctx context.Context, sel ast.S
 		}
 	}
 	return res
-}
-
-func (ec *executionContext) unmarshalNString2ᚕstringᚄ(ctx context.Context, v any) ([]string, error) {
-	var vSlice []any
-	vSlice = graphql.CoerceList(v)
-	var err error
-	res := make([]string, len(vSlice))
-	for i := range vSlice {
-		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
-		res[i], err = ec.unmarshalNString2string(ctx, vSlice[i])
-		if err != nil {
-			return nil, err
-		}
-	}
-	return res, nil
-}
-
-func (ec *executionContext) marshalNString2ᚕstringᚄ(ctx context.Context, sel ast.SelectionSet, v []string) graphql.Marshaler {
-	ret := make(graphql.Array, len(v))
-	for i := range v {
-		ret[i] = ec.marshalNString2string(ctx, sel, v[i])
-	}
-
-	for _, e := range ret {
-		if e == graphql.Null {
-			return graphql.Null
-		}
-	}
-
-	return ret
 }
 
 func (ec *executionContext) marshalNTrip2dtmᚋgraphᚋmodelᚐTrip(ctx context.Context, sel ast.SelectionSet, v model.Trip) graphql.Marshaler {

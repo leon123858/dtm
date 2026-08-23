@@ -21,15 +21,15 @@ func TestTxPackage_ProcessTransactions(t *testing.T) {
 				Name: "SingleTxPackage",
 				TxList: []Tx{
 					{
-						Input:  []Payment{{Amount: 10.0, Address: "Alice"}},
-						Output: Payment{Amount: 10.0, Address: "Bob"},
+						Input:  []Payment{{Amount: 10.0, Address: testAddress("Alice")}},
+						Output: Payment{Amount: 10.0, Address: testAddress("Bob")},
 						Name:   "Tx1",
 					},
 				},
 			},
 			expectedCashList: []Cash{
-				{Address: "Alice", InputAmount: 10.0, OutputAmount: 0.0},
-				{Address: "Bob", InputAmount: 0.0, OutputAmount: 10.0},
+				{Address: testAddress("Alice"), InputAmount: 10.0, OutputAmount: 0.0},
+				{Address: testAddress("Bob"), InputAmount: 0.0, OutputAmount: 10.0},
 			},
 		},
 		{
@@ -38,27 +38,27 @@ func TestTxPackage_ProcessTransactions(t *testing.T) {
 				Name: "ComplexTxPackage",
 				TxList: []Tx{
 					{
-						Input:  []Payment{{Amount: 100.0, Address: "Alice"}},
-						Output: Payment{Amount: 100.0, Address: "Bob"},
+						Input:  []Payment{{Amount: 100.0, Address: testAddress("Alice")}},
+						Output: Payment{Amount: 100.0, Address: testAddress("Bob")},
 						Name:   "TxA",
 					},
 					{
-						Input:  []Payment{{Amount: 50.0, Address: "Bob"}}, // Bob sends money now
-						Output: Payment{Amount: 50.0, Address: "Charlie"},
+						Input:  []Payment{{Amount: 50.0, Address: testAddress("Bob")}}, // Bob sends money now
+						Output: Payment{Amount: 50.0, Address: testAddress("Charlie")},
 						Name:   "TxB",
 					},
 					{
-						Input:  []Payment{{Amount: 20.0, Address: "Alice"}}, // Alice sends more
-						Output: Payment{Amount: 20.0, Address: "David"},
+						Input:  []Payment{{Amount: 20.0, Address: testAddress("Alice")}}, // Alice sends more
+						Output: Payment{Amount: 20.0, Address: testAddress("David")},
 						Name:   "TxC",
 					},
 				},
 			},
 			expectedCashList: []Cash{
-				{Address: "Alice", InputAmount: 120.0, OutputAmount: 0.0},  // 100 from TxA, 20 from TxC
-				{Address: "Bob", InputAmount: 50.0, OutputAmount: 100.0},   // 100 to Bob (TxA), 50 from Bob (TxB)
-				{Address: "Charlie", InputAmount: 0.0, OutputAmount: 50.0}, // 50 to Charlie (TxB)
-				{Address: "David", InputAmount: 0.0, OutputAmount: 20.0},   // 20 to David (TxC)
+				{Address: testAddress("Alice"), InputAmount: 120.0, OutputAmount: 0.0},  // 100 from TxA, 20 from TxC
+				{Address: testAddress("Bob"), InputAmount: 50.0, OutputAmount: 100.0},   // 100 to Bob (TxA), 50 from Bob (TxB)
+				{Address: testAddress("Charlie"), InputAmount: 0.0, OutputAmount: 50.0}, // 50 to Charlie (TxB)
+				{Address: testAddress("David"), InputAmount: 0.0, OutputAmount: 20.0},   // 20 to David (TxC)
 			},
 		},
 		{
@@ -75,15 +75,15 @@ func TestTxPackage_ProcessTransactions(t *testing.T) {
 				Name: "ZeroAmountPackage",
 				TxList: []Tx{
 					{
-						Input:  []Payment{{Amount: 0.0, Address: "X"}},
-						Output: Payment{Amount: 0.0, Address: "Y"},
+						Input:  []Payment{{Amount: 0.0, Address: testAddress("X")}},
+						Output: Payment{Amount: 0.0, Address: testAddress("Y")},
 						Name:   "ZeroTx",
 					},
 				},
 			},
 			expectedCashList: []Cash{
-				{Address: "X", InputAmount: 0.0, OutputAmount: 0.0},
-				{Address: "Y", InputAmount: 0.0, OutputAmount: 0.0},
+				{Address: testAddress("X"), InputAmount: 0.0, OutputAmount: 0.0},
+				{Address: testAddress("Y"), InputAmount: 0.0, OutputAmount: 0.0},
 			},
 		},
 		{
@@ -92,20 +92,20 @@ func TestTxPackage_ProcessTransactions(t *testing.T) {
 				Name: "SelfTransferPackage",
 				TxList: []Tx{
 					{
-						Input:  []Payment{{Amount: 10.0, Address: "Alice"}},
-						Output: Payment{Amount: 10.0, Address: "Bob"},
+						Input:  []Payment{{Amount: 10.0, Address: testAddress("Alice")}},
+						Output: Payment{Amount: 10.0, Address: testAddress("Bob")},
 						Name:   "Tx1",
 					},
 					{
-						Input:  []Payment{{Amount: 5.0, Address: "Bob"}},
-						Output: Payment{Amount: 5.0, Address: "Alice"},
+						Input:  []Payment{{Amount: 5.0, Address: testAddress("Bob")}},
+						Output: Payment{Amount: 5.0, Address: testAddress("Alice")},
 						Name:   "Tx2",
 					},
 				},
 			},
 			expectedCashList: []Cash{
-				{Address: "Alice", InputAmount: 10.0, OutputAmount: 5.0}, // Input: 10 from Tx1. Output: 5 from Tx2
-				{Address: "Bob", InputAmount: 5.0, OutputAmount: 10.0},   // Input: 5 from Tx2. Output: 10 from Tx1
+				{Address: testAddress("Alice"), InputAmount: 10.0, OutputAmount: 5.0}, // Input: 10 from Tx1. Output: 5 from Tx2
+				{Address: testAddress("Bob"), InputAmount: 5.0, OutputAmount: 10.0},   // Input: 5 from Tx2. Output: 10 from Tx1
 			},
 		},
 	}
@@ -116,10 +116,10 @@ func TestTxPackage_ProcessTransactions(t *testing.T) {
 
 			// Sort both slices to ensure consistent order for comparison
 			sort.Slice(gotCashList, func(i, j int) bool {
-				return gotCashList[i].Address < gotCashList[j].Address
+				return gotCashList[i].Address.ID.String() < gotCashList[j].Address.ID.String()
 			})
 			sort.Slice(tt.expectedCashList, func(i, j int) bool {
-				return tt.expectedCashList[i].Address < tt.expectedCashList[j].Address
+				return tt.expectedCashList[i].Address.ID.String() < tt.expectedCashList[j].Address.ID.String()
 			})
 
 			// Check if lengths match
@@ -151,16 +151,16 @@ func TestPackage_SetNoSmallValue_EdgeCases(t *testing.T) {
 			initialPkg: Package{
 				TxList: []Tx{
 					{
-						Input:  []Payment{{Address: "A", Amount: 1.0}}, // 1.0 < 1.0 為假
-						Output: Payment{Address: "B", Amount: 1.0},
+						Input:  []Payment{{Address: testAddress("A"), Amount: 1.0}}, // 1.0 < 1.0 為假
+						Output: Payment{Address: testAddress("B"), Amount: 1.0},
 					},
 				},
 			},
 			expectedPkg: Package{
 				TxList: []Tx{
 					{
-						Input:  []Payment{{Address: "A", Amount: 1.0}},
-						Output: Payment{Address: "B", Amount: 1.0},
+						Input:  []Payment{{Address: testAddress("A"), Amount: 1.0}},
+						Output: Payment{Address: testAddress("B"), Amount: 1.0},
 					},
 				},
 			},
@@ -171,16 +171,16 @@ func TestPackage_SetNoSmallValue_EdgeCases(t *testing.T) {
 			initialPkg: Package{
 				TxList: []Tx{
 					{
-						Input:  []Payment{{Address: "A", Amount: 0.999999999}},
-						Output: Payment{Address: "B", Amount: 1.0},
+						Input:  []Payment{{Address: testAddress("A"), Amount: 0.999999999}},
+						Output: Payment{Address: testAddress("B"), Amount: 1.0},
 					},
 				},
 			},
 			expectedPkg: Package{
 				TxList: []Tx{
 					{
-						Input:  []Payment{{Address: "A", Amount: 0.0}},
-						Output: Payment{Address: "B", Amount: 0.0}, // 1.0 - 0.99... = 0.000... < 1.0 故歸零
+						Input:  []Payment{{Address: testAddress("A"), Amount: 0.0}},
+						Output: Payment{Address: testAddress("B"), Amount: 0.0}, // 1.0 - 0.99... = 0.000... < 1.0 故歸零
 					},
 				},
 			},
@@ -205,7 +205,7 @@ func TestPackage_SetNoSmallValue_EdgeCases(t *testing.T) {
 					{
 						Name:   "NoInput",
 						Input:  []Payment{},
-						Output: Payment{Address: "B", Amount: 0.5}, // 直接檢查 Output
+						Output: Payment{Address: testAddress("B"), Amount: 0.5}, // 直接檢查 Output
 					},
 				},
 			},
@@ -214,7 +214,7 @@ func TestPackage_SetNoSmallValue_EdgeCases(t *testing.T) {
 					{
 						Name:   "NoInput",
 						Input:  []Payment{},
-						Output: Payment{Address: "B", Amount: 0.0}, // 0.5 < 1.0
+						Output: Payment{Address: testAddress("B"), Amount: 0.0}, // 0.5 < 1.0
 					},
 				},
 			},
@@ -226,10 +226,10 @@ func TestPackage_SetNoSmallValue_EdgeCases(t *testing.T) {
 				TxList: []Tx{
 					{
 						Input: []Payment{
-							{Address: "A", Amount: 5.0},  // 移除
-							{Address: "B", Amount: 15.0}, // 保留
+							{Address: testAddress("A"), Amount: 5.0},  // 移除
+							{Address: testAddress("B"), Amount: 15.0}, // 保留
 						},
-						Output: Payment{Address: "C", Amount: 20.0},
+						Output: Payment{Address: testAddress("C"), Amount: 20.0},
 					},
 				},
 			},
@@ -237,10 +237,10 @@ func TestPackage_SetNoSmallValue_EdgeCases(t *testing.T) {
 				TxList: []Tx{
 					{
 						Input: []Payment{
-							{Address: "A", Amount: 0.0},
-							{Address: "B", Amount: 15.0},
+							{Address: testAddress("A"), Amount: 0.0},
+							{Address: testAddress("B"), Amount: 15.0},
 						},
-						Output: Payment{Address: "C", Amount: 15.0}, // 20 - 5 = 15 (>= 10, 保留)
+						Output: Payment{Address: testAddress("C"), Amount: 15.0}, // 20 - 5 = 15 (>= 10, 保留)
 					},
 				},
 			},
@@ -274,16 +274,16 @@ func TestPackage_SetNoSmallValue_WithPanics(t *testing.T) {
 			initialPkg: Package{
 				TxList: []Tx{
 					{
-						Input:  []Payment{{Address: "A", Amount: 0.00001}},
-						Output: Payment{Address: "B", Amount: 0.00001},
+						Input:  []Payment{{Address: testAddress("A"), Amount: 0.00001}},
+						Output: Payment{Address: testAddress("B"), Amount: 0.00001},
 					},
 				},
 			},
 			expectedPkg: Package{
 				TxList: []Tx{
 					{
-						Input:  []Payment{{Address: "A", Amount: 0.00001}},
-						Output: Payment{Address: "B", Amount: 0.00001},
+						Input:  []Payment{{Address: testAddress("A"), Amount: 0.00001}},
+						Output: Payment{Address: testAddress("B"), Amount: 0.00001},
 					},
 				},
 			},
@@ -296,10 +296,10 @@ func TestPackage_SetNoSmallValue_WithPanics(t *testing.T) {
 				TxList: []Tx{
 					{
 						Input: []Payment{
-							{Address: "A", Amount: 10.0},
-							{Address: "B", Amount: 0.5}, // 應被歸零
+							{Address: testAddress("A"), Amount: 10.0},
+							{Address: testAddress("B"), Amount: 0.5}, // 應被歸零
 						},
-						Output: Payment{Address: "C", Amount: 10.5},
+						Output: Payment{Address: testAddress("C"), Amount: 10.5},
 					},
 				},
 			},
@@ -307,10 +307,10 @@ func TestPackage_SetNoSmallValue_WithPanics(t *testing.T) {
 				TxList: []Tx{
 					{
 						Input: []Payment{
-							{Address: "A", Amount: 10.0},
-							{Address: "B", Amount: 0.0},
+							{Address: testAddress("A"), Amount: 10.0},
+							{Address: testAddress("B"), Amount: 0.0},
 						},
-						Output: Payment{Address: "C", Amount: 10.0},
+						Output: Payment{Address: testAddress("C"), Amount: 10.0},
 					},
 				},
 			},
@@ -330,8 +330,8 @@ func TestPackage_SetNoSmallValue_WithPanics(t *testing.T) {
 			initialPkg: Package{
 				TxList: []Tx{
 					{
-						Input:  []Payment{{Address: "A", Amount: -0.5}},
-						Output: Payment{Address: "B", Amount: 10.0},
+						Input:  []Payment{{Address: testAddress("A"), Amount: -0.5}},
+						Output: Payment{Address: testAddress("B"), Amount: 10.0},
 					},
 				},
 			},
@@ -344,16 +344,16 @@ func TestPackage_SetNoSmallValue_WithPanics(t *testing.T) {
 			initialPkg: Package{
 				TxList: []Tx{
 					{
-						Input:  []Payment{{Address: "A", Amount: 0.5}},
-						Output: Payment{Address: "B", Amount: 0.2}, // 0.2 - 0.5 = -0.3
+						Input:  []Payment{{Address: testAddress("A"), Amount: 0.5}},
+						Output: Payment{Address: testAddress("B"), Amount: 0.2}, // 0.2 - 0.5 = -0.3
 					},
 				},
 			},
 			expectedPkg: Package{
 				TxList: []Tx{
 					{
-						Input:  []Payment{{Address: "A", Amount: 0.0}},
-						Output: Payment{Address: "B", Amount: 0.0},
+						Input:  []Payment{{Address: testAddress("A"), Amount: 0.0}},
+						Output: Payment{Address: testAddress("B"), Amount: 0.0},
 					},
 				},
 			},
@@ -365,16 +365,16 @@ func TestPackage_SetNoSmallValue_WithPanics(t *testing.T) {
 			initialPkg: Package{
 				TxList: []Tx{
 					{
-						Input:  []Payment{{Address: "A", Amount: 0.5}},
-						Output: Payment{Address: "B", Amount: 1.2}, // 1.2 - 0.5 = 0.7 (< 1.0)
+						Input:  []Payment{{Address: testAddress("A"), Amount: 0.5}},
+						Output: Payment{Address: testAddress("B"), Amount: 1.2}, // 1.2 - 0.5 = 0.7 (< 1.0)
 					},
 				},
 			},
 			expectedPkg: Package{
 				TxList: []Tx{
 					{
-						Input:  []Payment{{Address: "A", Amount: 0.0}},
-						Output: Payment{Address: "B", Amount: 0.0},
+						Input:  []Payment{{Address: testAddress("A"), Amount: 0.0}},
+						Output: Payment{Address: testAddress("B"), Amount: 0.0},
 					},
 				},
 			},
@@ -426,13 +426,13 @@ func TestPackage_DropZeroTx(t *testing.T) {
 				TxList: []Tx{
 					{
 						Name:   "ValidTx",
-						Input:  []Payment{{Address: "A", Amount: 10.0}},
-						Output: Payment{Address: "B", Amount: 10.0},
+						Input:  []Payment{{Address: testAddress("A"), Amount: 10.0}},
+						Output: Payment{Address: testAddress("B"), Amount: 10.0},
 					},
 					{
 						Name:   "ZeroOutputTx",
-						Input:  []Payment{{Address: "C", Amount: 10.0}},
-						Output: Payment{Address: "D", Amount: 0.0},
+						Input:  []Payment{{Address: testAddress("C"), Amount: 10.0}},
+						Output: Payment{Address: testAddress("D"), Amount: 0.0},
 					},
 				},
 			},
@@ -440,8 +440,8 @@ func TestPackage_DropZeroTx(t *testing.T) {
 				TxList: []Tx{
 					{
 						Name:   "ValidTx",
-						Input:  []Payment{{Address: "A", Amount: 10.0}},
-						Output: Payment{Address: "B", Amount: 10.0},
+						Input:  []Payment{{Address: testAddress("A"), Amount: 10.0}},
+						Output: Payment{Address: testAddress("B"), Amount: 10.0},
 					},
 				},
 			},
@@ -453,11 +453,11 @@ func TestPackage_DropZeroTx(t *testing.T) {
 					{
 						Name: "MixedInputTx",
 						Input: []Payment{
-							{Address: "A", Amount: 10.0},
-							{Address: "B", Amount: 0.0},
-							{Address: "C", Amount: 0.00000000001}, // 低於 epsilon
+							{Address: testAddress("A"), Amount: 10.0},
+							{Address: testAddress("B"), Amount: 0.0},
+							{Address: testAddress("C"), Amount: 0.00000000001}, // 低於 epsilon
 						},
-						Output: Payment{Address: "D", Amount: 10.0},
+						Output: Payment{Address: testAddress("D"), Amount: 10.0},
 					},
 				},
 			},
@@ -465,8 +465,8 @@ func TestPackage_DropZeroTx(t *testing.T) {
 				TxList: []Tx{
 					{
 						Name:   "MixedInputTx",
-						Input:  []Payment{{Address: "A", Amount: 10.0}},
-						Output: Payment{Address: "D", Amount: 10.0},
+						Input:  []Payment{{Address: testAddress("A"), Amount: 10.0}},
+						Output: Payment{Address: testAddress("D"), Amount: 10.0},
 					},
 				},
 			},
@@ -523,9 +523,9 @@ func TestShareMoneyEasy_Integration_Complex(t *testing.T) {
 		{
 			name: "場景 1：循環債務自動抵銷 (A->B, B->C, C->A)",
 			uiList: []UserPayment{
-				{Name: "T1", Amount: 100, PrePayAddress: "A", ShouldPayAddress: []string{"B"}, ExtendPayMsg: []float64{0.0}, PaymentType: 0}, // FixMoney: B 欠 A 100
-				{Name: "T2", Amount: 100, PrePayAddress: "B", ShouldPayAddress: []string{"C"}, ExtendPayMsg: []float64{0.0}, PaymentType: 0}, // FixMoney: C 欠 B 100
-				{Name: "T3", Amount: 100, PrePayAddress: "C", ShouldPayAddress: []string{"A"}, ExtendPayMsg: []float64{0.0}, PaymentType: 0}, // FixMoney: A 欠 C 100
+				{Name: "T1", Amount: 100, PrePayAddress: testAddress("A"), ShouldPayAddress: testAddresses("B"), ExtendPayMsg: []float64{0.0}, PaymentType: 0}, // FixMoney: B 欠 A 100
+				{Name: "T2", Amount: 100, PrePayAddress: testAddress("B"), ShouldPayAddress: testAddresses("C"), ExtendPayMsg: []float64{0.0}, PaymentType: 0}, // FixMoney: C 欠 B 100
+				{Name: "T3", Amount: 100, PrePayAddress: testAddress("C"), ShouldPayAddress: testAddresses("A"), ExtendPayMsg: []float64{0.0}, PaymentType: 0}, // FixMoney: A 欠 C 100
 			},
 			expectedCount: 0, // 應該全部抵銷，DropZeroTx 後不留交易
 			expectedDiff:  0.0,
@@ -534,7 +534,7 @@ func TestShareMoneyEasy_Integration_Complex(t *testing.T) {
 		{
 			name: "場景 3：自我支付與 Normalize (A 付 100 給 A 自己)",
 			uiList: []UserPayment{
-				{Name: "Self", Amount: 100, PrePayAddress: "A", ShouldPayAddress: []string{"A"}, PaymentType: 0},
+				{Name: "Self", Amount: 100, PrePayAddress: testAddress("A"), ShouldPayAddress: testAddresses("A"), PaymentType: 0},
 			},
 			expectedCount: 0, // NormalizeCash 會將 A 的 Input/Output 抵銷為 0
 			expectedDiff:  0.0,
@@ -544,12 +544,12 @@ func TestShareMoneyEasy_Integration_Complex(t *testing.T) {
 			name: "場景 4：混合多種 Strategy 的複雜分帳",
 			uiList: []UserPayment{
 				{
-					Name: "Lunch", Amount: 300, PrePayAddress: "A",
-					ShouldPayAddress: []string{"B", "C"}, PaymentType: 0, // B:150, C:150
+					Name: "Lunch", Amount: 300, PrePayAddress: testAddress("A"),
+					ShouldPayAddress: testAddresses("B", "C"), PaymentType: 0, // B:150, C:150
 				},
 				{
-					Name: "Taxi", Amount: 100, PrePayAddress: "B",
-					ShouldPayAddress: []string{"A"}, PaymentType: 1, ExtendPayMsg: []float64{100}, // A 欠 B 100
+					Name: "Taxi", Amount: 100, PrePayAddress: testAddress("B"),
+					ShouldPayAddress: testAddresses("A"), PaymentType: 1, ExtendPayMsg: []float64{100}, // A 欠 B 100
 				},
 			},
 			expectedCount: 1,
@@ -559,7 +559,7 @@ func TestShareMoneyEasy_Integration_Complex(t *testing.T) {
 		{
 			name: "場景 5：金額剛好等於 Epsilon (邊緣值處理)",
 			uiList: []UserPayment{
-				{Name: "EpsilonTx", Amount: epsilon, PrePayAddress: "A", ShouldPayAddress: []string{"B"}, PaymentType: 0},
+				{Name: "EpsilonTx", Amount: epsilon, PrePayAddress: testAddress("A"), ShouldPayAddress: testAddresses("B"), PaymentType: 0},
 			},
 			expectedCount: 0, // epsilon <= epsilon，會被 DropZeroTx 濾掉
 			expectedDiff:  0.0,
@@ -568,7 +568,7 @@ func TestShareMoneyEasy_Integration_Complex(t *testing.T) {
 		{
 			name: "場景 6：無效 UserPayment (金額為 0) 應觸發錯誤",
 			uiList: []UserPayment{
-				{Name: "Invalid", Amount: 0, PrePayAddress: "A", ShouldPayAddress: []string{"B"}, PaymentType: 0},
+				{Name: "Invalid", Amount: 0, PrePayAddress: testAddress("A"), ShouldPayAddress: testAddresses("B"), PaymentType: 0},
 			},
 			expectedCount: 0,
 			expectErr:     true, // UIList2TxList 會回傳錯誤
@@ -579,7 +579,7 @@ func TestShareMoneyEasy_Integration_Complex(t *testing.T) {
 				var list []UserPayment
 				for i := 0; i < 1000; i++ {
 					list = append(list, UserPayment{
-						Name: "Heavy", Amount: 0.01, PrePayAddress: "A", ShouldPayAddress: []string{"B"}, PaymentType: 0,
+						Name: "Heavy", Amount: 0.01, PrePayAddress: testAddress("A"), ShouldPayAddress: testAddresses("B"), PaymentType: 0,
 					})
 				}
 				return list
@@ -628,8 +628,8 @@ func TestTx_Validate(t *testing.T) {
 		{
 			name: "Single input and output",
 			tx: Tx{
-				Input:  []Payment{{Amount: 10.0, Address: "Alice"}},
-				Output: Payment{Amount: 10.0, Address: "Bob"},
+				Input:  []Payment{{Amount: 10.0, Address: testAddress("Alice")}},
+				Output: Payment{Amount: 10.0, Address: testAddress("Bob")},
 				Name:   "Tx1",
 			},
 			expectedInput:  10.0,
@@ -639,10 +639,10 @@ func TestTx_Validate(t *testing.T) {
 			name: "Multiple inputs, single output",
 			tx: Tx{
 				Input: []Payment{
-					{Amount: 5.0, Address: "Alice"},
-					{Amount: 15.0, Address: "Bob"},
+					{Amount: 5.0, Address: testAddress("Alice")},
+					{Amount: 15.0, Address: testAddress("Bob")},
 				},
-				Output: Payment{Amount: 20.0, Address: "Charlie"},
+				Output: Payment{Amount: 20.0, Address: testAddress("Charlie")},
 				Name:   "Tx2",
 			},
 			expectedInput:  20.0,
@@ -652,7 +652,7 @@ func TestTx_Validate(t *testing.T) {
 			name: "No inputs, only output",
 			tx: Tx{
 				Input:  []Payment{},
-				Output: Payment{Amount: 10.0, Address: "Charlie"},
+				Output: Payment{Amount: 10.0, Address: testAddress("Charlie")},
 				Name:   "Tx3",
 			},
 			expectedInput:  0.0,
@@ -682,8 +682,8 @@ func TestTxPackage_String(t *testing.T) {
 				Name: "TestPackage",
 				TxList: []Tx{
 					{
-						Input:  []Payment{{Amount: 10.0, Address: "Alice"}},
-						Output: Payment{Amount: 10.0, Address: "Bob"},
+						Input:  []Payment{{Amount: 10.0, Address: testAddress("Alice")}},
+						Output: Payment{Amount: 10.0, Address: testAddress("Bob")},
 						Name:   "Tx1",
 					},
 				},

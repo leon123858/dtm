@@ -6,6 +6,10 @@ import (
 	"math"
 	"sort"
 	"testing"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func floatEquals(a, b float64) bool {
@@ -20,8 +24,8 @@ func cashListEquals(t *testing.T, got, want []Cash, msg string) {
 	}
 
 	// Sort both slices by address for consistent comparison
-	sort.Slice(got, func(i, j int) bool { return got[i].Address < got[j].Address })
-	sort.Slice(want, func(i, j int) bool { return want[i].Address < want[j].Address })
+	sort.Slice(got, func(i, j int) bool { return got[i].Address.ID.String() < got[j].Address.ID.String() })
+	sort.Slice(want, func(i, j int) bool { return want[i].Address.ID.String() < want[j].Address.ID.String() })
 
 	for i := range got {
 		if got[i].Address != want[i].Address {
@@ -57,27 +61,27 @@ func TestNormalizeCash(t *testing.T) {
 		{
 			name: "No duplicates, simple case",
 			cashList: []Cash{
-				{Address: "A", InputAmount: 10, OutputAmount: 0},
-				{Address: "B", InputAmount: 0, OutputAmount: 20},
+				{Address: testAddress("A"), InputAmount: 10, OutputAmount: 0},
+				{Address: testAddress("B"), InputAmount: 0, OutputAmount: 20},
 			},
 			expected: []Cash{
-				{Address: "A", InputAmount: 10, OutputAmount: 0},
-				{Address: "B", InputAmount: 0, OutputAmount: 20},
+				{Address: testAddress("A"), InputAmount: 10, OutputAmount: 0},
+				{Address: testAddress("B"), InputAmount: 0, OutputAmount: 20},
 			},
 		},
 		{
 			name: "Duplicate addresses, aggregate amounts",
 			cashList: []Cash{
-				{Address: "A", InputAmount: 10, OutputAmount: 0},
-				{Address: "B", InputAmount: 0, OutputAmount: 20},
-				{Address: "A", InputAmount: 5, OutputAmount: 0}, // Duplicate for A
-				{Address: "C", InputAmount: 15, OutputAmount: 0},
-				{Address: "B", InputAmount: 0, OutputAmount: 10}, // Duplicate for B
+				{Address: testAddress("A"), InputAmount: 10, OutputAmount: 0},
+				{Address: testAddress("B"), InputAmount: 0, OutputAmount: 20},
+				{Address: testAddress("A"), InputAmount: 5, OutputAmount: 0}, // Duplicate for A
+				{Address: testAddress("C"), InputAmount: 15, OutputAmount: 0},
+				{Address: testAddress("B"), InputAmount: 0, OutputAmount: 10}, // Duplicate for B
 			},
 			expected: []Cash{
-				{Address: "A", InputAmount: 15, OutputAmount: 0},
-				{Address: "B", InputAmount: 0, OutputAmount: 30},
-				{Address: "C", InputAmount: 15, OutputAmount: 0},
+				{Address: testAddress("A"), InputAmount: 15, OutputAmount: 0},
+				{Address: testAddress("B"), InputAmount: 0, OutputAmount: 30},
+				{Address: testAddress("C"), InputAmount: 15, OutputAmount: 0},
 			},
 		},
 		{
@@ -88,24 +92,24 @@ func TestNormalizeCash(t *testing.T) {
 		{
 			name: "Addresses with both input and output (should aggregate correctly)",
 			cashList: []Cash{
-				{Address: "X", InputAmount: 10, OutputAmount: 5},
-				{Address: "Y", InputAmount: 20, OutputAmount: 10},
-				{Address: "X", InputAmount: 5, OutputAmount: 8},
+				{Address: testAddress("X"), InputAmount: 10, OutputAmount: 5},
+				{Address: testAddress("Y"), InputAmount: 20, OutputAmount: 10},
+				{Address: testAddress("X"), InputAmount: 5, OutputAmount: 8},
 			},
 			expected: []Cash{
-				{Address: "X", InputAmount: 2, OutputAmount: 0},
-				{Address: "Y", InputAmount: 10, OutputAmount: 0},
+				{Address: testAddress("X"), InputAmount: 2, OutputAmount: 0},
+				{Address: testAddress("Y"), InputAmount: 10, OutputAmount: 0},
 			},
 		},
 		{
 			name: "Zero amounts",
 			cashList: []Cash{
-				{Address: "A", InputAmount: 0, OutputAmount: 0},
-				{Address: "B", InputAmount: 10, OutputAmount: 0},
+				{Address: testAddress("A"), InputAmount: 0, OutputAmount: 0},
+				{Address: testAddress("B"), InputAmount: 10, OutputAmount: 0},
 			},
 			expected: []Cash{
-				{Address: "A", InputAmount: 0, OutputAmount: 0},
-				{Address: "B", InputAmount: 10, OutputAmount: 0},
+				{Address: testAddress("A"), InputAmount: 0, OutputAmount: 0},
+				{Address: testAddress("B"), InputAmount: 10, OutputAmount: 0},
 			},
 		},
 	}
@@ -118,6 +122,27 @@ func TestNormalizeCash(t *testing.T) {
 	}
 }
 
+func TestNormalizeCashUsesAddressID(t *testing.T) {
+	sharedID := testAddress("Alice")
+	renamed := sharedID
+	renamed.Name = "Alice Renamed"
+	differentIDSameName := testAddress("other-id")
+	differentIDSameName.Name = "Alice"
+
+	got := NormalizeCash([]Cash{
+		{Address: sharedID, InputAmount: 10},
+		{Address: renamed, InputAmount: 5},
+		{Address: differentIDSameName, InputAmount: 7},
+	})
+	require.Len(t, got, 2)
+	byID := make(map[uuid.UUID]Cash, len(got))
+	for _, cash := range got {
+		byID[cash.Address.ID] = cash
+	}
+	assert.Equal(t, float64(15), byID[sharedID.ID].InputAmount)
+	assert.Equal(t, float64(7), byID[differentIDSameName.ID].InputAmount)
+}
+
 func TestGenerateQueues(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -128,20 +153,20 @@ func TestGenerateQueues(t *testing.T) {
 		{
 			name: "Mixed inputs and outputs, sorted correctly",
 			cashList: []Cash{
-				{Address: "A", InputAmount: 100, OutputAmount: 0},
-				{Address: "B", InputAmount: 0, OutputAmount: 50},
-				{Address: "C", InputAmount: 30, OutputAmount: 0},
-				{Address: "D", InputAmount: 0, OutputAmount: 80},
-				{Address: "E", InputAmount: 120, OutputAmount: 0},
+				{Address: testAddress("A"), InputAmount: 100, OutputAmount: 0},
+				{Address: testAddress("B"), InputAmount: 0, OutputAmount: 50},
+				{Address: testAddress("C"), InputAmount: 30, OutputAmount: 0},
+				{Address: testAddress("D"), InputAmount: 0, OutputAmount: 80},
+				{Address: testAddress("E"), InputAmount: 120, OutputAmount: 0},
 			},
 			expectedInputs: []Cash{
-				{Address: "E", InputAmount: 120, OutputAmount: 0},
-				{Address: "A", InputAmount: 100, OutputAmount: 0},
-				{Address: "C", InputAmount: 30, OutputAmount: 0},
+				{Address: testAddress("E"), InputAmount: 120, OutputAmount: 0},
+				{Address: testAddress("A"), InputAmount: 100, OutputAmount: 0},
+				{Address: testAddress("C"), InputAmount: 30, OutputAmount: 0},
 			},
 			expectedOutputs: []Cash{
-				{Address: "D", InputAmount: 0, OutputAmount: 80},
-				{Address: "B", InputAmount: 0, OutputAmount: 50},
+				{Address: testAddress("D"), InputAmount: 0, OutputAmount: 80},
+				{Address: testAddress("B"), InputAmount: 0, OutputAmount: 50},
 			},
 		},
 		{
@@ -153,48 +178,48 @@ func TestGenerateQueues(t *testing.T) {
 		{
 			name: "Only inputs",
 			cashList: []Cash{
-				{Address: "X", InputAmount: 10, OutputAmount: 0},
-				{Address: "Y", InputAmount: 20, OutputAmount: 0},
+				{Address: testAddress("X"), InputAmount: 10, OutputAmount: 0},
+				{Address: testAddress("Y"), InputAmount: 20, OutputAmount: 0},
 			},
 			expectedInputs: []Cash{
-				{Address: "Y", InputAmount: 20, OutputAmount: 0},
-				{Address: "X", InputAmount: 10, OutputAmount: 0},
+				{Address: testAddress("Y"), InputAmount: 20, OutputAmount: 0},
+				{Address: testAddress("X"), InputAmount: 10, OutputAmount: 0},
 			},
 			expectedOutputs: []Cash{},
 		},
 		{
 			name: "Only outputs",
 			cashList: []Cash{
-				{Address: "P", InputAmount: 0, OutputAmount: 30},
-				{Address: "Q", InputAmount: 0, OutputAmount: 5},
+				{Address: testAddress("P"), InputAmount: 0, OutputAmount: 30},
+				{Address: testAddress("Q"), InputAmount: 0, OutputAmount: 5},
 			},
 			expectedInputs: []Cash{},
 			expectedOutputs: []Cash{
-				{Address: "P", InputAmount: 0, OutputAmount: 30},
-				{Address: "Q", InputAmount: 0, OutputAmount: 5},
+				{Address: testAddress("P"), InputAmount: 0, OutputAmount: 30},
+				{Address: testAddress("Q"), InputAmount: 0, OutputAmount: 5},
 			},
 		},
 		{
 			name: "Cash with both input/output (should be excluded by generateQueues logic)",
 			cashList: []Cash{
-				{Address: "Mixed", InputAmount: 10, OutputAmount: 5},
-				{Address: "PureIn", InputAmount: 20, OutputAmount: 0},
+				{Address: testAddress("Mixed"), InputAmount: 10, OutputAmount: 5},
+				{Address: testAddress("PureIn"), InputAmount: 20, OutputAmount: 0},
 			},
 			expectedInputs: []Cash{
-				{Address: "PureIn", InputAmount: 20, OutputAmount: 0},
-				{Address: "Mixed", InputAmount: 10, OutputAmount: 5},
+				{Address: testAddress("PureIn"), InputAmount: 20, OutputAmount: 0},
+				{Address: testAddress("Mixed"), InputAmount: 10, OutputAmount: 5},
 			},
 			expectedOutputs: []Cash{},
 		},
 		{
 			name: "Cash with zero or negative amounts (should be excluded)",
 			cashList: []Cash{
-				{Address: "Zero", InputAmount: 0, OutputAmount: 0},
-				{Address: "Negative", InputAmount: -5, OutputAmount: 0},
-				{Address: "Positive", InputAmount: 10, OutputAmount: 0},
+				{Address: testAddress("Zero"), InputAmount: 0, OutputAmount: 0},
+				{Address: testAddress("Negative"), InputAmount: -5, OutputAmount: 0},
+				{Address: testAddress("Positive"), InputAmount: 10, OutputAmount: 0},
 			},
 			expectedInputs: []Cash{
-				{Address: "Positive", InputAmount: 10, OutputAmount: 0},
+				{Address: testAddress("Positive"), InputAmount: 10, OutputAmount: 0},
 			},
 			expectedOutputs: []Cash{},
 		},
@@ -217,6 +242,51 @@ func TestGenerateQueues(t *testing.T) {
 	}
 }
 
+func TestGenerateQueuesUsesAddressIDForEqualBalances(t *testing.T) {
+	first := testAddress("Zulu")
+	first.ID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	second := testAddress("Alice")
+	second.ID = uuid.MustParse("00000000-0000-0000-0000-000000000002")
+
+	inputQueue, outputQueue := generateQueues([]Cash{
+		{Address: second, InputAmount: 10},
+		{Address: first, InputAmount: 10},
+		{Address: second, OutputAmount: 5},
+		{Address: first, OutputAmount: 5},
+	})
+
+	inputs := listToCashSlice(inputQueue)
+	outputs := listToCashSlice(outputQueue)
+	require.Len(t, inputs, 2)
+	require.Len(t, outputs, 2)
+	assert.Equal(t, []uuid.UUID{first.ID, second.ID}, []uuid.UUID{
+		inputs[0].Address.ID,
+		inputs[1].Address.ID,
+	})
+	assert.Equal(t, []uuid.UUID{first.ID, second.ID}, []uuid.UUID{
+		outputs[0].Address.ID,
+		outputs[1].Address.ID,
+	})
+
+	// Renaming display data must not change the settlement order.
+	first.Name = "ZZZ"
+	second.Name = "AAA"
+	renamedInputs, renamedOutputs := generateQueues([]Cash{
+		{Address: second, InputAmount: 10},
+		{Address: first, InputAmount: 10},
+		{Address: second, OutputAmount: 5},
+		{Address: first, OutputAmount: 5},
+	})
+	assert.Equal(t, []uuid.UUID{first.ID, second.ID}, []uuid.UUID{
+		listToCashSlice(renamedInputs)[0].Address.ID,
+		listToCashSlice(renamedInputs)[1].Address.ID,
+	})
+	assert.Equal(t, []uuid.UUID{first.ID, second.ID}, []uuid.UUID{
+		listToCashSlice(renamedOutputs)[0].Address.ID,
+		listToCashSlice(renamedOutputs)[1].Address.ID,
+	})
+}
+
 func TestListTxGenerateWithMixMap(t *testing.T) {
 	tests := []struct {
 		name                   string
@@ -229,14 +299,14 @@ func TestListTxGenerateWithMixMap(t *testing.T) {
 		{
 			name: "Simple case: one input covers one output exactly",
 			initialCashList: []Cash{
-				{Address: "Alice", InputAmount: 100, OutputAmount: 0},
-				{Address: "Bob", InputAmount: 0, OutputAmount: 100},
+				{Address: testAddress("Alice"), InputAmount: 100, OutputAmount: 0},
+				{Address: testAddress("Bob"), InputAmount: 0, OutputAmount: 100},
 			},
 			expectedTxList: []Tx{
 				{
 					Name:   "Tx_M_to_Bob",
-					Input:  []Payment{{Amount: 100, Address: "Alice"}},
-					Output: Payment{Amount: 100, Address: "Bob"},
+					Input:  []Payment{{Amount: 100, Address: testAddress("Alice")}},
+					Output: Payment{Amount: 100, Address: testAddress("Bob")},
 				},
 			},
 			expectedRemainingInput: 0.0,
@@ -245,14 +315,14 @@ func TestListTxGenerateWithMixMap(t *testing.T) {
 		{
 			name: "One input splits to cover one output",
 			initialCashList: []Cash{
-				{Address: "Alice", InputAmount: 100, OutputAmount: 0},
-				{Address: "Bob", InputAmount: 0, OutputAmount: 70},
+				{Address: testAddress("Alice"), InputAmount: 100, OutputAmount: 0},
+				{Address: testAddress("Bob"), InputAmount: 0, OutputAmount: 70},
 			},
 			expectedTxList: []Tx{
 				{
 					Name:   "Tx_M_to_Bob",
-					Input:  []Payment{{Amount: 70, Address: "Alice"}},
-					Output: Payment{Amount: 70, Address: "Bob"},
+					Input:  []Payment{{Amount: 70, Address: testAddress("Alice")}},
+					Output: Payment{Amount: 70, Address: testAddress("Bob")},
 				},
 			},
 			expectedRemainingInput: 30.0,  // 100 - 70 = 30 remains from Alice
@@ -262,18 +332,18 @@ func TestListTxGenerateWithMixMap(t *testing.T) {
 		{
 			name: "Multiple inputs cover one output exactly",
 			initialCashList: []Cash{
-				{Address: "Alice", InputAmount: 60, OutputAmount: 0},
-				{Address: "Charlie", InputAmount: 40, OutputAmount: 0},
-				{Address: "Bob", InputAmount: 0, OutputAmount: 100},
+				{Address: testAddress("Alice"), InputAmount: 60, OutputAmount: 0},
+				{Address: testAddress("Charlie"), InputAmount: 40, OutputAmount: 0},
+				{Address: testAddress("Bob"), InputAmount: 0, OutputAmount: 100},
 			},
 			expectedTxList: []Tx{
 				{
 					Name: "Tx_M_to_Bob", // Alice (60), Charlie (40) -> Bob (100)
 					Input: []Payment{
-						{Amount: 60, Address: "Alice"},
-						{Amount: 40, Address: "Charlie"},
+						{Amount: 60, Address: testAddress("Alice")},
+						{Amount: 40, Address: testAddress("Charlie")},
 					},
-					Output: Payment{Amount: 100, Address: "Bob"},
+					Output: Payment{Amount: 100, Address: testAddress("Bob")},
 				},
 			},
 			expectedRemainingInput: 0.0,
@@ -282,18 +352,18 @@ func TestListTxGenerateWithMixMap(t *testing.T) {
 		{
 			name: "Multiple inputs cover one output with split on last input",
 			initialCashList: []Cash{
-				{Address: "Alice", InputAmount: 60, OutputAmount: 0},
-				{Address: "Charlie", InputAmount: 80, OutputAmount: 0}, // This will be split
-				{Address: "Bob", InputAmount: 0, OutputAmount: 120},
+				{Address: testAddress("Alice"), InputAmount: 60, OutputAmount: 0},
+				{Address: testAddress("Charlie"), InputAmount: 80, OutputAmount: 0}, // This will be split
+				{Address: testAddress("Bob"), InputAmount: 0, OutputAmount: 120},
 			},
 			expectedTxList: []Tx{
 				{
 					Name: "Tx_M_to_Bob", // Note: The name 'Tx_Alice_to_Bob_split' uses the first input's address
 					Input: []Payment{
-						{Amount: 80, Address: "Charlie"},
-						{Amount: 40, Address: "Alice"}, // 120 - 80 = 40 needed from Alice
+						{Amount: 80, Address: testAddress("Charlie")},
+						{Amount: 40, Address: testAddress("Alice")}, // 120 - 80 = 40 needed from Alice
 					},
-					Output: Payment{Amount: 120, Address: "Bob"},
+					Output: Payment{Amount: 120, Address: testAddress("Bob")},
 				},
 			},
 			expectedRemainingInput: 20.0, // 80 - 60 = 20 remains from Charlie
@@ -303,8 +373,8 @@ func TestListTxGenerateWithMixMap(t *testing.T) {
 		{
 			name: "No outputs, only inputs remaining",
 			initialCashList: []Cash{
-				{Address: "Alice", InputAmount: 100, OutputAmount: 0},
-				{Address: "Bob", InputAmount: 20, OutputAmount: 0},
+				{Address: testAddress("Alice"), InputAmount: 100, OutputAmount: 0},
+				{Address: testAddress("Bob"), InputAmount: 20, OutputAmount: 0},
 			},
 			expectedTxList:         []Tx{},
 			expectedRemainingInput: 120.0,
@@ -314,8 +384,8 @@ func TestListTxGenerateWithMixMap(t *testing.T) {
 		{
 			name: "Output with no inputs available",
 			initialCashList: []Cash{
-				{Address: "Bob", InputAmount: 0, OutputAmount: 100},
-				{Address: "Charlie", InputAmount: 0, OutputAmount: 50},
+				{Address: testAddress("Bob"), InputAmount: 0, OutputAmount: 100},
+				{Address: testAddress("Charlie"), InputAmount: 0, OutputAmount: 50},
 			},
 			expectedTxList:         []Tx{}, // No inputs, so no transactions can be formed
 			expectedRemainingInput: 0.0,
@@ -324,34 +394,34 @@ func TestListTxGenerateWithMixMap(t *testing.T) {
 		{
 			name: "Complex scenario: multiple outputs and inputs, some remaining",
 			initialCashList: []Cash{
-				{Address: "S1", InputAmount: 200, OutputAmount: 0},
-				{Address: "S2", InputAmount: 50, OutputAmount: 0},
-				{Address: "R1", InputAmount: 0, OutputAmount: 70},
-				{Address: "R2", InputAmount: 0, OutputAmount: 120},
-				{Address: "R3", InputAmount: 0, OutputAmount: 30},
+				{Address: testAddress("S1"), InputAmount: 200, OutputAmount: 0},
+				{Address: testAddress("S2"), InputAmount: 50, OutputAmount: 0},
+				{Address: testAddress("R1"), InputAmount: 0, OutputAmount: 70},
+				{Address: testAddress("R2"), InputAmount: 0, OutputAmount: 120},
+				{Address: testAddress("R3"), InputAmount: 0, OutputAmount: 30},
 			},
 			expectedTxList: []Tx{
 				{ // R2 (120) is largest output
 					Name: "Tx_M_to_R2", // S1 (200) covers R2 (120), S1 has 80 left
 					Input: []Payment{
-						{Address: "S1", Amount: 120},
+						{Address: testAddress("S1"), Amount: 120},
 					},
-					Output: Payment{Address: "R2", Amount: 120},
+					Output: Payment{Address: testAddress("R2"), Amount: 120},
 				},
 				{ // R1 (70) is next largest output
 					Name: "Tx_M_to_R1", // S1 (80 left) covers R1 (70), S1 has 10 left
 					Input: []Payment{
-						{Address: "S2", Amount: 50},
-						{Address: "S1", Amount: 20},
+						{Address: testAddress("S2"), Amount: 50},
+						{Address: testAddress("S1"), Amount: 20},
 					},
-					Output: Payment{Address: "R1", Amount: 70},
+					Output: Payment{Address: testAddress("R1"), Amount: 70},
 				},
 				{ // R3 (30) is smallest output
 					Name: "Tx_M_to_R3", // S1 (10 left) + S2 (50) = 60. R3 (30) covered by S1 (10) + S2 (20). S2 has 30 left.
 					Input: []Payment{
-						{Address: "S1", Amount: 30},
+						{Address: testAddress("S1"), Amount: 30},
 					},
-					Output: Payment{Address: "R3", Amount: 30},
+					Output: Payment{Address: testAddress("R3"), Amount: 30},
 				},
 			},
 			expectedRemainingInput: 30.0, // Remaining from S2: 50 - 20 = 30
@@ -406,9 +476,11 @@ func TestListTxGenerateWithMixMap(t *testing.T) {
 					t.Errorf("ListTxGenerateWithMixMap() Tx[%d] Output got %v, want %v", i, gotTxList[i].Output, tt.expectedTxList[i].Output)
 				}
 				// Compare Tx Input (must sort to ensure order)
-				sort.Slice(gotTxList[i].Input, func(j, k int) bool { return gotTxList[i].Input[j].Address < gotTxList[i].Input[k].Address })
+				sort.Slice(gotTxList[i].Input, func(j, k int) bool {
+					return gotTxList[i].Input[j].Address.ID.String() < gotTxList[i].Input[k].Address.ID.String()
+				})
 				sort.Slice(tt.expectedTxList[i].Input, func(j, k int) bool {
-					return tt.expectedTxList[i].Input[j].Address < tt.expectedTxList[i].Input[k].Address
+					return tt.expectedTxList[i].Input[j].Address.ID.String() < tt.expectedTxList[i].Input[k].Address.ID.String()
 				})
 
 				if len(gotTxList[i].Input) != len(tt.expectedTxList[i].Input) {
@@ -434,7 +506,7 @@ func TestListTxGenerateWithMixMap(t *testing.T) {
 func TestCashListToTxPackage(t *testing.T) {
 	// A dummy strategy that always returns specific values (success)
 	successfulStrategy := func(txList *[]Tx, cashList *[]Cash) (float64, error) {
-		*txList = append(*txList, Tx{Name: "DummyTx", Input: []Payment{{Amount: 10, Address: "A"}}, Output: Payment{Amount: 10, Address: "B"}})
+		*txList = append(*txList, Tx{Name: "DummyTx", Input: []Payment{{Amount: 10, Address: testAddress("A")}}, Output: Payment{Amount: 10, Address: testAddress("B")}})
 		return 0.0, nil // No remaining input, no error
 	}
 
@@ -461,7 +533,7 @@ func TestCashListToTxPackage(t *testing.T) {
 	}{
 		{
 			name:                   "Successful strategy execution",
-			cashList:               []Cash{{Address: "A", InputAmount: 10}}, // Cash list doesn't matter much for dummy strategy
+			cashList:               []Cash{{Address: testAddress("A"), InputAmount: 10}}, // Cash list doesn't matter much for dummy strategy
 			packageName:            "SuccessPack",
 			strategy:               successfulStrategy,
 			expectedTxPackageName:  "SuccessPack",
@@ -471,7 +543,7 @@ func TestCashListToTxPackage(t *testing.T) {
 		},
 		{
 			name:                   "Strategy returns an error",
-			cashList:               []Cash{{Address: "A", InputAmount: 10}},
+			cashList:               []Cash{{Address: testAddress("A"), InputAmount: 10}},
 			packageName:            "ErrorPack",
 			strategy:               errorStrategy,
 			expectedTxPackageName:  "", // No package on error
@@ -482,7 +554,7 @@ func TestCashListToTxPackage(t *testing.T) {
 		},
 		{
 			name:                   "Strategy returns remaining input (should result in error from CashListToTxPackage)",
-			cashList:               []Cash{{Address: "A", InputAmount: 10}},
+			cashList:               []Cash{{Address: testAddress("A"), InputAmount: 10}},
 			packageName:            "RemainingPack",
 			strategy:               remainingInputStrategy,
 			expectedTxPackageName:  "", // Error due to remaining input
@@ -494,7 +566,7 @@ func TestCashListToTxPackage(t *testing.T) {
 		// Test cases for real ListTxGenerateWithMixMap strategy
 		{
 			name:                   "Real strategy: sufficient funds",
-			cashList:               []Cash{{Address: "Inputter", InputAmount: 100}, {Address: "Outputter", OutputAmount: 100}},
+			cashList:               []Cash{{Address: testAddress("Inputter"), InputAmount: 100}, {Address: testAddress("Outputter"), OutputAmount: 100}},
 			packageName:            "RealStrategySuccess",
 			strategy:               ListTxGenerateWithMixMap,
 			expectedTxPackageName:  "RealStrategySuccess",
@@ -504,7 +576,7 @@ func TestCashListToTxPackage(t *testing.T) {
 		},
 		{
 			name:                   "Real strategy: insufficient funds for output",
-			cashList:               []Cash{{Address: "Inputter", InputAmount: 50}, {Address: "Outputter", OutputAmount: 100}},
+			cashList:               []Cash{{Address: testAddress("Inputter"), InputAmount: 50}, {Address: testAddress("Outputter"), OutputAmount: 100}},
 			packageName:            "RealStrategyFailNoCover",
 			strategy:               ListTxGenerateWithMixMap,
 			expectedTxPackageName:  "", // Error because an output couldn't be covered by available inputs
@@ -515,7 +587,7 @@ func TestCashListToTxPackage(t *testing.T) {
 		},
 		{
 			name:                   "Real strategy: with remaining input",
-			cashList:               []Cash{{Address: "Inputter", InputAmount: 100}, {Address: "Outputter", OutputAmount: 50}},
+			cashList:               []Cash{{Address: testAddress("Inputter"), InputAmount: 100}, {Address: testAddress("Outputter"), OutputAmount: 50}},
 			packageName:            "RealStrategyRemaining",
 			strategy:               ListTxGenerateWithMixMap,
 			expectedTxPackageName:  "",   // Expecting error from CashListToTxPackage due to remaining input

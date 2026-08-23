@@ -1,5 +1,10 @@
 package model
 
+type Address struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 // custom define query model without some fields can let gqlgen auto generate recursive resolver
 // it can improve performance and reduce unnecessary data operations
 // use `make gql` to generate code
@@ -14,6 +19,6 @@ type Record struct {
 	Name          string         `json:"name"`
 	Amount        float64        `json:"amount"`
 	Time          string         `json:"time"` // unix timestamp as string
-	PrePayAddress string         `json:"prePayAddress"`
+	PrePayAddress *Address       `json:"prePayAddress"`
 	Category      RecordCategory `json:"category"`
 }

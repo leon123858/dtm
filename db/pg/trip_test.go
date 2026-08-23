@@ -3,6 +3,7 @@ package pg
 import (
 	"context"
 	"dtm/db/db"
+	"dtm/domain"
 	"os"
 	"testing"
 	"time"
@@ -40,14 +41,14 @@ func setupTestDB(t *testing.T) (db.TripDBWrapper, func()) {
 		// Using Exec for raw SQL.
 		// RESTART IDENTITY is important to reset auto-incrementing PKs for predictable test data.
 		// CASCADE should handle dependent rows.
-		err := gormDB.Exec("TRUNCATE TABLE record_should_pay_address_lists, records, trip_address_lists, trips RESTART IDENTITY CASCADE").Error
+		err := gormDB.Exec("TRUNCATE TABLE record_should_pay_address_lists, records, addresses, trips RESTART IDENTITY CASCADE").Error
 		if err != nil {
 			// Fallback if TRUNCATE CASCADE isn't working as expected or not fully supported for all constraints.
 			// This is a less ideal cleanup as it doesn't reset sequences typically.
 			t.Logf("TRUNCATE CASCADE failed: %v. Attempting individual deletes.", err)
 			gormDB.Exec("DELETE FROM record_should_pay_address_lists")
 			gormDB.Exec("DELETE FROM records")
-			gormDB.Exec("DELETE FROM trip_address_lists")
+			gormDB.Exec("DELETE FROM addresses")
 			gormDB.Exec("DELETE FROM trips")
 		}
 
@@ -61,6 +62,13 @@ func setupTestDB(t *testing.T) (db.TripDBWrapper, func()) {
 	return tripDBWrapper, cleanup
 }
 
+func mustCreateAddress(t *testing.T, wrapper db.TripDBWrapper, tripID uuid.UUID, name string) domain.Address {
+	t.Helper()
+	address, err := wrapper.CreateAddress(tripID, name)
+	require.NoError(t, err)
+	return *address
+}
+
 // --- Test Cases ---
 
 func TestCreateTrip(t *testing.T) {
@@ -68,7 +76,7 @@ func TestCreateTrip(t *testing.T) {
 	defer cleanup()
 
 	tripID := uuid.New()
-	tripInfo := &db.TripInfo{
+	tripInfo := &domain.TripInfo{
 		ID:   tripID,
 		Name: "My Test Trip",
 	}
@@ -97,54 +105,49 @@ func TestCreateTripRecords(t *testing.T) {
 	defer cleanup()
 
 	tripID := uuid.New()
-	tripInfo := &db.TripInfo{ID: tripID, Name: "Trip For Records"}
+	tripInfo := &domain.TripInfo{ID: tripID, Name: "Trip For Records"}
 	err := wrapper.CreateTrip(tripInfo)
 	require.NoError(t, err)
 
 	// Prerequisites for foreign keys in RecordModel and RecordShouldPayAddressListModel:
 	// Addresses used in PrePayAddress and ShouldPayAddress must exist in TripAddressListModel for the trip.
-	prePayAddr1 := db.Address("prepay_addr_for_records")
-	shouldPayAddrA := db.Address("should_pay_A_for_records")
-	shouldPayAddrB := db.Address("should_pay_B_for_records")
-	shouldPayAddrC := db.Address("should_pay_C_for_records")
-
-	require.NoError(t, wrapper.TripAddressListAdd(tripID, prePayAddr1))
-	require.NoError(t, wrapper.TripAddressListAdd(tripID, shouldPayAddrA))
-	require.NoError(t, wrapper.TripAddressListAdd(tripID, shouldPayAddrB))
-	require.NoError(t, wrapper.TripAddressListAdd(tripID, shouldPayAddrC))
+	prePayAddr1 := mustCreateAddress(t, wrapper, tripID, "prepay_addr_for_records")
+	shouldPayAddrA := mustCreateAddress(t, wrapper, tripID, "should_pay_A_for_records")
+	shouldPayAddrB := mustCreateAddress(t, wrapper, tripID, "should_pay_B_for_records")
+	shouldPayAddrC := mustCreateAddress(t, wrapper, tripID, "should_pay_C_for_records")
 
 	recordID1 := uuid.New()
 	recordID2 := uuid.New()
 	time1 := time.Now()
 	time2 := time.Now().Add(time.Hour)
-	recordsToCreate := []db.Record{
+	recordsToCreate := []domain.Record{
 		{
-			RecordInfo: db.RecordInfo{
+			RecordInfo: domain.RecordInfo{
 				ID:            recordID1,
 				Name:          "Record 1",
 				Amount:        100.50,
 				PrePayAddress: prePayAddr1,
 				Time:          time1,
-				Category:      db.CategoryFix,
+				Category:      domain.CategoryFix,
 			},
-			RecordData: db.RecordData{
-				ShouldPayAddress: []db.ExtendAddress{
+			RecordData: domain.RecordData{
+				ShouldPayAddress: []domain.ExtendAddress{
 					{Address: shouldPayAddrA, ExtendMsg: 20.0},
 					{Address: shouldPayAddrB, ExtendMsg: 30.0},
 				},
 			},
 		},
 		{
-			RecordInfo: db.RecordInfo{
+			RecordInfo: domain.RecordInfo{
 				ID:            recordID2,
 				Name:          "Record 2",
 				Amount:        200.75,
 				PrePayAddress: prePayAddr1,
 				Time:          time2,
-				Category:      db.CategoryNormal,
+				Category:      domain.CategoryNormal,
 			},
-			RecordData: db.RecordData{
-				ShouldPayAddress: []db.ExtendAddress{
+			RecordData: domain.RecordData{
+				ShouldPayAddress: []domain.ExtendAddress{
 					{Address: shouldPayAddrC, ExtendMsg: 50.0},
 				},
 			},
@@ -153,6 +156,9 @@ func TestCreateTripRecords(t *testing.T) {
 
 	err = wrapper.CreateTripRecords(tripID, recordsToCreate)
 	require.NoError(t, err)
+	recordTripID, err := wrapper.GetRecordTripID(recordID1)
+	require.NoError(t, err)
+	assert.Equal(t, tripID, recordTripID)
 
 	fetchedRecords, err := wrapper.GetTripRecords(tripID)
 	require.NoError(t, err)
@@ -160,7 +166,7 @@ func TestCreateTripRecords(t *testing.T) {
 
 	// Sort records by name for consistent checking if order isn't guaranteed
 	// For simplicity, we assume they are returned in creation order or test both possibilities.
-	var r1, r2 db.RecordInfo
+	var r1, r2 domain.RecordInfo
 	if fetchedRecords[0].ID == recordID1 {
 		r1, r2 = fetchedRecords[0], fetchedRecords[1]
 	} else {
@@ -172,10 +178,10 @@ func TestCreateTripRecords(t *testing.T) {
 	assert.Equal(t, 100.50, r1.Amount)
 	assert.Equal(t, prePayAddr1, r1.PrePayAddress)
 	assert.Equal(t, time1.UnixMilli(), r1.Time.UnixMilli())
-	assert.Equal(t, db.CategoryFix, r1.Category)
+	assert.Equal(t, domain.CategoryFix, r1.Category)
 	shouldPay1, err := wrapper.GetRecordAddressList(recordID1)
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []db.ExtendAddress{
+	assert.ElementsMatch(t, []domain.ExtendAddress{
 		{Address: shouldPayAddrA, ExtendMsg: 20.0},
 		{Address: shouldPayAddrB, ExtendMsg: 30.0},
 	}, shouldPay1)
@@ -185,10 +191,10 @@ func TestCreateTripRecords(t *testing.T) {
 	assert.Equal(t, 200.75, r2.Amount)
 	assert.Equal(t, prePayAddr1, r2.PrePayAddress)
 	assert.Equal(t, time2.UnixMilli(), r2.Time.UnixMilli())
-	assert.Equal(t, db.CategoryNormal, r2.Category)
+	assert.Equal(t, domain.CategoryNormal, r2.Category)
 	shouldPay2, err := wrapper.GetRecordAddressList(recordID2)
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []db.ExtendAddress{
+	assert.ElementsMatch(t, []domain.ExtendAddress{
 		{Address: shouldPayAddrC, ExtendMsg: 50.0},
 	}, shouldPay2)
 }
@@ -198,7 +204,7 @@ func TestGetTripRecords_NoRecords(t *testing.T) {
 	defer cleanup()
 
 	tripID := uuid.New()
-	err := wrapper.CreateTrip(&db.TripInfo{ID: tripID, Name: "Trip With No Records"})
+	err := wrapper.CreateTrip(&domain.TripInfo{ID: tripID, Name: "Trip With No Records"})
 	require.NoError(t, err)
 
 	records, err := wrapper.GetTripRecords(tripID)
@@ -206,98 +212,96 @@ func TestGetTripRecords_NoRecords(t *testing.T) {
 	assert.Empty(t, records)
 }
 
-func TestTripAddressListAddAndGet(t *testing.T) {
+func TestCreateAddressAndGet(t *testing.T) {
 	wrapper, cleanup := setupTestDB(t)
 	defer cleanup()
 
 	tripID := uuid.New()
-	err := wrapper.CreateTrip(&db.TripInfo{ID: tripID, Name: "Trip For Address List"})
+	err := wrapper.CreateTrip(&domain.TripInfo{ID: tripID, Name: "Trip For Address List"})
 	require.NoError(t, err)
 
-	addr1 := db.Address("addr1_test_talag")
-	addr2 := db.Address("addr2_test_talag")
-
-	require.NoError(t, wrapper.TripAddressListAdd(tripID, addr1))
-	require.NoError(t, wrapper.TripAddressListAdd(tripID, addr2))
-	require.NoError(t, wrapper.TripAddressListAdd(tripID, addr1)) // Test idempotency
+	addr1 := mustCreateAddress(t, wrapper, tripID, "addr1_test_talag")
+	addr2 := mustCreateAddress(t, wrapper, tripID, "addr2_test_talag")
+	_, err = wrapper.CreateAddress(tripID, addr1.Name)
+	require.Error(t, err)
 
 	addresses, err := wrapper.GetTripAddressList(tripID)
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []db.Address{addr1, addr2}, addresses)
+	assert.ElementsMatch(t, []domain.Address{addr1, addr2}, addresses)
+
+	renamed, err := wrapper.UpdateAddress(tripID, addr1.ID, "addr1_renamed_talag")
+	require.NoError(t, err)
+	assert.Equal(t, addr1.ID, renamed.ID)
+	addresses, err = wrapper.GetTripAddressList(tripID)
+	require.NoError(t, err)
+	assert.Contains(t, addresses, *renamed)
 }
 
-func TestTripAddressListRemove(t *testing.T) {
+func TestDeleteAddress(t *testing.T) {
 	wrapper, cleanup := setupTestDB(t)
 	defer cleanup()
 
 	tripID := uuid.New()
-	err := wrapper.CreateTrip(&db.TripInfo{ID: tripID, Name: "Trip For Address Removal"})
+	err := wrapper.CreateTrip(&domain.TripInfo{ID: tripID, Name: "Trip For Address Removal"})
 	require.NoError(t, err)
 
-	addr1 := db.Address("addr_to_remove1_talr")
-	addr2 := db.Address("addr_to_keep_talr")
+	addr1 := mustCreateAddress(t, wrapper, tripID, "addr_to_remove1_talr")
+	addr2 := mustCreateAddress(t, wrapper, tripID, "addr_to_keep_talr")
 
-	require.NoError(t, wrapper.TripAddressListAdd(tripID, addr1))
-	require.NoError(t, wrapper.TripAddressListAdd(tripID, addr2))
-
-	err = wrapper.TripAddressListRemove(tripID, addr1)
+	_, err = wrapper.DeleteAddress(tripID, addr1.ID)
 	require.NoError(t, err)
 
 	addresses, err := wrapper.GetTripAddressList(tripID)
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []db.Address{addr2}, addresses)
+	assert.ElementsMatch(t, []domain.Address{addr2}, addresses)
 
-	err = wrapper.TripAddressListRemove(tripID, db.Address("non_existent_addr_talr"))
-	require.NoError(t, err) // Should not error
+	_, err = wrapper.DeleteAddress(tripID, uuid.New())
+	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
 }
 
-func TestTripAddressListRemoveWithRestrict(t *testing.T) {
+func TestDeleteAddressWithRestrict(t *testing.T) {
 	wrapper, cleanup := setupTestDB(t)
 	defer cleanup()
 
 	tripId := uuid.New()
-	err := wrapper.CreateTrip(&db.TripInfo{ID: tripId, Name: "Trip For Address Removal With Restrict"})
+	err := wrapper.CreateTrip(&domain.TripInfo{ID: tripId, Name: "Trip For Address Removal With Restrict"})
 	require.NoError(t, err)
-	err = wrapper.TripAddressListAdd(tripId, "addr1")
-	require.NoError(t, err)
-	err = wrapper.TripAddressListAdd(tripId, "addr2")
-	require.NoError(t, err)
-	err = wrapper.TripAddressListAdd(tripId, "addr3")
-	require.NoError(t, err)
-	err = wrapper.TripAddressListAdd(tripId, "addr4")
-	require.NoError(t, err)
+	addr1 := mustCreateAddress(t, wrapper, tripId, "addr1")
+	addr2 := mustCreateAddress(t, wrapper, tripId, "addr2")
+	addr3 := mustCreateAddress(t, wrapper, tripId, "addr3")
+	addr4 := mustCreateAddress(t, wrapper, tripId, "addr4")
 
 	// should not create record with not exist address
-	wrongRecord := []db.Record{
-		{RecordInfo: db.RecordInfo{Name: "Sample Record", Amount: 50.0, PrePayAddress: "addr1", Category: db.CategoryNormal}, RecordData: db.RecordData{ShouldPayAddress: []db.ExtendAddress{{Address: "addr_not_exist", ExtendMsg: 0.0}, {Address: "addr2", ExtendMsg: 0.0}}}},
+	wrongRecord := []domain.Record{
+		{RecordInfo: domain.RecordInfo{ID: uuid.New(), Name: "Sample Record", Amount: 50.0, PrePayAddress: addr1, Category: domain.CategoryNormal}, RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{{Address: domain.Address{ID: uuid.New(), Name: "addr_not_exist"}, ExtendMsg: 0.0}, {Address: addr2, ExtendMsg: 0.0}}}},
 	}
 	err = wrapper.CreateTripRecords(tripId, wrongRecord)
 	require.Error(t, err)
 
-	sampleRecord := []db.Record{
-		{RecordInfo: db.RecordInfo{ID: uuid.New(), Name: "Sample Record", Amount: 50.0, PrePayAddress: "addr1", Category: db.CategoryNormal}, RecordData: db.RecordData{ShouldPayAddress: []db.ExtendAddress{{Address: "addr1", ExtendMsg: 0.0}, {Address: "addr2", ExtendMsg: 0.0}}}},
+	sampleRecord := []domain.Record{
+		{RecordInfo: domain.RecordInfo{ID: uuid.New(), Name: "Sample Record", Amount: 50.0, PrePayAddress: addr1, Category: domain.CategoryNormal}, RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{{Address: addr1, ExtendMsg: 0.0}, {Address: addr2, ExtendMsg: 0.0}}}},
 	}
 	err = wrapper.CreateTripRecords(tripId, sampleRecord)
 	require.NoError(t, err)
 
 	// should not rm address be records' owner
-	err = wrapper.TripAddressListRemove(tripId, "addr1")
+	_, err = wrapper.DeleteAddress(tripId, addr1.ID)
 	require.Error(t, err)
 
 	// should not rm address in records' pay list
-	err = wrapper.TripAddressListRemove(tripId, "addr2")
+	_, err = wrapper.DeleteAddress(tripId, addr2.ID)
 	require.Error(t, err)
 
 	// rm addr2 in pay list
 	originalRecord := sampleRecord[0]
-	sampleRecord[0].RecordData.ShouldPayAddress = []db.ExtendAddress{{Address: "addr1", ExtendMsg: 0.0}, {Address: "addr3", ExtendMsg: 0.0}, {Address: "addr4", ExtendMsg: 0.0}}
+	sampleRecord[0].RecordData.ShouldPayAddress = []domain.ExtendAddress{{Address: addr1, ExtendMsg: 0.0}, {Address: addr3, ExtendMsg: 0.0}, {Address: addr4, ExtendMsg: 0.0}}
 	cl, err := diff.GetCustomDiffer().Diff(originalRecord, sampleRecord[0])
 	require.NoError(t, err)
 	_, err = wrapper.UpdateTripRecord(sampleRecord[0].ID, cl)
 	require.NoError(t, err)
 
 	// can rm addr2
-	err = wrapper.TripAddressListRemove(tripId, "addr2")
+	_, err = wrapper.DeleteAddress(tripId, addr2.ID)
 	require.NoError(t, err)
 
 	// delete record
@@ -305,7 +309,7 @@ func TestTripAddressListRemoveWithRestrict(t *testing.T) {
 	require.NoError(t, err)
 
 	// can rm owner addr1
-	err = wrapper.TripAddressListRemove(tripId, db.Address("addr1"))
+	_, err = wrapper.DeleteAddress(tripId, addr1.ID)
 	require.NoError(t, err)
 }
 
@@ -314,10 +318,10 @@ func TestUpdateTripInfo(t *testing.T) {
 	defer cleanup()
 
 	tripID := uuid.New()
-	err := wrapper.CreateTrip(&db.TripInfo{ID: tripID, Name: "Original Trip Name"})
+	err := wrapper.CreateTrip(&domain.TripInfo{ID: tripID, Name: "Original Trip Name"})
 	require.NoError(t, err)
 
-	updatedInfo := &db.TripInfo{ID: tripID, Name: "Updated Trip Name"}
+	updatedInfo := &domain.TripInfo{ID: tripID, Name: "Updated Trip Name"}
 	err = wrapper.UpdateTripInfo(updatedInfo)
 	require.NoError(t, err)
 
@@ -331,35 +335,37 @@ func TestUpdateTripRecord(t *testing.T) {
 	defer cleanup()
 
 	tripID := uuid.New()
-	err := wrapper.CreateTrip(&db.TripInfo{ID: tripID, Name: "Trip for Record Update"})
+	err := wrapper.CreateTrip(&domain.TripInfo{ID: tripID, Name: "Trip for Record Update"})
 	require.NoError(t, err)
 
-	prePayAddr := db.Address("prepay_for_update_test_utr")
-	require.NoError(t, wrapper.TripAddressListAdd(tripID, prePayAddr)) // Prereq for RecordModel FK
+	prePayAddr := mustCreateAddress(t, wrapper, tripID, "prepay_for_update_test_utr")
 
 	recordID := uuid.New()
-	originalRecord := []db.Record{
-		{RecordInfo: db.RecordInfo{ID: recordID, Name: "Original Record", Amount: 50.0, PrePayAddress: prePayAddr}},
+	originalRecord := []domain.Record{
+		{RecordInfo: domain.RecordInfo{ID: recordID, Name: "Original Record", Amount: 50.0, PrePayAddress: prePayAddr}},
 	}
 	err = wrapper.CreateTripRecords(tripID, originalRecord)
 	require.NoError(t, err)
 
 	curTime := time.Now()
-	updatedRecordInfo := db.RecordInfo{ID: recordID, Name: "Updated Record", Amount: 75.25, PrePayAddress: prePayAddr, Time: curTime}
-	updatedRecord := db.Record{
+	updatedRecordInfo := domain.RecordInfo{ID: recordID, Name: "Updated Record", Amount: 75.25, PrePayAddress: prePayAddr, Time: curTime}
+	updatedRecord := domain.Record{
 		RecordInfo: updatedRecordInfo,
-		RecordData: db.RecordData{ShouldPayAddress: []db.ExtendAddress{
-			{Address: "shouldpay_for_update_test_utr", ExtendMsg: 10.0},
+		RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{
+			{Address: domain.Address{ID: uuid.New(), Name: "shouldpay_for_update_test_utr"}, ExtendMsg: 10.0},
 		}},
 	}
 	// should err as db constrain
-	cl, err := diff.GetCustomDiffer().Diff(db.Record{}, updatedRecord)
+	cl, err := diff.GetCustomDiffer().Diff(domain.Record{}, updatedRecord)
 	require.NoError(t, err)
 	tripId, err := wrapper.UpdateTripRecord(updatedRecordInfo.ID, cl)
 	require.Error(t, err)
 	assert.Empty(t, tripId)
 	// should success as insert address
-	require.NoError(t, wrapper.TripAddressListAdd(tripID, "shouldpay_for_update_test_utr")) // Add a should pay address
+	shouldPayAddr := mustCreateAddress(t, wrapper, tripID, "shouldpay_for_update_test_utr")
+	updatedRecord.ShouldPayAddress[0].Address = shouldPayAddr
+	cl, err = diff.GetCustomDiffer().Diff(domain.Record{}, updatedRecord)
+	require.NoError(t, err)
 	tripId, err = wrapper.UpdateTripRecord(updatedRecordInfo.ID, cl)
 	require.NoError(t, err)
 	assert.Equal(t, tripID, tripId)
@@ -377,8 +383,8 @@ func TestUpdateTripRecord(t *testing.T) {
 
 	shouldPayAddresses, err := wrapper.GetRecordAddressList(recordID)
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []db.ExtendAddress{
-		{Address: "shouldpay_for_update_test_utr", ExtendMsg: 10.0},
+	assert.ElementsMatch(t, []domain.ExtendAddress{
+		{Address: shouldPayAddr, ExtendMsg: 10.0},
 	}, shouldPayAddresses)
 }
 
@@ -387,19 +393,17 @@ func TestDeleteTripRecord(t *testing.T) {
 	defer cleanup()
 
 	tripID := uuid.New()
-	err := wrapper.CreateTrip(&db.TripInfo{ID: tripID, Name: "Trip for Record Deletion"})
+	err := wrapper.CreateTrip(&domain.TripInfo{ID: tripID, Name: "Trip for Record Deletion"})
 	require.NoError(t, err)
 
-	prePayAddr := db.Address("prepay_for_delete_dtr")
-	shouldPayAddr := db.Address("shouldpay_for_delete_dtr")
-	require.NoError(t, wrapper.TripAddressListAdd(tripID, prePayAddr))
-	require.NoError(t, wrapper.TripAddressListAdd(tripID, shouldPayAddr))
+	prePayAddr := mustCreateAddress(t, wrapper, tripID, "prepay_for_delete_dtr")
+	shouldPayAddr := mustCreateAddress(t, wrapper, tripID, "shouldpay_for_delete_dtr")
 
 	recordID := uuid.New()
-	records := []db.Record{
+	records := []domain.Record{
 		{
-			RecordInfo: db.RecordInfo{ID: recordID, Name: "Record to Delete", Amount: 10, PrePayAddress: prePayAddr},
-			RecordData: db.RecordData{ShouldPayAddress: []db.ExtendAddress{
+			RecordInfo: domain.RecordInfo{ID: recordID, Name: "Record to Delete", Amount: 10, PrePayAddress: prePayAddr},
+			RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{
 				{Address: shouldPayAddr, ExtendMsg: 5.0},
 			}},
 		},
@@ -428,17 +432,16 @@ func TestDeleteTrip(t *testing.T) {
 	defer cleanup()
 
 	tripID := uuid.New()
-	err := wrapper.CreateTrip(&db.TripInfo{ID: tripID, Name: "Trip To Fully Delete"})
+	err := wrapper.CreateTrip(&domain.TripInfo{ID: tripID, Name: "Trip To Fully Delete"})
 	require.NoError(t, err)
 
-	addr := db.Address("addr_for_delete_trip_dt")
-	require.NoError(t, wrapper.TripAddressListAdd(tripID, addr))
+	addr := mustCreateAddress(t, wrapper, tripID, "addr_for_delete_trip_dt")
 
 	recordID := uuid.New()
-	records := []db.Record{
+	records := []domain.Record{
 		{
-			RecordInfo: db.RecordInfo{ID: recordID, Name: "Record in Deleted Trip", Amount: 1.0, PrePayAddress: addr},
-			RecordData: db.RecordData{ShouldPayAddress: []db.ExtendAddress{{Address: addr, ExtendMsg: 0.5}}},
+			RecordInfo: domain.RecordInfo{ID: recordID, Name: "Record in Deleted Trip", Amount: 1.0, PrePayAddress: addr},
+			RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{{Address: addr, ExtendMsg: 0.5}}},
 		},
 	}
 	err = wrapper.CreateTripRecords(tripID, records)
@@ -452,7 +455,7 @@ func TestDeleteTrip(t *testing.T) {
 	require.NoError(t, err)
 
 	// delete addr
-	err = wrapper.TripAddressListRemove(tripID, db.Address("addr_for_delete_trip_dt"))
+	_, err = wrapper.DeleteAddress(tripID, addr.ID)
 	require.NoError(t, err)
 
 	// delete trip success
@@ -468,7 +471,7 @@ func TestDataLoaderGetTripInfoList(t *testing.T) {
 	ctx := context.Background()
 
 	ids := []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}
-	infos := []*db.TripInfo{
+	infos := []*domain.TripInfo{
 		{ID: ids[0], Name: "DL Trip 1"},
 		{ID: ids[1], Name: "DL Trip 2"},
 	}
@@ -489,24 +492,22 @@ func TestDataLoaderGetRecordInfoList(t *testing.T) {
 	ctx := context.Background()
 
 	tripID1 := uuid.New()
-	require.NoError(t, wrapper.CreateTrip(&db.TripInfo{ID: tripID1, Name: "DLRec Trip 1"}))
+	require.NoError(t, wrapper.CreateTrip(&domain.TripInfo{ID: tripID1, Name: "DLRec Trip 1"}))
 	tripID2 := uuid.New()
-	require.NoError(t, wrapper.CreateTrip(&db.TripInfo{ID: tripID2, Name: "DLRec Trip 2"}))
+	require.NoError(t, wrapper.CreateTrip(&domain.TripInfo{ID: tripID2, Name: "DLRec Trip 2"}))
 	tripID3 := uuid.New()
-	require.NoError(t, wrapper.CreateTrip(&db.TripInfo{ID: tripID3, Name: "DLRec Trip 3"})) // No records
+	require.NoError(t, wrapper.CreateTrip(&domain.TripInfo{ID: tripID3, Name: "DLRec Trip 3"})) // No records
 
-	addrT1 := db.Address("dlrec_t1_addr")
-	require.NoError(t, wrapper.TripAddressListAdd(tripID1, addrT1))
-	addrT2 := db.Address("dlrec_t2_addr")
-	require.NoError(t, wrapper.TripAddressListAdd(tripID2, addrT2))
+	addrT1 := mustCreateAddress(t, wrapper, tripID1, "dlrec_t1_addr")
+	addrT2 := mustCreateAddress(t, wrapper, tripID2, "dlrec_t2_addr")
 
 	curTime := time.Now()
-	rec1T1 := db.Record{RecordInfo: db.RecordInfo{ID: uuid.New(), Name: "T1R1", PrePayAddress: addrT1, Time: curTime, Category: db.CategoryFix}}
-	rec2T1 := db.Record{RecordInfo: db.RecordInfo{ID: uuid.New(), Name: "T1R2", PrePayAddress: addrT1, Time: curTime, Category: db.CategoryNormal}}
-	require.NoError(t, wrapper.CreateTripRecords(tripID1, []db.Record{rec1T1, rec2T1}))
+	rec1T1 := domain.Record{RecordInfo: domain.RecordInfo{ID: uuid.New(), Name: "T1R1", PrePayAddress: addrT1, Time: curTime, Category: domain.CategoryFix}}
+	rec2T1 := domain.Record{RecordInfo: domain.RecordInfo{ID: uuid.New(), Name: "T1R2", PrePayAddress: addrT1, Time: curTime, Category: domain.CategoryNormal}}
+	require.NoError(t, wrapper.CreateTripRecords(tripID1, []domain.Record{rec1T1, rec2T1}))
 
-	rec1T2 := db.Record{RecordInfo: db.RecordInfo{ID: uuid.New(), Name: "T2R1", PrePayAddress: addrT2, Time: curTime, Category: db.CategoryNormal}}
-	require.NoError(t, wrapper.CreateTripRecords(tripID2, []db.Record{rec1T2}))
+	rec1T2 := domain.Record{RecordInfo: domain.RecordInfo{ID: uuid.New(), Name: "T2R1", PrePayAddress: addrT2, Time: curTime, Category: domain.CategoryNormal}}
+	require.NoError(t, wrapper.CreateTripRecords(tripID2, []domain.Record{rec1T2}))
 
 	resultMap, err := wrapper.DataLoaderGetRecordInfoList(ctx, []uuid.UUID{tripID1, tripID2, tripID3})
 	require.NoError(t, err)
@@ -522,25 +523,22 @@ func TestDataLoaderGetTripAddressList(t *testing.T) {
 	ctx := context.Background()
 
 	tripID1 := uuid.New()
-	require.NoError(t, wrapper.CreateTrip(&db.TripInfo{ID: tripID1, Name: "DLAddr Trip 1"}))
+	require.NoError(t, wrapper.CreateTrip(&domain.TripInfo{ID: tripID1, Name: "DLAddr Trip 1"}))
 	tripID2 := uuid.New()
-	require.NoError(t, wrapper.CreateTrip(&db.TripInfo{ID: tripID2, Name: "DLAddr Trip 2"}))
+	require.NoError(t, wrapper.CreateTrip(&domain.TripInfo{ID: tripID2, Name: "DLAddr Trip 2"}))
 	tripID3 := uuid.New()
-	require.NoError(t, wrapper.CreateTrip(&db.TripInfo{ID: tripID3, Name: "DLAddr Trip 3"})) // No addresses
+	require.NoError(t, wrapper.CreateTrip(&domain.TripInfo{ID: tripID3, Name: "DLAddr Trip 3"})) // No addresses
 
-	addr1T1 := db.Address("t1a1_dl")
-	addr2T1 := db.Address("t1a2_dl")
-	require.NoError(t, wrapper.TripAddressListAdd(tripID1, addr1T1))
-	require.NoError(t, wrapper.TripAddressListAdd(tripID1, addr2T1))
+	addr1T1 := mustCreateAddress(t, wrapper, tripID1, "t1a1_dl")
+	addr2T1 := mustCreateAddress(t, wrapper, tripID1, "t1a2_dl")
 
-	addr1T2 := db.Address("t2a1_dl")
-	require.NoError(t, wrapper.TripAddressListAdd(tripID2, addr1T2))
+	addr1T2 := mustCreateAddress(t, wrapper, tripID2, "t2a1_dl")
 
 	resultMap, err := wrapper.DataLoaderGetTripAddressList(ctx, []uuid.UUID{tripID1, tripID2, tripID3})
 	require.NoError(t, err)
 	require.Len(t, resultMap, 3)
-	assert.ElementsMatch(t, []db.Address{addr1T1, addr2T1}, resultMap[tripID1])
-	assert.ElementsMatch(t, []db.Address{addr1T2}, resultMap[tripID2])
+	assert.ElementsMatch(t, []domain.Address{addr1T1, addr2T1}, resultMap[tripID1])
+	assert.ElementsMatch(t, []domain.Address{addr1T2}, resultMap[tripID2])
 	assert.Empty(t, resultMap[tripID3])
 }
 
@@ -550,43 +548,39 @@ func TestDataLoaderGetRecordShouldPayList(t *testing.T) {
 	ctx := context.Background()
 
 	tripID := uuid.New()
-	require.NoError(t, wrapper.CreateTrip(&db.TripInfo{ID: tripID, Name: "DLShouldPay Trip"}))
+	require.NoError(t, wrapper.CreateTrip(&domain.TripInfo{ID: tripID, Name: "DLShouldPay Trip"}))
 
 	// Pre-add all addresses to TripAddressList
-	prePay := db.Address("dlsp_prepay")
-	addrA := db.Address("dlsp_A")
-	addrB := db.Address("dlsp_B")
-	addrC := db.Address("dlsp_C")
-	require.NoError(t, wrapper.TripAddressListAdd(tripID, prePay))
-	require.NoError(t, wrapper.TripAddressListAdd(tripID, addrA))
-	require.NoError(t, wrapper.TripAddressListAdd(tripID, addrB))
-	require.NoError(t, wrapper.TripAddressListAdd(tripID, addrC))
+	prePay := mustCreateAddress(t, wrapper, tripID, "dlsp_prepay")
+	addrA := mustCreateAddress(t, wrapper, tripID, "dlsp_A")
+	addrB := mustCreateAddress(t, wrapper, tripID, "dlsp_B")
+	addrC := mustCreateAddress(t, wrapper, tripID, "dlsp_C")
 
 	recID1 := uuid.New()
 	recID2 := uuid.New()
 	recID3 := uuid.New() // rec3 has no should pay
 	recID4NonExistent := uuid.New()
 
-	records := []db.Record{
-		{RecordInfo: db.RecordInfo{ID: recID1, Name: "R1", PrePayAddress: prePay}, RecordData: db.RecordData{ShouldPayAddress: []db.ExtendAddress{
+	records := []domain.Record{
+		{RecordInfo: domain.RecordInfo{ID: recID1, Name: "R1", PrePayAddress: prePay}, RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{
 			{Address: addrA, ExtendMsg: 10.0},
 			{Address: addrB, ExtendMsg: 20.0},
 		}}},
-		{RecordInfo: db.RecordInfo{ID: recID2, Name: "R2", PrePayAddress: prePay}, RecordData: db.RecordData{ShouldPayAddress: []db.ExtendAddress{
+		{RecordInfo: domain.RecordInfo{ID: recID2, Name: "R2", PrePayAddress: prePay}, RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{
 			{Address: addrC, ExtendMsg: 50.0},
 		}}},
-		{RecordInfo: db.RecordInfo{ID: recID3, Name: "R3", PrePayAddress: prePay}, RecordData: db.RecordData{ShouldPayAddress: []db.ExtendAddress{}}},
+		{RecordInfo: domain.RecordInfo{ID: recID3, Name: "R3", PrePayAddress: prePay}, RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{}}},
 	}
 	require.NoError(t, wrapper.CreateTripRecords(tripID, records))
 
 	resultMap, err := wrapper.DataLoaderGetRecordShouldPayList(ctx, []uuid.UUID{recID1, recID2, recID3, recID4NonExistent})
 	require.NoError(t, err)
 	require.Len(t, resultMap, 4)
-	assert.ElementsMatch(t, []db.ExtendAddress{
+	assert.ElementsMatch(t, []domain.ExtendAddress{
 		{Address: addrA, ExtendMsg: 10.0},
 		{Address: addrB, ExtendMsg: 20.0},
 	}, resultMap[recID1])
-	assert.ElementsMatch(t, []db.ExtendAddress{
+	assert.ElementsMatch(t, []domain.ExtendAddress{
 		{Address: addrC, ExtendMsg: 50.0},
 	}, resultMap[recID2])
 	assert.Empty(t, resultMap[recID3])

@@ -2,9 +2,7 @@
 package rabbit_test // Testing the 'rabbit' package as a black box providing 'mq' interfaces
 
 import (
-
-	// "MODULE_PATH/YOUR_PROJECT/dtm/db/db" // Assuming this path for db.Address
-	"dtm/db/db"
+	"dtm/domain"
 	"dtm/mq/mq"              // MQ interfaces
 	rabbitMQ "dtm/mq/rabbit" // RabbitMQ implementation of MQ interfaces
 	"fmt"
@@ -59,7 +57,7 @@ func isChanClosed[T any](ch <-chan T) bool {
 	}
 }
 
-var testAddressValue = db.Address("123 Test St")
+var testAddressValue = domain.Address{ID: uuid.New(), Name: "123 Test St"}
 
 // --- Test Suite ---
 
@@ -380,9 +378,8 @@ func TestMQInterfacesWithRabbitMQ(t *testing.T) {
 				t.Errorf("Wrapper.GetTripAddressMessageQueue(%v) returned queue with action %v", action, q.GetAction())
 			}
 		}
-		// Test ActionUpdate for AddressMQ, which is configured to be nil in the rabbit implementation
-		if q := wrapper.GetTripAddressMessageQueue(mq.ActionUpdate); q != nil {
-			t.Errorf("Wrapper.GetTripAddressMessageQueue(ActionUpdate) expected nil, got %T", q)
+		if q := wrapper.GetTripAddressMessageQueue(mq.ActionUpdate); q == nil {
+			t.Error("Wrapper.GetTripAddressMessageQueue(ActionUpdate) is nil")
 		}
 		if q := wrapper.GetTripAddressMessageQueue(mq.Action(99)); q != nil {
 			t.Errorf("Wrapper.GetTripAddressMessageQueue(invalid) expected nil, got %T", q)

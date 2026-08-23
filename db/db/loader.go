@@ -1,6 +1,8 @@
 package db
 
 import (
+	"dtm/domain"
+
 	"github.com/google/uuid"
 	"github.com/vikstrous/dataloadgen"
 )
@@ -12,10 +14,10 @@ const (
 )
 
 type TripDataLoader struct {
-	GetRecordInfoList      *dataloadgen.Loader[uuid.UUID, []RecordInfo]
-	GetTripAddressList     *dataloadgen.Loader[uuid.UUID, []Address]
-	GetRecordShouldPayList *dataloadgen.Loader[uuid.UUID, []ExtendAddress]
-	GetTripInfoList        *dataloadgen.Loader[uuid.UUID, *TripInfo]
+	GetRecordInfoList      *dataloadgen.Loader[uuid.UUID, []domain.RecordInfo]
+	GetTripAddressList     *dataloadgen.Loader[uuid.UUID, []domain.Address]
+	GetRecordShouldPayList *dataloadgen.Loader[uuid.UUID, []domain.ExtendAddress]
+	GetTripInfoList        *dataloadgen.Loader[uuid.UUID, *domain.TripInfo]
 }
 
 // NewTripDataLoader creates a new TripDataLoader with the provided TripDBWrapper.

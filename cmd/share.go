@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"dtm/domain"
 	"dtm/tx"
 	"encoding/csv"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -108,6 +110,15 @@ func ParseCSVToUserPayments(csvContent [][]string) ([]tx.UserPayment, error) {
 	dataRows := csvContent[1:]
 
 	var payments []tx.UserPayment
+	addresses := make(map[string]domain.Address)
+	addressForName := func(name string) domain.Address {
+		if address, ok := addresses[name]; ok {
+			return address
+		}
+		address := domain.Address{ID: uuid.New(), Name: name}
+		addresses[name] = address
+		return address
+	}
 	for i, row := range dataRows {
 		if len(row) != 4 {
 			return nil, fmt.Errorf("row %d: expected 4 columns, but got %d", i+2, len(row)) // +2 to account for the header row
@@ -118,15 +129,24 @@ func ParseCSVToUserPayments(csvContent [][]string) ([]tx.UserPayment, error) {
 			return nil, fmt.Errorf("row %d: failed to convert amount '%s' to float: %w", i+2, row[1], err)
 		}
 
-		shouldPayAddresses := strings.Split(row[3], ",")
-		for j := range shouldPayAddresses {
-			shouldPayAddresses[j] = strings.TrimSpace(shouldPayAddresses[j])
+		prePayName := strings.TrimSpace(row[2])
+		if prePayName == "" {
+			return nil, fmt.Errorf("row %d: pre-pay address is empty", i+2)
+		}
+		shouldPayNames := strings.Split(row[3], ",")
+		shouldPayAddresses := make([]domain.Address, len(shouldPayNames))
+		for j := range shouldPayNames {
+			shouldPayName := strings.TrimSpace(shouldPayNames[j])
+			if shouldPayName == "" {
+				return nil, fmt.Errorf("row %d: should-pay address at index %d is empty", i+2, j)
+			}
+			shouldPayAddresses[j] = addressForName(shouldPayName)
 		}
 
 		payment := tx.UserPayment{
 			Name:             row[0],
 			Amount:           amount,
-			PrePayAddress:    row[2],
+			PrePayAddress:    addressForName(prePayName),
 			ShouldPayAddress: shouldPayAddresses,
 			ExtendPayMsg:     make([]float64, len(shouldPayAddresses)), // Initialize with zero values
 			PaymentType:      0,                                        // Default to AverageSplitStrategy

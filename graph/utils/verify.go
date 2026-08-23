@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 	"unicode"
+
+	"github.com/google/uuid"
 )
 
 func IsSecureString(s string) bool {
@@ -68,11 +70,22 @@ func VerifyRecordRequestAndSetDefault(r *model.NewRecord) bool {
 	if r.Amount <= 0 {
 		return false
 	}
-	if !VerifyStringRequest(string(r.PrePayAddress)) {
+	if _, err := uuid.Parse(r.PrePayAddressID); err != nil {
 		return false
 	}
-	if !VerifyStringListRequest(r.ShouldPayAddress) {
+	if len(r.ShouldPayAddressIds) == 0 || len(r.ShouldPayAddressIds) > 100 {
 		return false
+	}
+	seen := make(map[uuid.UUID]struct{}, len(r.ShouldPayAddressIds))
+	for _, rawID := range r.ShouldPayAddressIds {
+		id, err := uuid.Parse(rawID)
+		if err != nil {
+			return false
+		}
+		if _, duplicate := seen[id]; duplicate {
+			return false
+		}
+		seen[id] = struct{}{}
 	}
 	if !VerifyFloatListRequest(r.ExtendPayMsg) {
 		return false

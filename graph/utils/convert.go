@@ -2,11 +2,14 @@ package utils
 
 import (
 	"dtm/db/db"
+	"dtm/domain"
 	"dtm/graph/model"
 
 	"dtm/tx"
 	"fmt"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 var (
@@ -48,13 +51,13 @@ func ToModelTxList(txList []tx.Tx) []*model.Tx {
 		modelList[i] = &model.Tx{
 			Input: make([]*model.Payment, len(t.Input)),
 			Output: &model.Payment{
-				Address: t.Output.Address,
+				Address: ToModelAddress(t.Output.Address),
 				Amount:  t.Output.Amount,
 			},
 		}
 		for j, input := range t.Input {
 			modelList[i].Input[j] = &model.Payment{
-				Address: input.Address,
+				Address: ToModelAddress(input.Address),
 				Amount:  input.Amount,
 			}
 		}
@@ -62,8 +65,47 @@ func ToModelTxList(txList []tx.Tx) []*model.Tx {
 	return modelList
 }
 
-// MapNewRecordToDBRecord This function can be in the graph package or a utils package
-func MapNewRecordToDBRecord(input model.NewRecord) (*db.Record, error) {
+func ToModelAddress(address domain.Address) *model.Address {
+	return &model.Address{ID: address.ID.String(), Name: address.Name}
+}
+
+func ToDomainAddress(address *model.Address) (domain.Address, error) {
+	if address == nil {
+		return domain.Address{}, fmt.Errorf("address is nil")
+	}
+	id, err := uuid.Parse(address.ID)
+	if err != nil {
+		return domain.Address{}, fmt.Errorf("invalid address ID: %w", err)
+	}
+	return domain.Address{ID: id, Name: address.Name}, nil
+}
+
+func CanonicalizeRecordAddresses(wrapper db.TripDBWrapper, tripID uuid.UUID, record *domain.Record) error {
+	addresses, err := wrapper.GetTripAddressList(tripID)
+	if err != nil {
+		return err
+	}
+	byID := make(map[uuid.UUID]domain.Address, len(addresses))
+	for _, address := range addresses {
+		byID[address.ID] = address
+	}
+	prePay, ok := byID[record.PrePayAddress.ID]
+	if !ok {
+		return fmt.Errorf("pre-pay address does not belong to trip")
+	}
+	record.PrePayAddress = prePay
+	for i := range record.ShouldPayAddress {
+		address, ok := byID[record.ShouldPayAddress[i].Address.ID]
+		if !ok {
+			return fmt.Errorf("should-pay address at index %d does not belong to trip", i)
+		}
+		record.ShouldPayAddress[i].Address = address
+	}
+	return nil
+}
+
+// MapNewRecordToDomainRecord converts GraphQL input into a domain record.
+func MapNewRecordToDomainRecord(input model.NewRecord) (*domain.Record, error) {
 	var t time.Time
 	var err error
 
@@ -76,29 +118,37 @@ func MapNewRecordToDBRecord(input model.NewRecord) (*db.Record, error) {
 		t = time.Now()
 	}
 
-	record := &db.Record{
-		RecordInfo: db.RecordInfo{
+	prePayAddressID, err := uuid.Parse(input.PrePayAddressID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid pre-pay address ID: %w", err)
+	}
+	record := &domain.Record{
+		RecordInfo: domain.RecordInfo{
 			// ID will be set separately for create vs update
 			Name:          input.Name,
 			Amount:        input.Amount,
 			Time:          t,
-			PrePayAddress: db.Address(input.PrePayAddress),
-			Category:      db.RecordCategory(RecordCategory2Int(input.Category)),
+			PrePayAddress: domain.Address{ID: prePayAddressID},
+			Category:      domain.RecordCategory(RecordCategory2Int(input.Category)),
 		},
-		RecordData: db.RecordData{
-			ShouldPayAddress: make([]db.ExtendAddress, len(input.ShouldPayAddress)),
+		RecordData: domain.RecordData{
+			ShouldPayAddress: make([]domain.ExtendAddress, len(input.ShouldPayAddressIds)),
 		},
 	}
 
-	for i, addr := range input.ShouldPayAddress {
+	for i, rawID := range input.ShouldPayAddressIds {
+		addressID, err := uuid.Parse(rawID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid should-pay address ID at index %d: %w", i, err)
+		}
 		if i < len(input.ExtendPayMsg) {
-			record.ShouldPayAddress[i] = db.ExtendAddress{
-				Address:   db.Address(addr),
+			record.ShouldPayAddress[i] = domain.ExtendAddress{
+				Address:   domain.Address{ID: addressID},
 				ExtendMsg: input.ExtendPayMsg[i],
 			}
 		} else {
-			record.ShouldPayAddress[i] = db.ExtendAddress{
-				Address:   db.Address(addr),
+			record.ShouldPayAddress[i] = domain.ExtendAddress{
+				Address:   domain.Address{ID: addressID},
 				ExtendMsg: 0, // Default to 0 if ExtendPayMsg is not provided
 			}
 		}
