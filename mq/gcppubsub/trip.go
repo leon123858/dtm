@@ -282,7 +282,7 @@ func NewGCPTripMessageQueueWrapper(ctx context.Context, projectID string) (mq.Tr
 		return nil, err
 	}
 
-	// Record: Create, Update, Delete
+	// Record deletion/restoration is published as ActionUpdate.
 	wrapper.RecordMQArray[mq.ActionCreate], err = NewTripRecordMessageQueue(ctx, client, mq.ActionCreate)
 	if err != nil {
 		return nil, err
@@ -291,10 +291,5 @@ func NewGCPTripMessageQueueWrapper(ctx context.Context, projectID string) (mq.Tr
 	if err != nil {
 		return nil, err
 	}
-	wrapper.RecordMQArray[mq.ActionDelete], err = NewTripRecordMessageQueue(ctx, client, mq.ActionDelete)
-	if err != nil {
-		return nil, err
-	}
-
 	return wrapper, nil
 }

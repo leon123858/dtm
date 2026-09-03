@@ -20,13 +20,16 @@ func (TripInfoModel) TableName() string {
 }
 
 type RecordModel struct {
-	ID              uuid.UUID `gorm:"type:uuid;primaryKey"`
-	TripID          uuid.UUID `gorm:"type:uuid;not null"`
-	Name            string    `gorm:"size:255;not null"`
-	Amount          float64   `gorm:"type:numeric(10,2);not null"`
-	Time            time.Time `gorm:"not null"` // Use time.Time to store the timestamp
-	PrePayAddressID uuid.UUID `gorm:"type:uuid;not null"`
-	Category        int       `gorm:"not null"` // Use int to store the category
+	ID              uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	TripID          uuid.UUID  `gorm:"type:uuid;not null"`
+	ParentRecordID  *uuid.UUID `gorm:"type:uuid"`
+	ChildRecordID   *uuid.UUID `gorm:"type:uuid"`
+	Name            string     `gorm:"size:255;not null"`
+	Amount          float64    `gorm:"type:numeric(10,2);not null"`
+	Time            time.Time  `gorm:"not null"` // Use time.Time to store the timestamp
+	PrePayAddressID uuid.UUID  `gorm:"type:uuid;not null"`
+	Category        int        `gorm:"not null"` // Use int to store the category
+	IsDeleted       bool       `gorm:"not null;default:false"`
 	// meta data
 	CreatedAt time.Time
 	UpdatedAt time.Time

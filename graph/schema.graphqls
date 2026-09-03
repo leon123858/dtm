@@ -27,17 +27,20 @@ enum RecordCategory {
 
 type Record {
 	id: ID!
-	name: String!
-	amount: Float!
-	prePayAddress: Address!
+	name: String
+	amount: Float
+	prePayAddress: Address
 	"""
 	time: by JS Date().getTime().toString()
 	"""
 	time: String!
-	shouldPayAddress: [Address!]!
-	extendPayMsg: [Float!]!
+	shouldPayAddress: [Address!]
+	extendPayMsg: [Float!]
 	category: RecordCategory!
+	parentRecordId: ID
+	isDeleted: Boolean!
 	isValid: Boolean!
+	isActive: Boolean!
 }
 
 type Payment {
@@ -66,7 +69,6 @@ type Trip {
 
 type Subscription {
 	subRecordCreate(tripId: ID!): Record!
-	subRecordDelete(tripId: ID!): ID!
 	subRecordUpdate(tripId: ID!): Record!
 	subAddressCreate(tripId: ID!): Address!
 	subAddressUpdate(tripId: ID!): Address!
@@ -88,6 +90,7 @@ input NewRecord {
 	shouldPayAddressIds: [ID!]!
 	extendPayMsg: [Float!]
 	category: RecordCategory
+	isDeleted: Boolean
 }
 
 input EditRecord {
@@ -108,7 +111,6 @@ type Mutation {
 	updateTrip(tripId: ID!, input: NewTrip!): Trip!
 	createRecord(tripId: ID!, input: NewRecord!): Record!
 	updateRecord(recordId: ID!, input: EditRecord!): Record!
-	removeRecord(recordId: ID!): ID!
 	createAddress(tripId: ID!, input: NewAddress!): Address!
 	updateAddress(tripId: ID!, addressId: ID!, input: NewAddress!): Address!
 	deleteAddress(tripId: ID!, addressId: ID!): Address!

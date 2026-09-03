@@ -2,124 +2,191 @@ package graph
 
 import (
 	"context"
+	"net/http/httptest"
 	"testing"
 
 	"dtm/db/db"
+	"dtm/db/mem"
 	"dtm/domain"
 	"dtm/graph/model"
+	"dtm/graph/utils"
 	"dtm/mq/mq"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/r3labs/diff/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-type trackingTripDB struct {
+type recordQueryDB struct {
 	db.TripDBWrapper
-	updateCalls int
-	tripIDReads int
-	tripID      uuid.UUID
-	addresses   []domain.Address
+	records map[uuid.UUID][]domain.RecordInfo
 }
 
-func (db *trackingTripDB) UpdateTripRecord(_ uuid.UUID, _ diff.Changelog) (uuid.UUID, error) {
-	db.updateCalls++
-	return db.tripID, nil
+func (r *recordQueryDB) DataLoaderGetRecordInfoList(_ context.Context, ids []uuid.UUID) (map[uuid.UUID][]domain.RecordInfo, error) {
+	result := map[uuid.UUID][]domain.RecordInfo{}
+	for _, id := range ids {
+		result[id] = r.records[id]
+	}
+	return result, nil
 }
 
-func (db *trackingTripDB) GetTripAddressList(_ uuid.UUID) ([]domain.Address, error) {
-	return db.addresses, nil
+func resolverContext(wrapper db.TripDBWrapper) context.Context {
+	gin.SetMode(gin.TestMode)
+	ginContext, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ginContext.Set(string(db.DataLoaderKeyTripData), db.NewTripDataLoader(wrapper))
+	return context.WithValue(context.Background(), utils.GinContextKeyValue, ginContext)
 }
 
-func (db *trackingTripDB) GetRecordTripID(_ uuid.UUID) (uuid.UUID, error) {
-	db.tripIDReads++
-	return db.tripID, nil
+func TestTripRecordsReturnsErrorForUnknownCategory(t *testing.T) {
+	tripID := uuid.New()
+	store := &recordQueryDB{records: map[uuid.UUID][]domain.RecordInfo{tripID: {{ID: uuid.New(), Category: domain.RecordCategory(99)}}}}
+	_, err := (&tripResolver{Resolver: &Resolver{TripDB: store}}).Records(resolverContext(store), &model.Trip{ID: tripID.String()})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown RecordCategory")
 }
 
-type trackingTripRecordQueue struct {
-	publishCalls int
+func TestRecordIsValidRejectsInvalidEventBeforeReadingPayload(t *testing.T) {
+	valid, err := (&recordResolver{Resolver: &Resolver{}}).IsValid(context.Background(), &model.Record{ID: uuid.NewString(), Category: model.RecordCategoryNormal, EventValid: false})
+	require.NoError(t, err)
+	assert.False(t, valid)
 }
 
-func (queue *trackingTripRecordQueue) GetAction() mq.Action {
-	return mq.ActionUpdate
+type trackingRecordQueue struct {
+	action   mq.Action
+	messages []mq.TripRecordMessage
 }
 
-func (queue *trackingTripRecordQueue) Publish(_ mq.TripRecordMessage) error {
-	queue.publishCalls++
+func (q *trackingRecordQueue) GetAction() mq.Action { return q.action }
+func (q *trackingRecordQueue) Publish(message mq.TripRecordMessage) error {
+	q.messages = append(q.messages, message)
 	return nil
 }
-
-func (queue *trackingTripRecordQueue) Subscribe(_ uuid.UUID) (uuid.UUID, <-chan mq.TripRecordMessage, error) {
+func (q *trackingRecordQueue) Subscribe(uuid.UUID) (uuid.UUID, <-chan mq.TripRecordMessage, error) {
 	return uuid.Nil, nil, nil
 }
+func (q *trackingRecordQueue) DeSubscribe(uuid.UUID) error { return nil }
 
-func (queue *trackingTripRecordQueue) DeSubscribe(_ uuid.UUID) error {
-	return nil
+type trackingMQ struct {
+	queues [mq.ActionCnt]trackingRecordQueue
+	reads  [mq.ActionCnt]int
 }
 
-type trackingTripMessageQueueWrapper struct {
-	mq.TripMessageQueueWrapper
-	recordQueueRequests int
-	recordQueue         *trackingTripRecordQueue
+func (m *trackingMQ) GetTripRecordMessageQueue(action mq.Action) mq.TripRecordMessageQueue {
+	m.reads[action]++
+	m.queues[action].action = action
+	return &m.queues[action]
 }
+func (m *trackingMQ) GetTripAddressMessageQueue(mq.Action) mq.TripAddressMessageQueue { return nil }
 
-func (wrapper *trackingTripMessageQueueWrapper) GetTripRecordMessageQueue(_ mq.Action) mq.TripRecordMessageQueue {
-	wrapper.recordQueueRequests++
-	return wrapper.recordQueue
-}
-
-func TestUpdateRecordNoOpHasNoPersistenceOrMQSideEffects(t *testing.T) {
-	recordID := uuid.New()
+func TestRecordMutationsKeepMQIdentityAndSkipNoOpPublish(t *testing.T) {
+	db.DataLoaderDebug.Reset()
+	database := mem.NewInMemoryTripDBWrapper()
 	tripID := uuid.New()
-	prePayAddress := domain.Address{ID: uuid.New(), Name: "Alice"}
-	shouldPayAddress := domain.Address{ID: uuid.New(), Name: "Bob"}
-	timestamp := "1700000000000"
-	category := model.RecordCategoryNormal
-
-	oldInput := &model.NewRecord{
-		Name:                "No-op record",
-		Amount:              42,
-		PrePayAddressID:     prePayAddress.ID.String(),
-		Time:                &timestamp,
-		ShouldPayAddressIds: []string{shouldPayAddress.ID.String()},
-		ExtendPayMsg:        []float64{0},
-		Category:            &category,
-	}
-	newInput := &model.NewRecord{
-		Name:                oldInput.Name,
-		Amount:              oldInput.Amount,
-		PrePayAddressID:     oldInput.PrePayAddressID,
-		Time:                &timestamp,
-		ShouldPayAddressIds: append([]string(nil), oldInput.ShouldPayAddressIds...),
-		ExtendPayMsg:        append([]float64(nil), oldInput.ExtendPayMsg...),
-		Category:            &category,
-	}
-
-	database := &trackingTripDB{
-		tripID:    tripID,
-		addresses: []domain.Address{prePayAddress, shouldPayAddress},
-	}
-	queue := &trackingTripRecordQueue{}
-	messageQueues := &trackingTripMessageQueueWrapper{recordQueue: queue}
-	resolver := &mutationResolver{Resolver: &Resolver{
-		TripDB:                  database,
-		TripMessageQueueWrapper: messageQueues,
-	}}
-
-	result, err := resolver.UpdateRecord(context.Background(), recordID.String(), model.EditRecord{
-		Old: oldInput,
-		New: newInput,
-	})
-
+	require.NoError(t, database.CreateTrip(&domain.TripInfo{ID: tripID, Name: "trip"}))
+	payer, err := database.CreateAddress(tripID, "payer")
 	require.NoError(t, err)
-	require.NotNil(t, result)
-	assert.Equal(t, recordID.String(), result.ID)
-	require.NotNil(t, result.PrePayAddress)
-	assert.Equal(t, prePayAddress.ID.String(), result.PrePayAddress.ID)
-	assert.Equal(t, prePayAddress.Name, result.PrePayAddress.Name)
-	assert.Equal(t, 0, database.updateCalls)
-	assert.Equal(t, 1, database.tripIDReads)
-	assert.Equal(t, 0, messageQueues.recordQueueRequests)
-	assert.Equal(t, 0, queue.publishCalls)
+	member, err := database.CreateAddress(tripID, "member")
+	require.NoError(t, err)
+	queues := &trackingMQ{}
+	resolver := &mutationResolver{Resolver: &Resolver{TripDB: database, ChainStore: database, TripMessageQueueWrapper: queues}}
+	category := model.RecordCategoryNormal
+	input := model.NewRecord{Name: "meal", Amount: 20, PrePayAddressID: payer.ID.String(), ShouldPayAddressIds: []string{member.ID.String()}, Category: &category}
+	ctx := resolverContext(database)
+
+	created, err := resolver.CreateRecord(ctx, tripID.String(), input)
+	require.NoError(t, err)
+	require.Len(t, queues.queues[mq.ActionCreate].messages, 1)
+	assert.Equal(t, created.ID, queues.queues[mq.ActionCreate].messages[0].ID.String())
+	assert.Equal(t, tripID, queues.queues[mq.ActionCreate].messages[0].TripID)
+
+	updated, err := resolver.UpdateRecord(ctx, created.ID, model.EditRecord{Old: &input, New: &input})
+	require.NoError(t, err)
+	assert.Equal(t, created.ID, updated.ID)
+	assert.Zero(t, queues.reads[mq.ActionUpdate])
+	assert.Empty(t, queues.queues[mq.ActionUpdate].messages)
+
+	changed := input
+	changed.Name = "dinner"
+	updated, err = resolver.UpdateRecord(ctx, created.ID, model.EditRecord{Old: &input, New: &changed})
+	require.NoError(t, err)
+	require.NotEqual(t, created.ID, updated.ID)
+	require.Len(t, queues.queues[mq.ActionUpdate].messages, 1)
+
+	latest, err := resolver.UpdateRecord(ctx, created.ID, model.EditRecord{Old: &changed, New: &changed})
+	require.NoError(t, err)
+	assert.Equal(t, updated.ID, latest.ID)
+	assert.True(t, latest.IsActive)
+	require.Len(t, queues.queues[mq.ActionUpdate].messages, 1)
+
+	recordLoadsBeforePayload := db.DataLoaderDebug.Snapshot().Records
+	fields := &recordResolver{Resolver: resolver.Resolver}
+	shouldPay, err := fields.ShouldPayAddress(ctx, updated)
+	require.NoError(t, err)
+	require.Len(t, shouldPay, 1)
+	assert.Equal(t, member.ID.String(), shouldPay[0].ID)
+	extendPay, err := fields.ExtendPayMsg(ctx, updated)
+	require.NoError(t, err)
+	assert.Equal(t, []float64{0}, extendPay)
+	recordLoadsAfterPayload := db.DataLoaderDebug.Snapshot().Records
+	assert.Equal(t, recordLoadsBeforePayload, recordLoadsAfterPayload)
+	t.Logf("record backing loads before payload fields=%+v after=%+v", recordLoadsBeforePayload, recordLoadsAfterPayload)
+}
+
+func TestUpdateRecordAllowsInvalidOldInputToRepairActiveRecord(t *testing.T) {
+	database := mem.NewInMemoryTripDBWrapper()
+	tripID := uuid.New()
+	require.NoError(t, database.CreateTrip(&domain.TripInfo{ID: tripID, Name: "trip"}))
+	payer, err := database.CreateAddress(tripID, "payer")
+	require.NoError(t, err)
+	member, err := database.CreateAddress(tripID, "member")
+	require.NoError(t, err)
+	recordID := uuid.New()
+	require.NoError(t, database.AppendNew(context.Background(), tripID, domain.Record{
+		RecordInfo: domain.RecordInfo{ID: recordID, Name: "broken", Amount: 0, PrePayAddress: *payer, Category: domain.CategoryNormal},
+		RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{{Address: *member}}},
+	}))
+
+	category := model.RecordCategoryNormal
+	oldInput := model.NewRecord{Name: "broken", Amount: 0, PrePayAddressID: payer.ID.String(), ShouldPayAddressIds: []string{member.ID.String()}, Category: &category}
+	newInput := oldInput
+	newInput.Amount = 20
+	queues := &trackingMQ{}
+	resolver := &mutationResolver{Resolver: &Resolver{TripDB: database, ChainStore: database, TripMessageQueueWrapper: queues}}
+
+	updated, err := resolver.UpdateRecord(resolverContext(database), recordID.String(), model.EditRecord{Old: &oldInput, New: &newInput})
+	require.NoError(t, err)
+	assert.NotEqual(t, recordID.String(), updated.ID)
+	require.NotNil(t, updated.Amount)
+	assert.Equal(t, float64(20), *updated.Amount)
+	require.Len(t, queues.queues[mq.ActionUpdate].messages, 1)
+}
+
+func TestStaleBaselineMayAppendInvalidMaterializedTail(t *testing.T) {
+	database := mem.NewInMemoryTripDBWrapper()
+	tripID := uuid.New()
+	require.NoError(t, database.CreateTrip(&domain.TripInfo{ID: tripID, Name: "trip"}))
+	payer, err := database.CreateAddress(tripID, "payer")
+	require.NoError(t, err)
+	member, err := database.CreateAddress(tripID, "member")
+	require.NoError(t, err)
+	recordID := uuid.New()
+	require.NoError(t, database.AppendNew(context.Background(), tripID, domain.Record{
+		RecordInfo: domain.RecordInfo{ID: recordID, Name: "fixed", Amount: 20, PrePayAddress: *payer, Category: domain.CategoryFix},
+		RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{{Address: *member, ExtendMsg: 20}}},
+	}))
+
+	normal := model.RecordCategoryNormal
+	oldInput := model.NewRecord{Name: "fixed", Amount: 20, PrePayAddressID: payer.ID.String(), ShouldPayAddressIds: []string{member.ID.String()}, Category: &normal}
+	newInput := oldInput
+	newInput.Amount = 10 // Valid as NORMAL, but only Amount is patched over the FIX tail.
+	queues := &trackingMQ{}
+	base := &Resolver{TripDB: database, ChainStore: database, TripMessageQueueWrapper: queues}
+	updated, err := (&mutationResolver{Resolver: base}).UpdateRecord(resolverContext(database), recordID.String(), model.EditRecord{Old: &oldInput, New: &newInput})
+	require.NoError(t, err)
+	assert.NotEqual(t, recordID.String(), updated.ID)
+
+	valid, err := (&recordResolver{Resolver: base}).IsValid(resolverContext(database), updated)
+	require.NoError(t, err)
+	assert.False(t, valid)
 }

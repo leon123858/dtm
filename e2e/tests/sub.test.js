@@ -6,10 +6,8 @@ import {
 	DELETE_ADDRESS,
 	CREATE_RECORD,
 	UPDATE_RECORD,
-	REMOVE_RECORD,
 	SUB_RECORD_CREATE,
 	SUB_RECORD_UPDATE,
-	SUB_RECORD_DELETE,
 		SUB_ADDRESS_CREATE,
 		SUB_ADDRESS_UPDATE,
 	SUB_ADDRESS_DELETE,
@@ -110,7 +108,8 @@ describe('GraphQL API End-to-End Tests', () => {
 	describe('Subscription Tests', () => {
 		const commonAddressForSubRecords = `SubRecAddr-${Date.now()}`;
 		let commonAddress;
-		let recordIdForSubTests;
+	let recordIdForSubTests;
+	let latestRecordPayload;
 		let newRecordPayload;
 
 		beforeAll(async () => {
@@ -127,31 +126,6 @@ describe('GraphQL API End-to-End Tests', () => {
 				shouldPayAddressIds: [commonAddress.id],
 				category: 'NORMAL', extendPayMsg: [],
 			};
-		});
-
-		afterAll(async () => {
-			if (recordIdForSubTests) {
-				try {
-					await client.mutate({
-						mutation: REMOVE_RECORD,
-						variables: { recordId: recordIdForSubTests },
-					});
-				} catch (e) {
-					console.warn(
-						`Could not clean up recordIdForSubTests: ${recordIdForSubTests}. Error: ${e.message}`
-					);
-				}
-			}
-			try {
-				await client.mutate({
-					mutation: DELETE_ADDRESS,
-					variables: { tripId, addressId: commonAddress.id },
-				});
-			} catch (e) {
-				console.warn(
-					`Could not clean up commonAddressForSubRecords: ${commonAddressForSubRecords}. Error: ${e.message}`
-				);
-			}
 		});
 
 		it('should receive a notification when a new address is created (subAddressCreate)', async () => {
@@ -355,22 +329,27 @@ describe('GraphQL API End-to-End Tests', () => {
 
 			expect(mutationError).toBeUndefined();
 			expect(mutationData.updateRecord.name).toBe(updatedRecordPayload.name);
+			expect(mutationData.updateRecord.id).not.toBe(recordIdForSubTests);
+			expect(mutationData.updateRecord.parentRecordId).toBe(recordIdForSubTests);
 
 			const { data: subData, errors: subErrors } = await subscriptionPromise;
 			expect(subErrors).toBeUndefined();
 			expect(subData.subRecordUpdate).toBeDefined();
-			expect(subData.subRecordUpdate.id).toBe(recordIdForSubTests);
+			expect(subData.subRecordUpdate.id).toBe(mutationData.updateRecord.id);
+			expect(subData.subRecordUpdate.parentRecordId).toBe(recordIdForSubTests);
 			expect(subData.subRecordUpdate.name).toBe(updatedRecordPayload.name);
 			expect(subData.subRecordUpdate.amount).toBe(updatedRecordPayload.amount);
 			expect(subData.subRecordUpdate.time).toBe(updatedRecordPayload.time);
 			expect(subData.subRecordUpdate.category).toBe('FIX');
+			recordIdForSubTests = mutationData.updateRecord.id;
+			latestRecordPayload = updatedRecordPayload;
 		});
 
-		it('should receive a notification when a record is deleted (subRecordDelete)', async () => {
+		it('should receive deletion through subRecordUpdate', async () => {
 			expect(recordIdForSubTests).toBeDefined();
 
 			const subObservable = client.subscribe({
-				query: SUB_RECORD_DELETE,
+				query: SUB_RECORD_UPDATE,
 				variables: { tripId },
 			});
 			const subscriptionPromise = waitForSubscription(subObservable);
@@ -379,16 +358,21 @@ describe('GraphQL API End-to-End Tests', () => {
 			await sleep(1000);
 
 			const { data: mutationData, error: mutationError } = await client.mutate({
-				mutation: REMOVE_RECORD,
-				variables: { recordId: recordIdForSubTests },
+				mutation: UPDATE_RECORD,
+				variables: {
+					recordId: recordIdForSubTests,
+					input: { old: latestRecordPayload, new: { ...latestRecordPayload, isDeleted: true } },
+				},
 			});
 			expect(mutationError).toBeUndefined();
-			expect(mutationData.removeRecord).toBe(recordIdForSubTests);
+			expect(mutationData.updateRecord.id).not.toBe(recordIdForSubTests);
+			expect(mutationData.updateRecord.isDeleted).toBe(true);
 
 			const { data: subData, errors: subErrors } = await subscriptionPromise;
 			expect(subErrors).toBeUndefined();
-			expect(subData.subRecordDelete).toBeDefined();
-			expect(subData.subRecordDelete).toBe(recordIdForSubTests);
+			expect(subData.subRecordUpdate).toBeDefined();
+			expect(subData.subRecordUpdate.id).toBe(mutationData.updateRecord.id);
+			expect(subData.subRecordUpdate.isDeleted).toBe(true);
 
 			recordIdForSubTests = null;
 		});

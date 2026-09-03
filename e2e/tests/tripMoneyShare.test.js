@@ -192,7 +192,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			}
 		});
 
-		it('should mark a FIX record as invalid if amounts do not sum up', async () => {
+		it('should reject a FIX record if amounts do not sum up', async () => {
 			const addr1 = (await client.mutate({
 				mutation: CREATE_ADDRESS,
 				variables: { tripId: localTripId, input: { name: 'FixPayer1' } },
@@ -211,23 +211,20 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 				extendPayMsg: [40, 50], // total 90，not equal to amount 100
 			};
 
-			await client.mutate({
+			await expect(client.mutate({
 				mutation: CREATE_RECORD,
 				variables: { tripId: localTripId, input: record },
-			});
+			})).rejects.toThrow('invalid record input');
 
-			// invalid
 			const { data: tripData } = await client.query({
 				query: GET_TRIP,
 				variables: { tripId: localTripId },
 			});
-			// console.log('Trip Data:', JSON.stringify(tripData, null, 2));
 			const targetRecord = tripData.trip.records.find(
 				(r) => r.name === 'Invalid FIX Record'
 			);
-			expect(targetRecord.isValid).toBe(false);
-			// when record have inValid, trip should inValid
-			expect(tripData.trip.isValid).toBe(false);
+			expect(targetRecord).toBeUndefined();
+			expect(tripData.trip.isValid).toBe(true);
 		});
 	});
 

@@ -105,12 +105,14 @@ func TestMQInterfacesWithRabbitMQ(t *testing.T) {
 		// Test Lifecycle (Publish, Subscribe, Receive, DeSubscribe)
 		t.Run("Lifecycle_SingleSub", func(t *testing.T) {
 			topicID := uuid.New()
+			parentID := uuid.New()
 			msgToPublish := mq.TripRecordMessage{
-				ID:            uuid.New(),
-				TripID:        topicID,
-				Name:          "TR Lifecycle Test",
-				Amount:        100.50,
-				PrePayAddress: testAddressValue,
+				ID:             uuid.New(),
+				TripID:         topicID,
+				ParentRecordID: &parentID,
+				Name:           "TR Lifecycle Test",
+				Amount:         100.50,
+				PrePayAddress:  testAddressValue,
 			}
 
 			subID, rcvChan, err := trq.Subscribe(topicID)
@@ -351,7 +353,7 @@ func TestMQInterfacesWithRabbitMQ(t *testing.T) {
 	// --- Test TripMessageQueueWrapper ---
 	t.Run("TripMessageQueueWrapper_Getters", func(t *testing.T) {
 		// Test GetTripRecordMessageQueue
-		validRecordActions := []mq.Action{mq.ActionCreate, mq.ActionUpdate, mq.ActionDelete}
+		validRecordActions := []mq.Action{mq.ActionCreate, mq.ActionUpdate}
 		for _, action := range validRecordActions {
 			q := wrapper.GetTripRecordMessageQueue(action)
 			if q == nil {

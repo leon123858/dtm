@@ -15,10 +15,14 @@ type Trip struct {
 }
 
 type Record struct {
-	ID            string         `json:"id"`
-	Name          string         `json:"name"`
-	Amount        float64        `json:"amount"`
-	Time          string         `json:"time"` // unix timestamp as string
-	PrePayAddress *Address       `json:"prePayAddress"`
-	Category      RecordCategory `json:"category"`
+	ID             string         `json:"id"`
+	Name           *string        `json:"name"`
+	Amount         *float64       `json:"amount"`
+	Time           string         `json:"time"` // unix timestamp as string
+	PrePayAddress  *Address       `json:"prePayAddress"`
+	Category       RecordCategory `json:"category"`
+	ParentRecordID *string        `json:"parentRecordId"`
+	IsDeleted      bool           `json:"isDeleted"`
+	IsActive       bool           `json:"isActive"`
+	EventValid     bool           `json:"-"`
 }

@@ -60,6 +60,9 @@ export const CREATE_RECORD = gql`
 			shouldPayAddress { id name }
 			extendPayMsg
 			category
+			parentRecordId
+			isDeleted
+			isActive
 			isValid
 		}
 	}
@@ -76,14 +79,11 @@ export const UPDATE_RECORD = gql`
 			shouldPayAddress { id name }
 			extendPayMsg
 			category
+			parentRecordId
+			isDeleted
+			isActive
 			isValid
 		}
-	}
-`;
-
-export const REMOVE_RECORD = gql`
-	mutation RemoveRecord($recordId: ID!) {
-		removeRecord(recordId: $recordId)
 	}
 `;
 
@@ -104,6 +104,9 @@ export const GET_TRIP = gql`
 				shouldPayAddress { id name }
 				extendPayMsg
 				category
+				parentRecordId
+				isDeleted
+				isActive
 				isValid
 			}
 			moneyShare {
@@ -132,6 +135,9 @@ export const SUB_RECORD_CREATE = gql`
 			shouldPayAddress { id name }
 			extendPayMsg
 			category
+			parentRecordId
+			isDeleted
+			isActive
 			isValid
 		}
 	}
@@ -148,14 +154,11 @@ export const SUB_RECORD_UPDATE = gql`
 			shouldPayAddress { id name }
 			extendPayMsg
 			category
+			parentRecordId
+			isDeleted
+			isActive
 			isValid
 		}
-	}
-`;
-
-export const SUB_RECORD_DELETE = gql`
-	subscription SubRecordDelete($tripId: ID!) {
-		subRecordDelete(tripId: $tripId)
 	}
 `;
 

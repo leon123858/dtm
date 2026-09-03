@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"dtm/domain"
 	"dtm/graph/model"
+	"dtm/tx"
 	"fmt"
 	"strconv"
 	"time"
@@ -30,6 +32,22 @@ func IsSecureString(s string) bool {
 		}
 	}
 	return true
+}
+
+// ValidatePaymentRecord is the common payment validation used for create and
+// for the complete `new` snapshot of update. IsDeleted does not relax it.
+func ValidatePaymentRecord(record domain.Record) bool {
+	payment := tx.UserPayment{
+		Name: record.Name, Amount: record.Amount, PrePayAddress: record.PrePayAddress,
+		ShouldPayAddress: make([]domain.Address, len(record.ShouldPayAddress)),
+		ExtendPayMsg:     make([]float64, len(record.ShouldPayAddress)), PaymentType: int(record.Category),
+	}
+	for i, address := range record.ShouldPayAddress {
+		payment.ShouldPayAddress[i] = address.Address
+		payment.ExtendPayMsg[i] = address.ExtendMsg
+	}
+	transaction, err := payment.ToTx(tx.ShareMoneyStrategyFactory(payment.PaymentType))
+	return err == nil && transaction.BoolValidate()
 }
 
 func VerifyStringRequest(s string) bool {
@@ -90,10 +108,12 @@ func VerifyRecordRequestAndSetDefault(r *model.NewRecord) bool {
 	if !VerifyFloatListRequest(r.ExtendPayMsg) {
 		return false
 	}
+	if len(r.ExtendPayMsg) > len(r.ShouldPayAddressIds) {
+		return false
+	}
 	if r.Category != nil && !r.Category.IsValid() {
 		return false
 	}
-
 	/**
 	 * DEFAULT VALUE
 	**/

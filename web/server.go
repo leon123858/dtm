@@ -84,6 +84,7 @@ func Serve(config ServiceConfig) {
 	// GraphQL endpoint
 	executableSchema := graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{
 		TripDB:                  dbDep,
+		ChainStore:              dbDep,
 		TripMessageQueueWrapper: mqDep,
 	}})
 	if config.IsDev {

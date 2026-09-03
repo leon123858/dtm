@@ -564,12 +564,14 @@ func TestChannelTripRecordMessageQueue_Lifecycle(t *testing.T) {
 		t.Fatalf("Subscribe failed: %v", err)
 	}
 
+	parentID := uuid.New()
 	msg := mq.TripRecordMessage{
-		TripID:        topic,
-		ID:            uuid.New(),
-		Name:          "Test Trip Record",
-		Amount:        199.99,
-		PrePayAddress: testAddress,
+		TripID:         topic,
+		ID:             uuid.New(),
+		ParentRecordID: &parentID,
+		Name:           "Test Trip Record",
+		Amount:         199.99,
+		PrePayAddress:  testAddress,
 	}
 
 	if pubErr := q.Publish(msg); pubErr != nil {
@@ -626,7 +628,7 @@ func TestChannelTripRecordMessageQueue_PublishError(t *testing.T) {
 
 	// blockerChan will just have first one
 	final := <-blockerChan
-	if final != msg1 {
+	if !reflect.DeepEqual(final, msg1) {
 		t.Fatalf("final msg will be the first one block in second queue")
 	}
 
@@ -791,10 +793,8 @@ func TestNewGoChanTripMessageQueueWrapper(t *testing.T) {
 		t.Errorf("RecordMQArray[ActionUpdate] has action %v, expected %v", wrapper.RecordMQArray[mq.ActionUpdate].GetAction(), mq.ActionUpdate)
 	}
 
-	if wrapper.RecordMQArray[mq.ActionDelete] == nil {
-		t.Error("RecordMQArray[ActionDelete] is nil")
-	} else if wrapper.RecordMQArray[mq.ActionDelete].GetAction() != mq.ActionDelete {
-		t.Errorf("RecordMQArray[ActionDelete] has action %v, expected %v", wrapper.RecordMQArray[mq.ActionDelete].GetAction(), mq.ActionDelete)
+	if wrapper.RecordMQArray[mq.ActionDelete] != nil {
+		t.Error("RecordMQArray[ActionDelete] must be nil")
 	}
 }
 
@@ -819,7 +819,7 @@ func TestGoChanTripMessageQueueWrapper_GetQueues(t *testing.T) {
 	}()
 
 	// Test GetTripRecordMessageQueue
-	validRecordActions := []mq.Action{mq.ActionCreate, mq.ActionUpdate, mq.ActionDelete}
+	validRecordActions := []mq.Action{mq.ActionCreate, mq.ActionUpdate}
 	for _, action := range validRecordActions {
 		q := wrapperIFace.GetTripRecordMessageQueue(action)
 		if q == nil {

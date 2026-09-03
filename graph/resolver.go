@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"dtm/chain"
 	"dtm/db/db"
 	"dtm/mq/mq"
 )
@@ -12,5 +13,13 @@ import (
 
 type Resolver struct {
 	TripDB                  db.TripDBWrapper
+	ChainStore              chain.Store
 	TripMessageQueueWrapper mq.TripMessageQueueWrapper
+}
+
+func (r *Resolver) recordChainStore() chain.Store {
+	if r.ChainStore != nil {
+		return r.ChainStore
+	}
+	return r.TripDB
 }

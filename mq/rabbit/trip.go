@@ -292,7 +292,7 @@ func NewRabbitTripMessageQueueWrapper(conn *amqp.Connection) (mq.TripMessageQueu
 	if err != nil {
 		return nil, fmt.Errorf("error creating TripAddressMessageQueue for ActionDelete: %w", err)
 	}
-	// record need add, update and delete
+	// Record deletion/restoration is published as ActionUpdate.
 	wrapper.RecordMQArray[mq.ActionCreate], err = NewTripRecordMessageQueue(conn, fmt.Sprintf("trip_record_exchange_%d", mq.ActionCreate), mq.ActionCreate)
 	if err != nil {
 		return nil, fmt.Errorf("error creating TripRecordMessageQueue for ActionCreate: %w", err)
@@ -301,11 +301,6 @@ func NewRabbitTripMessageQueueWrapper(conn *amqp.Connection) (mq.TripMessageQueu
 	if err != nil {
 		return nil, fmt.Errorf("error creating TripRecordMessageQueue for ActionUpdate: %w", err)
 	}
-	wrapper.RecordMQArray[mq.ActionDelete], err = NewTripRecordMessageQueue(conn, fmt.Sprintf("trip_record_exchange_%d", mq.ActionDelete), mq.ActionDelete)
-	if err != nil {
-		return nil, fmt.Errorf("error creating TripRecordMessageQueue for ActionDelete: %w", err)
-	}
-
 	return &wrapper, nil
 }
 

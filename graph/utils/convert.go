@@ -1,12 +1,12 @@
 package utils
 
 import (
-	"dtm/db/db"
 	"dtm/domain"
 	"dtm/graph/model"
 
 	"dtm/tx"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,10 +39,18 @@ func RecordCategory2Int(category *model.RecordCategory) int {
 }
 
 func Int2RecordCategory(categoryInt int) model.RecordCategory {
-	if val, ok := Int2CategoryMap[categoryInt]; ok {
-		return val
+	category, err := Int2RecordCategoryChecked(categoryInt)
+	if err != nil {
+		panic(err)
 	}
-	panic("unknown RecordCategory: " + fmt.Sprintf("%v", categoryInt))
+	return category
+}
+
+func Int2RecordCategoryChecked(categoryInt int) (model.RecordCategory, error) {
+	if val, ok := Int2CategoryMap[categoryInt]; ok {
+		return val, nil
+	}
+	return "", fmt.Errorf("unknown RecordCategory: %d", categoryInt)
 }
 
 func ToModelTxList(txList []tx.Tx) []*model.Tx {
@@ -69,6 +77,33 @@ func ToModelAddress(address domain.Address) *model.Address {
 	return &model.Address{ID: address.ID.String(), Name: address.Name}
 }
 
+func ToModelRecord(info domain.RecordInfo, active bool) *model.Record {
+	result, err := ToModelRecordChecked(info, active, true)
+	if err != nil {
+		panic(err)
+	}
+	return result
+}
+
+func ToModelRecordChecked(info domain.RecordInfo, active, eventValid bool) (*model.Record, error) {
+	category, err := Int2RecordCategoryChecked(int(info.Category))
+	if err != nil {
+		return nil, fmt.Errorf("record %s: %w", info.ID, err)
+	}
+	result := &model.Record{
+		ID: info.ID.String(), Time: strconv.FormatInt(info.Time.UnixMilli(), 10),
+		Category: category, IsDeleted: info.IsDeleted, IsActive: active, EventValid: eventValid,
+	}
+	if info.ParentRecordID != nil {
+		parent := info.ParentRecordID.String()
+		result.ParentRecordID = &parent
+	}
+	result.Name = &info.Name
+	result.Amount = &info.Amount
+	result.PrePayAddress = ToModelAddress(info.PrePayAddress)
+	return result, nil
+}
+
 func ToDomainAddress(address *model.Address) (domain.Address, error) {
 	if address == nil {
 		return domain.Address{}, fmt.Errorf("address is nil")
@@ -78,30 +113,6 @@ func ToDomainAddress(address *model.Address) (domain.Address, error) {
 		return domain.Address{}, fmt.Errorf("invalid address ID: %w", err)
 	}
 	return domain.Address{ID: id, Name: address.Name}, nil
-}
-
-func CanonicalizeRecordAddresses(wrapper db.TripDBWrapper, tripID uuid.UUID, record *domain.Record) error {
-	addresses, err := wrapper.GetTripAddressList(tripID)
-	if err != nil {
-		return err
-	}
-	byID := make(map[uuid.UUID]domain.Address, len(addresses))
-	for _, address := range addresses {
-		byID[address.ID] = address
-	}
-	prePay, ok := byID[record.PrePayAddress.ID]
-	if !ok {
-		return fmt.Errorf("pre-pay address does not belong to trip")
-	}
-	record.PrePayAddress = prePay
-	for i := range record.ShouldPayAddress {
-		address, ok := byID[record.ShouldPayAddress[i].Address.ID]
-		if !ok {
-			return fmt.Errorf("should-pay address at index %d does not belong to trip", i)
-		}
-		record.ShouldPayAddress[i].Address = address
-	}
-	return nil
 }
 
 // MapNewRecordToDomainRecord converts GraphQL input into a domain record.
@@ -130,6 +141,7 @@ func MapNewRecordToDomainRecord(input model.NewRecord) (*domain.Record, error) {
 			Time:          t,
 			PrePayAddress: domain.Address{ID: prePayAddressID},
 			Category:      domain.RecordCategory(RecordCategory2Int(input.Category)),
+			IsDeleted:     input.IsDeleted != nil && *input.IsDeleted,
 		},
 		RecordData: domain.RecordData{
 			ShouldPayAddress: make([]domain.ExtendAddress, len(input.ShouldPayAddressIds)),

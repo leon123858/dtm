@@ -30,6 +30,7 @@ type NewRecord struct {
 	ShouldPayAddressIds []string        `json:"shouldPayAddressIds"`
 	ExtendPayMsg        []float64       `json:"extendPayMsg,omitempty"`
 	Category            *RecordCategory `json:"category,omitempty"`
+	IsDeleted           *bool           `json:"isDeleted,omitempty"`
 }
 
 type NewTrip struct {

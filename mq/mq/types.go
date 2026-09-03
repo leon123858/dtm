@@ -38,13 +38,16 @@ func (a Action) String() string {
 }
 
 type TripRecordMessage struct {
-	ID            uuid.UUID
-	TripID        uuid.UUID
-	Name          string
-	Amount        float64
-	Time          string // ISO format
-	PrePayAddress domain.Address
-	Category      int
+	ID               uuid.UUID
+	TripID           uuid.UUID
+	ParentRecordID   *uuid.UUID
+	Name             string
+	Amount           float64
+	Time             string // ISO format
+	PrePayAddress    domain.Address
+	Category         int
+	IsDeleted        bool
+	ShouldPayAddress []domain.ExtendAddress
 }
 
 func (m TripRecordMessage) GetTopic() uuid.UUID {

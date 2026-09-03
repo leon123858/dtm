@@ -260,10 +260,9 @@ func NewGoChanTripMessageQueueWrapper() mq.TripMessageQueueWrapper {
 	wrapper.AddressMQArray[mq.ActionCreate] = NewChannelTripAddressMessageQueue(mq.ActionCreate, 0)
 	wrapper.AddressMQArray[mq.ActionUpdate] = NewChannelTripAddressMessageQueue(mq.ActionUpdate, 0)
 	wrapper.AddressMQArray[mq.ActionDelete] = NewChannelTripAddressMessageQueue(mq.ActionDelete, 0)
-	// record need add, update and delete
+	// Record deletion/restoration is an update snapshot.
 	wrapper.RecordMQArray[mq.ActionCreate] = NewChannelTripRecordMessageQueue(mq.ActionCreate, 0)
 	wrapper.RecordMQArray[mq.ActionUpdate] = NewChannelTripRecordMessageQueue(mq.ActionUpdate, 0)
-	wrapper.RecordMQArray[mq.ActionDelete] = NewChannelTripRecordMessageQueue(mq.ActionDelete, 0)
 
 	return &wrapper
 }

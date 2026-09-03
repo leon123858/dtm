@@ -6,15 +6,13 @@ package graph
 
 import (
 	"context"
+	"dtm/chain"
 	"dtm/db/db"
 	"dtm/domain"
 	"dtm/graph/model"
 	"dtm/graph/utils"
-	"dtm/libs/diff"
 	"dtm/mq/mq"
-	"dtm/tx"
 	"fmt"
-	"log"
 	"strconv"
 
 	"github.com/google/uuid"
@@ -22,6 +20,7 @@ import (
 
 // CreateTrip is the resolver for the createTrip field.
 func (r *mutationResolver) CreateTrip(ctx context.Context, input model.NewTrip) (*model.Trip, error) {
+	defer resetTripDataLoader(ctx)
 	if !utils.VerifyStringRequest(input.Name) {
 		return nil, fmt.Errorf("invalid trip name")
 	}
@@ -44,6 +43,7 @@ func (r *mutationResolver) CreateTrip(ctx context.Context, input model.NewTrip) 
 
 // UpdateTrip is the resolver for the updateTrip field.
 func (r *mutationResolver) UpdateTrip(ctx context.Context, tripID string, input model.NewTrip) (*model.Trip, error) {
+	defer resetTripDataLoader(ctx)
 	if !utils.VerifyStringRequest(input.Name) {
 		return nil, fmt.Errorf("invalid trip name")
 	}
@@ -71,11 +71,14 @@ func (r *mutationResolver) UpdateTrip(ctx context.Context, tripID string, input 
 
 // CreateRecord is the resolver for the createRecord field.
 func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, input model.NewRecord) (*model.Record, error) {
+	defer resetTripDataLoader(ctx)
 	if !utils.VerifyRecordRequestAndSetDefault(&input) {
 		return nil, fmt.Errorf("invalid record input")
 	}
+	if input.IsDeleted != nil && *input.IsDeleted {
+		return nil, fmt.Errorf("new record cannot be deleted")
+	}
 
-	dbTripInfo := r.TripDB
 	tripUUID, err := uuid.Parse(tripID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
@@ -85,141 +88,115 @@ func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, inpu
 	if err != nil {
 		return nil, err
 	}
-	record.ID = uuid.New() // Set new ID for creation
-	if err := utils.CanonicalizeRecordAddresses(dbTripInfo, tripUUID, record); err != nil {
-		return nil, fmt.Errorf("invalid record addresses: %w", err)
+	if !utils.ValidatePaymentRecord(*record) {
+		return nil, fmt.Errorf("invalid record input")
 	}
-
-	if err := dbTripInfo.CreateTripRecords(tripUUID, []domain.Record{*record}); err != nil {
+	factory, reader, err := r.recordFactory(ctx)
+	if err != nil {
+		return nil, err
+	}
+	intent, err := factory.New(ctx, tripUUID, *record)
+	if err != nil {
+		return nil, err
+	}
+	appendResult, err := chain.NewTrip(tripUUID, r.recordChainStore(), reader).Append(ctx, intent)
+	if err != nil {
 		return nil, fmt.Errorf("failed to create record: %w", err)
 	}
+	recordValue := appendResult.Record.DomainRecord()
+	record = &recordValue
 
 	tripMQ := r.TripMessageQueueWrapper.GetTripRecordMessageQueue(mq.ActionCreate)
 	if err := tripMQ.Publish(mq.TripRecordMessage{
-		TripID:        tripUUID,
-		ID:            record.ID,
-		Name:          record.Name,
-		Amount:        record.Amount,
-		Time:          strconv.FormatInt(record.Time.UnixMilli(), 10),
-		PrePayAddress: record.PrePayAddress,
-		Category:      utils.RecordCategory2Int(input.Category),
+		TripID:           tripUUID,
+		ID:               record.ID,
+		Name:             record.Name,
+		Amount:           record.Amount,
+		Time:             strconv.FormatInt(record.Time.UnixMilli(), 10),
+		PrePayAddress:    record.PrePayAddress,
+		Category:         utils.RecordCategory2Int(input.Category),
+		IsDeleted:        record.IsDeleted,
+		ShouldPayAddress: append([]domain.ExtendAddress(nil), record.ShouldPayAddress...),
 	}); err != nil {
 		fmt.Println("Warning: fail to notice event: " + err.Error())
 	}
 
-	return &model.Record{
-		ID:            record.ID.String(),
-		Name:          record.Name,
-		Amount:        record.Amount,
-		Time:          strconv.FormatInt(record.Time.UnixMilli(), 10),
-		PrePayAddress: utils.ToModelAddress(record.PrePayAddress),
-		Category:      *input.Category,
-	}, nil
+	return utils.ToModelRecord(record.RecordInfo, true), nil
 }
 
 // UpdateRecord is the resolver for the updateRecord field.
 func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, input model.EditRecord) (*model.Record, error) {
-	if !utils.VerifyRecordRequestAndSetDefault(input.Old) || !utils.VerifyRecordRequestAndSetDefault(input.New) {
-		return nil, fmt.Errorf("invalid record input")
+	defer resetTripDataLoader(ctx)
+	if input.Old == nil || input.New == nil {
+		return nil, fmt.Errorf("old and new record inputs are required")
 	}
-
-	dbTripInfo := r.TripDB
-	oldRecord, err := utils.MapNewRecordToDomainRecord(*input.Old)
-	if err != nil {
-		return nil, err
+	if input.Old.Category == nil {
+		category := model.RecordCategoryNormal
+		input.Old.Category = &category
+	}
+	if !utils.VerifyRecordRequestAndSetDefault(input.New) {
+		return nil, fmt.Errorf("invalid record input")
 	}
 	newRecord, err := utils.MapNewRecordToDomainRecord(*input.New)
 	if err != nil {
 		return nil, err
 	}
+	if !utils.ValidatePaymentRecord(*newRecord) {
+		return nil, fmt.Errorf("invalid record input")
+	}
 
-	oldRecord.ID, err = uuid.Parse(recordID)
+	recordUUID, err := uuid.Parse(recordID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid record ID: %w", err)
 	}
-
-	newRecord.ID = oldRecord.ID
-
-	changelog, err := diff.GetCustomDiffer().Diff(oldRecord, newRecord)
+	factory, reader, err := r.recordFactory(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	if len(changelog) == 0 {
-		log.Println("warning: no change to record")
-		tripID, err := dbTripInfo.GetRecordTripID(newRecord.ID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to find record trip: %w", err)
-		}
-		if err := utils.CanonicalizeRecordAddresses(dbTripInfo, tripID, newRecord); err != nil {
-			return nil, fmt.Errorf("failed to load record addresses: %w", err)
-		}
-		return &model.Record{
-			ID:            newRecord.ID.String(),
-			Name:          newRecord.Name,
-			Amount:        newRecord.Amount,
-			Time:          strconv.FormatInt(newRecord.Time.UnixMilli(), 10),
-			PrePayAddress: utils.ToModelAddress(newRecord.PrePayAddress),
-			Category:      *input.New.Category,
-		}, nil
-	}
-
-	var tripId uuid.UUID
-	if tripId, err = dbTripInfo.UpdateTripRecord(newRecord.ID, changelog); err != nil {
+	intent, err := factory.Update(ctx, recordUUID, domain.RecordPatch{})
+	if err != nil {
 		return nil, fmt.Errorf("failed to update record: %w", err)
 	}
-	if err := utils.CanonicalizeRecordAddresses(dbTripInfo, tripId, newRecord); err != nil {
-		return nil, fmt.Errorf("failed to load updated record addresses: %w", err)
+	canonicalNew, err := factory.Canonicalize(ctx, intent.TripID(), *newRecord)
+	if err != nil {
+		return nil, err
 	}
+	patch := buildRecordPatch(*input.Old, *input.New, &canonicalNew)
+	intent, err = factory.Update(ctx, recordUUID, patch)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update record: %w", err)
+	}
+	result, err := chain.NewTrip(intent.TripID(), r.recordChainStore(), reader).Append(ctx, intent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update record: %w", err)
+	}
+	if !result.Appended {
+		return utils.ToModelRecord(result.Record.Info(), result.Record.IsActive()), nil
+	}
+	resultRecord := result.Record.DomainRecord()
 
 	tripMQ := r.TripMessageQueueWrapper.GetTripRecordMessageQueue(mq.ActionUpdate)
 	if err := tripMQ.Publish(mq.TripRecordMessage{
-		TripID:        tripId,
-		ID:            newRecord.ID,
-		Name:          newRecord.Name,
-		Amount:        newRecord.Amount,
-		Time:          strconv.FormatInt(newRecord.Time.UnixMilli(), 10),
-		PrePayAddress: newRecord.PrePayAddress,
-		Category:      utils.RecordCategory2Int(input.New.Category),
+		TripID:           result.TripID,
+		ID:               resultRecord.ID,
+		ParentRecordID:   resultRecord.ParentRecordID,
+		Name:             resultRecord.Name,
+		Amount:           resultRecord.Amount,
+		Time:             strconv.FormatInt(resultRecord.Time.UnixMilli(), 10),
+		PrePayAddress:    resultRecord.PrePayAddress,
+		Category:         int(resultRecord.Category),
+		IsDeleted:        resultRecord.IsDeleted,
+		ShouldPayAddress: append([]domain.ExtendAddress(nil), resultRecord.ShouldPayAddress...),
 	}); err != nil {
 		fmt.Println("Warning: fail to notice event: " + err.Error())
 	}
 
-	return &model.Record{
-		ID:            newRecord.ID.String(),
-		Name:          newRecord.Name,
-		Amount:        newRecord.Amount,
-		Time:          strconv.FormatInt(newRecord.Time.UnixMilli(), 10),
-		PrePayAddress: utils.ToModelAddress(newRecord.PrePayAddress),
-		Category:      *input.New.Category,
-	}, nil
-}
-
-// RemoveRecord is the resolver for the removeRecord field.
-func (r *mutationResolver) RemoveRecord(ctx context.Context, recordID string) (string, error) {
-	dbTripInfo := r.TripDB
-	recordUID, err := uuid.Parse(recordID)
-	if err != nil {
-		return "", fmt.Errorf("invalid record ID: %w", err)
-	}
-	var tripId uuid.UUID
-	if tripId, err = dbTripInfo.DeleteTripRecord(recordUID); err != nil {
-		return "", fmt.Errorf("failed to delete record: %w", err)
-	}
-
-	tripMQ := r.TripMessageQueueWrapper.GetTripRecordMessageQueue(mq.ActionDelete)
-	if err := tripMQ.Publish(mq.TripRecordMessage{
-		TripID: tripId,
-		ID:     recordUID,
-	}); err != nil {
-		fmt.Println("Warning: fail to notice event: " + err.Error())
-	}
-
-	return recordID, nil
+	return utils.ToModelRecord(resultRecord.RecordInfo, true), nil
 }
 
 // CreateAddress is the resolver for the createAddress field.
 func (r *mutationResolver) CreateAddress(ctx context.Context, tripID string, input model.NewAddress) (*model.Address, error) {
+	defer resetTripDataLoader(ctx)
 	if !utils.VerifyStringRequest(input.Name) {
 		return nil, fmt.Errorf("invalid address name")
 	}
@@ -247,6 +224,7 @@ func (r *mutationResolver) CreateAddress(ctx context.Context, tripID string, inp
 
 // UpdateAddress is the resolver for the updateAddress field.
 func (r *mutationResolver) UpdateAddress(ctx context.Context, tripID string, addressID string, input model.NewAddress) (*model.Address, error) {
+	defer resetTripDataLoader(ctx)
 	if !utils.VerifyStringRequest(input.Name) {
 		return nil, fmt.Errorf("invalid address name")
 	}
@@ -271,6 +249,7 @@ func (r *mutationResolver) UpdateAddress(ctx context.Context, tripID string, add
 
 // DeleteAddress is the resolver for the deleteAddress field.
 func (r *mutationResolver) DeleteAddress(ctx context.Context, tripID string, addressID string) (*model.Address, error) {
+	defer resetTripDataLoader(ctx)
 	dbTripInfo := r.TripDB
 	tripUUID, err := uuid.Parse(tripID)
 	if err != nil {
@@ -327,7 +306,16 @@ func (r *queryResolver) Trip(ctx context.Context, tripID string) (*model.Trip, e
 
 // ShouldPayAddress is the resolver for the shouldPayAddress field.
 func (r *recordResolver) ShouldPayAddress(ctx context.Context, obj *model.Record) ([]*model.Address, error) {
-	addresses, err := utils.GetShouldPayList(ctx, obj)
+	factory, _, err := r.recordFactory(ctx)
+	if err != nil {
+		return nil, err
+	}
+	info, err := modelRecordInfo(obj)
+	if err != nil {
+		return nil, err
+	}
+	record := factory.FromInfo(info, obj.EventValid)
+	addresses, err := record.GetShouldPay(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get should pay addresses: %w", err)
 	}
@@ -341,7 +329,16 @@ func (r *recordResolver) ShouldPayAddress(ctx context.Context, obj *model.Record
 
 // ExtendPayMsg is the resolver for the extendPayMsg field.
 func (r *recordResolver) ExtendPayMsg(ctx context.Context, obj *model.Record) ([]float64, error) {
-	addresses, err := utils.GetShouldPayList(ctx, obj)
+	factory, _, err := r.recordFactory(ctx)
+	if err != nil {
+		return nil, err
+	}
+	info, err := modelRecordInfo(obj)
+	if err != nil {
+		return nil, err
+	}
+	record := factory.FromInfo(info, obj.EventValid)
+	addresses, err := record.GetShouldPay(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get should pay addresses: %w", err)
 	}
@@ -355,35 +352,18 @@ func (r *recordResolver) ExtendPayMsg(ctx context.Context, obj *model.Record) ([
 
 // IsValid is the resolver for the isValid field.
 func (r *recordResolver) IsValid(ctx context.Context, obj *model.Record) (bool, error) {
-	addresses, err := utils.GetShouldPayList(ctx, obj)
-	if err != nil {
-		return false, fmt.Errorf("failed to get should pay addresses: %w", err)
+	if !obj.EventValid {
+		return chain.NewRecordFactory(r.recordChainStore(), nil).FromInfo(domain.RecordInfo{}, false).Validate(ctx)
 	}
-
-	prePayAddress, err := utils.ToDomainAddress(obj.PrePayAddress)
+	record, err := modelRecordInfo(obj)
 	if err != nil {
 		return false, err
 	}
-	payment := tx.UserPayment{
-		Name:             obj.Name,
-		PrePayAddress:    prePayAddress,
-		Amount:           obj.Amount,
-		ShouldPayAddress: make([]domain.Address, len(addresses)),
-		ExtendPayMsg:     make([]float64, len(addresses)),
-		PaymentType:      utils.RecordCategory2Int(&obj.Category),
+	factory, _, err := r.recordFactory(ctx)
+	if err != nil {
+		return false, err
 	}
-
-	for i, addr := range addresses {
-		payment.ShouldPayAddress[i] = addr.Address
-		payment.ExtendPayMsg[i] = addr.ExtendMsg
-	}
-	if t, err := payment.ToTx(tx.ShareMoneyStrategyFactory(payment.PaymentType)); err != nil {
-		// fmt.Printf("failed to convert UserPayment to Tx: %w", err)
-		return false, nil
-	} else if t.BoolValidate() {
-		return true, nil
-	}
-	return false, nil
+	return factory.FromInfo(record, obj.EventValid).Validate(ctx)
 }
 
 // SubRecordCreate is the resolver for the subRecordCreate field.
@@ -404,29 +384,6 @@ func (r *subscriptionResolver) SubRecordCreate(ctx context.Context, tripID strin
 		ctx,
 		tripMQ,
 		utils.TripRecordMQ2GQL,
-		recordStream,
-	)
-	return recordStream, nil
-}
-
-// SubRecordDelete is the resolver for the subRecordDelete field.
-func (r *subscriptionResolver) SubRecordDelete(ctx context.Context, tripID string) (<-chan string, error) {
-	tripMQ := r.TripMessageQueueWrapper.GetTripRecordMessageQueue(mq.ActionDelete)
-	if tripMQ == nil {
-		return nil, fmt.Errorf("can not get target message MQ")
-	}
-	tripUUID, err := uuid.Parse(tripID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid trip ID: %w", err)
-	}
-
-	recordStream := make(chan string)
-
-	mq.SubscribeProcessor(
-		tripUUID,
-		ctx,
-		tripMQ,
-		utils.TripRecordIdMQ2GQL,
 		recordStream,
 	)
 	return recordStream, nil
@@ -517,34 +474,24 @@ func (r *subscriptionResolver) SubAddressDelete(ctx context.Context, tripID stri
 
 // Records is the resolver for the records field.
 func (r *tripResolver) Records(ctx context.Context, obj *model.Trip) ([]*model.Record, error) {
-	ginCtx, err := utils.GinContextFromContext(ctx)
+	_, reader, err := r.recordFactory(ctx)
 	if err != nil {
 		return nil, err
 	}
-	dataLoader, ok := ginCtx.Value(string(db.DataLoaderKeyTripData)).(*db.TripDataLoader)
-	if !ok {
-		return nil, fmt.Errorf("data loader is not available")
-	}
-
 	tripID, err := uuid.Parse(obj.ID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
 	}
 
-	records, err := dataLoader.GetRecordInfoList.Load(ctx, tripID)
+	records, err := chain.NewTrip(tripID, r.recordChainStore(), reader).List(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get trip records: %w", err)
 	}
-
 	recordModels := make([]*model.Record, len(records))
 	for i, record := range records {
-		recordModels[i] = &model.Record{
-			ID:            record.ID.String(),
-			Name:          record.Name,
-			Amount:        record.Amount,
-			Time:          strconv.FormatInt(record.Time.UnixMilli(), 10),
-			PrePayAddress: utils.ToModelAddress(record.PrePayAddress),
-			Category:      utils.Int2RecordCategory(int(record.Category)),
+		recordModels[i], err = utils.ToModelRecordChecked(record.Info(), record.IsActive(), record.EventValid())
+		if err != nil {
+			return nil, err
 		}
 	}
 	return recordModels, nil
@@ -552,19 +499,19 @@ func (r *tripResolver) Records(ctx context.Context, obj *model.Trip) ([]*model.R
 
 // MoneyShare is the resolver for the moneyShare field.
 func (r *tripResolver) MoneyShare(ctx context.Context, obj *model.Trip) ([]*model.Tx, error) {
-	txPackage, totalRemaining, isValid, err := utils.CalculateMoneyShare(ctx, obj)
+	result, err := r.calculateMoneyShare(ctx, obj)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create TxPackage: %w", err)
 	}
-	if totalRemaining > 0.1 {
-		return nil, fmt.Errorf("there are remaining unspent inputs totaling %.2f, please check your records", totalRemaining)
+	if result.TotalRemaining > 0.1 {
+		return nil, fmt.Errorf("there are remaining unspent inputs totaling %.2f, please check your records", result.TotalRemaining)
 	}
 
-	if !isValid {
+	if !result.Valid {
 		return []*model.Tx{}, nil
 	}
 
-	return utils.ToModelTxList(txPackage.TxList), nil
+	return utils.ToModelTxList(result.Package.TxList), nil
 }
 
 // Addresses is the resolver for the addresses field.
@@ -594,15 +541,15 @@ func (r *tripResolver) Addresses(ctx context.Context, obj *model.Trip) ([]*model
 
 // IsValid is the resolver for the isValid field.
 func (r *tripResolver) IsValid(ctx context.Context, obj *model.Trip) (bool, error) {
-	_, totalRemaining, isValid, err := utils.CalculateMoneyShare(ctx, obj)
+	result, err := r.calculateMoneyShare(ctx, obj)
 	if err != nil {
 		return false, fmt.Errorf("failed to create TxPackage: %w", err)
 	}
-	if totalRemaining > 0.1 {
-		return false, fmt.Errorf("there are remaining unspent inputs totaling %.2f, please check your records", totalRemaining)
+	if result.TotalRemaining > 0.1 {
+		return false, fmt.Errorf("there are remaining unspent inputs totaling %.2f, please check your records", result.TotalRemaining)
 	}
 
-	return isValid, nil
+	return result.Valid, nil
 }
 
 // Mutation returns MutationResolver implementation.

@@ -11,6 +11,9 @@ type RecordCategory int
 const (
 	CategoryNormal RecordCategory = iota
 	CategoryFix
+	CategoryPart
+	CategoryFixBeforeNormal
+	CategoryTransfer
 )
 
 // Address is a trip-scoped participant. ID is the stable identity; Name is
@@ -41,12 +44,15 @@ type Trip struct {
 }
 
 type RecordInfo struct {
-	ID            uuid.UUID
-	Name          string
-	Amount        float64
-	Time          time.Time
-	PrePayAddress Address
-	Category      RecordCategory
+	ID             uuid.UUID
+	ParentRecordID *uuid.UUID
+	ChildRecordID  *uuid.UUID
+	Name           string
+	Amount         float64
+	Time           time.Time
+	PrePayAddress  Address
+	Category       RecordCategory
+	IsDeleted      bool
 }
 
 type RecordData struct {
@@ -56,4 +62,16 @@ type RecordData struct {
 type Record struct {
 	RecordInfo
 	RecordData
+}
+
+// RecordPatch describes fields the client intended to change. Nil fields are
+// left unchanged; ShouldPayAddress replaces the complete collection when set.
+type RecordPatch struct {
+	Name             *string
+	Amount           *float64
+	Time             *time.Time
+	PrePayAddressID  *uuid.UUID
+	Category         *RecordCategory
+	ShouldPayAddress *[]ExtendAddress
+	IsDeleted        *bool
 }

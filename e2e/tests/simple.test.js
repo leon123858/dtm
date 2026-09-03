@@ -6,12 +6,13 @@ import {
 	DELETE_ADDRESS,
 	CREATE_RECORD,
 	UPDATE_RECORD,
-	REMOVE_RECORD,
 } from './graphql';
 
 describe('GraphQL API End-to-End Tests', () => {
 	let tripId;
 	let recordId;
+	let updatedRecordId;
+	let updatedRecord;
 	let addressAlice;
 	let addressBob;
 	let newRecord;
@@ -136,7 +137,7 @@ describe('GraphQL API End-to-End Tests', () => {
 		it('should update the created record', async () => {
 			expect(recordId).toBeDefined();
 
-			const updatedRecord = {
+			updatedRecord = {
 				name: 'Expensive Dinner',
 				amount: 500,
 				prePayAddressId: addressAlice.id,
@@ -163,24 +164,63 @@ describe('GraphQL API End-to-End Tests', () => {
 			expect(data.updateRecord.extendPayMsg).toEqual(
 				updatedRecord.extendPayMsg
 			);
+			expect(data.updateRecord.id).not.toBe(recordId);
+			expect(data.updateRecord.parentRecordId).toBe(recordId);
+			updatedRecordId = data.updateRecord.id;
 		});
 
-		it('should remove the record', async () => {
+		it('should delete and restore the record with updates', async () => {
 			expect(recordId).toBeDefined();
 
+			const deletedSnapshot = { ...updatedRecord, isDeleted: true };
 			const { data, error } = await client.mutate({
-				mutation: REMOVE_RECORD,
-				variables: { recordId },
+				mutation: UPDATE_RECORD,
+				variables: { recordId: updatedRecordId, input: { old: updatedRecord, new: deletedSnapshot } },
 			});
 
 			expect(error).toBeUndefined();
-			expect(data.removeRecord).toBe(recordId);
+			const deleteRecordId = data.updateRecord.id;
+			expect(deleteRecordId).toBeDefined();
+			expect(deleteRecordId).not.toBe(recordId);
 
 			const { data: tripData } = await client.query({
 				query: GET_TRIP,
 				variables: { tripId },
 			});
-			expect(tripData.trip.records).toHaveLength(0);
+			expect(tripData.trip.records).toHaveLength(3);
+			const original = tripData.trip.records.find((record) => record.id === recordId);
+			const updated = tripData.trip.records.find((record) => record.id === updatedRecordId);
+			const deletion = tripData.trip.records.find((record) => record.id === deleteRecordId);
+			expect(original.isActive).toBe(false);
+			expect(updated.isActive).toBe(false);
+			expect(deletion).toMatchObject({
+				name: updatedRecord.name,
+				amount: updatedRecord.amount,
+				category: updatedRecord.category,
+				parentRecordId: updatedRecordId,
+				isDeleted: true,
+				isActive: true,
+				isValid: true,
+			});
+
+			const restoredSnapshot = { ...updatedRecord, isDeleted: false };
+			const { data: undoData } = await client.mutate({
+				mutation: UPDATE_RECORD,
+				variables: { recordId: deleteRecordId, input: { old: deletedSnapshot, new: restoredSnapshot } },
+			});
+			expect(undoData.updateRecord.id).not.toBe(deleteRecordId);
+			const { data: restoredTrip } = await client.query({
+				query: GET_TRIP,
+				variables: { tripId },
+				fetchPolicy: 'network-only',
+			});
+			expect(restoredTrip.trip.records).toHaveLength(4);
+			const undoId = undoData.updateRecord.id;
+			expect(restoredTrip.trip.records.find((record) => record.id === undoId).isActive).toBe(true);
+			expect(restoredTrip.trip.records.find((record) => record.id === recordId).isActive).toBe(false);
+			expect(restoredTrip.trip.records.every((record) => record.isValid)).toBe(true);
+			expect(restoredTrip.trip.isValid).toBe(true);
+			expect(restoredTrip.trip.moneyShare).toBeDefined();
 		});
 	});
 });

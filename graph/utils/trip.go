@@ -13,24 +13,27 @@ func TripRecordMQ2GQL(msg mq.TripRecordMessage) (*model.Record, bool, error) {
 		return nil, true, nil
 	}
 
-	record := &model.Record{
-		ID:            msg.ID.String(),
-		Name:          msg.Name,
-		Amount:        msg.Amount,
-		Time:          msg.Time,
-		PrePayAddress: ToModelAddress(msg.PrePayAddress),
-		Category:      Int2RecordCategory(msg.Category),
+	category, err := Int2RecordCategoryChecked(msg.Category)
+	if err != nil {
+		return nil, false, err
 	}
+	record := &model.Record{
+		ID:         msg.ID.String(),
+		Time:       msg.Time,
+		Category:   category,
+		IsDeleted:  msg.IsDeleted,
+		IsActive:   true,
+		EventValid: true,
+	}
+	if msg.ParentRecordID != nil {
+		parent := msg.ParentRecordID.String()
+		record.ParentRecordID = &parent
+	}
+	record.Name = &msg.Name
+	record.Amount = &msg.Amount
+	record.PrePayAddress = ToModelAddress(msg.PrePayAddress)
 
 	return record, false, nil
-}
-
-func TripRecordIdMQ2GQL(msg mq.TripRecordMessage) (string, bool, error) {
-	if msg.ID == uuid.Nil {
-		return "", true, nil
-	}
-
-	return msg.ID.String(), false, nil
 }
 
 func TripAddressMQ2GQL(msg mq.TripAddressMessage) (*model.Address, bool, error) {

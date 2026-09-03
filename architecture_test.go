@@ -18,6 +18,7 @@ func TestBusinessLayersDoNotDependOnPersistenceModels(t *testing.T) {
 	}
 	root := filepath.Dir(currentFile)
 	targets := []string{
+		filepath.Join(root, "chain"),
 		filepath.Join(root, "domain"),
 		filepath.Join(root, "tx"),
 		filepath.Join(root, "mq", "mq"),
