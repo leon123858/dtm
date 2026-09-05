@@ -18,11 +18,11 @@ func TestBusinessLayersDoNotDependOnPersistenceModels(t *testing.T) {
 	}
 	root := filepath.Dir(currentFile)
 	targets := []string{
-		filepath.Join(root, "db"),
-		filepath.Join(root, "chain"),
+		filepath.Join(root, "adapters", "db"),
+		filepath.Join(root, "services", "trip"),
 		filepath.Join(root, "domain"),
-		filepath.Join(root, "tx"),
-		filepath.Join(root, "mq", "mq"),
+		filepath.Join(root, "services", "tx"),
+		filepath.Join(root, "adapters", "mq", "mq"),
 		filepath.Join(root, "cmd", "share.go"),
 	}
 
@@ -72,12 +72,12 @@ func TestGraphQLResolversDoNotDependOnPersistence(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parse import in %s: %v", path, err)
 			}
-			if strings.HasPrefix(importPath, "dtm/db/") {
+			if strings.HasPrefix(importPath, "dtm/adapters/db/") {
 				relative, relErr := filepath.Rel(root, path)
 				if relErr != nil {
 					relative = path
 				}
-				t.Errorf("%s must read through chain objects instead of importing %q", relative, importPath)
+				t.Errorf("%s must read through trip service objects instead of importing %q", relative, importPath)
 			}
 		}
 	}
@@ -97,12 +97,12 @@ func checkLayerImports(t *testing.T, root, path string) {
 			continue
 		}
 		relative, _ := filepath.Rel(root, path)
-		inChain := strings.HasPrefix(relative, "chain"+string(filepath.Separator))
-		inDB := strings.HasPrefix(relative, "db"+string(filepath.Separator))
-		if inDB && !strings.HasSuffix(path, "_test.go") && importPath == "dtm/chain" {
+		inTripService := strings.HasPrefix(relative, filepath.Join("services", "trip")+string(filepath.Separator))
+		inDB := strings.HasPrefix(relative, filepath.Join("adapters", "db")+string(filepath.Separator))
+		if inDB && !strings.HasSuffix(path, "_test.go") && importPath == "dtm/services/trip" {
 			t.Errorf("%s must not import upper layer %q", relative, importPath)
 		}
-		if strings.HasPrefix(importPath, "dtm/db/") && !inDB && (!inChain || importPath != "dtm/db/db") {
+		if strings.HasPrefix(importPath, "dtm/adapters/db/") && !inDB && (!inTripService || importPath != "dtm/adapters/db/db") {
 			relative, relErr := filepath.Rel(root, path)
 			if relErr != nil {
 				relative = path

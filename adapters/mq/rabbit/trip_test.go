@@ -2,9 +2,9 @@
 package rabbit_test // Testing the 'rabbit' package as a black box providing 'mq' interfaces
 
 import (
+	"dtm/adapters/mq/mq"              // MQ interfaces
+	rabbitMQ "dtm/adapters/mq/rabbit" // RabbitMQ implementation of MQ interfaces
 	"dtm/domain"
-	"dtm/mq/mq"              // MQ interfaces
-	rabbitMQ "dtm/mq/rabbit" // RabbitMQ implementation of MQ interfaces
 	"fmt"
 	"log"
 	"reflect"

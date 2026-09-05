@@ -1,7 +1,7 @@
 package goch
 
 import (
-	"dtm/mq/mq" // Assuming this path is correct for your mq interfaces and types
+	"dtm/adapters/mq/mq" // Assuming this path is correct for your mq interfaces and types
 	"fmt"
 	"sync"
 	"time" // For potential timeouts in fan-out

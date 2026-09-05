@@ -3,7 +3,7 @@ package utils
 import (
 	"dtm/domain"
 	"dtm/graph/model"
-	"dtm/tx"
+	"dtm/services/tx"
 	"fmt"
 	"reflect"
 	"strconv"

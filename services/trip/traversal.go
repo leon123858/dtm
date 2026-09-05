@@ -1,10 +1,10 @@
-package chain
+package trip
 
 import (
 	"context"
 	"fmt"
 
-	"dtm/db/db"
+	"dtm/adapters/db/db"
 	"dtm/domain"
 	"dtm/libs/chainlist"
 

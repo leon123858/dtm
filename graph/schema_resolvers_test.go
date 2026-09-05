@@ -4,12 +4,12 @@ import (
 	"context"
 	"testing"
 
-	"dtm/chain"
-	"dtm/db/db"
-	"dtm/db/mem"
+	"dtm/adapters/db/db"
+	"dtm/adapters/db/mem"
+	"dtm/adapters/mq/mq"
 	"dtm/domain"
 	"dtm/graph/model"
-	"dtm/mq/mq"
+	tripservice "dtm/services/trip"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -38,8 +38,8 @@ func resolverWithChain(wrapper db.TripDBWrapper) *Resolver {
 		return db.TripDataLoaderFromContext(ctx)
 	}
 	return &Resolver{
-		RecordFactory: chain.NewRecordFactory(provider),
-		TripFactory:   chain.NewTripFactory(wrapper, provider),
+		RecordFactory: tripservice.NewRecordFactory(provider),
+		TripFactory:   tripservice.NewTripFactory(wrapper, provider),
 	}
 }
 
@@ -146,11 +146,11 @@ type resolverTripFactory struct {
 	selectedID  uuid.UUID
 }
 
-func (f *resolverTripFactory) Create(_ context.Context, name string) (chain.Trip, error) {
+func (f *resolverTripFactory) Create(_ context.Context, name string) (tripservice.Trip, error) {
 	f.createdName = name
 	return f.trip, nil
 }
-func (f *resolverTripFactory) ForTrip(id uuid.UUID) chain.Trip {
+func (f *resolverTripFactory) ForTrip(id uuid.UUID) tripservice.Trip {
 	f.selectedID = id
 	f.trip.id = id
 	return f.trip
@@ -185,12 +185,12 @@ func (t *resolverTrip) DeleteAddress(_ context.Context, id uuid.UUID) (*domain.A
 	t.deletedAddressID = id
 	return &domain.Address{ID: id, Name: "member"}, nil
 }
-func (t *resolverTrip) Append(context.Context, chain.Record) (chain.AppendResult, error) {
-	return chain.AppendResult{}, nil
+func (t *resolverTrip) Append(context.Context, tripservice.Record) (tripservice.AppendResult, error) {
+	return tripservice.AppendResult{}, nil
 }
-func (t *resolverTrip) List(context.Context) ([]chain.Record, error) { return nil, nil }
-func (t *resolverTrip) CalculateMoneyShare(context.Context) (chain.MoneyShareResult, error) {
-	return chain.MoneyShareResult{}, nil
+func (t *resolverTrip) List(context.Context) ([]tripservice.Record, error) { return nil, nil }
+func (t *resolverTrip) CalculateMoneyShare(context.Context) (tripservice.MoneyShareResult, error) {
+	return tripservice.MoneyShareResult{}, nil
 }
 
 func TestTripAndAddressMutationsUseTripAbstractions(t *testing.T) {
@@ -350,7 +350,7 @@ func TestStaleBaselineCannotAppendInvalidMaterializedTail(t *testing.T) {
 	base := resolverWithChain(database)
 	base.TripMessageQueueWrapper = queues
 	_, err = (&mutationResolver{Resolver: base}).UpdateRecord(resolverContext(database), recordID.String(), model.EditRecord{Old: &oldInput, New: &newInput})
-	require.ErrorIs(t, err, chain.ErrInvalidRecordSnapshot)
+	require.ErrorIs(t, err, tripservice.ErrInvalidRecordSnapshot)
 	assert.Empty(t, queues.queues[mq.ActionUpdate].messages)
 }
 

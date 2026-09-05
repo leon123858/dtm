@@ -6,11 +6,11 @@ package graph
 
 import (
 	"context"
-	"dtm/chain"
+	"dtm/adapters/mq/mq"
 	"dtm/domain"
 	"dtm/graph/model"
 	"dtm/graph/utils"
-	"dtm/mq/mq"
+	tripservice "dtm/services/trip"
 	"errors"
 	"fmt"
 	"strconv"
@@ -94,7 +94,7 @@ func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, inpu
 	}
 	appendResult, err := trip.Append(ctx, intent)
 	if err != nil {
-		if errors.Is(err, chain.ErrInvalidRecordSnapshot) {
+		if errors.Is(err, tripservice.ErrInvalidRecordSnapshot) {
 			return nil, fmt.Errorf("invalid record input: %w", err)
 		}
 		return nil, fmt.Errorf("failed to create record: %w", err)
@@ -156,7 +156,7 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, in
 	}
 	result, err := trip.Append(ctx, intent)
 	if err != nil {
-		if errors.Is(err, chain.ErrInvalidRecordSnapshot) {
+		if errors.Is(err, tripservice.ErrInvalidRecordSnapshot) {
 			return nil, fmt.Errorf("invalid record input: %w", err)
 		}
 		return nil, fmt.Errorf("failed to update record: %w", err)
@@ -285,7 +285,7 @@ func (r *queryResolver) Trip(ctx context.Context, tripID string) (*model.Trip, e
 	}
 	tripInfo, err := trip.Info(ctx)
 	if err != nil {
-		if errors.Is(err, chain.ErrTripNotFound) {
+		if errors.Is(err, tripservice.ErrTripNotFound) {
 			return nil, fmt.Errorf("trip not found with ID %s: %w", tripID, err)
 		}
 		return nil, fmt.Errorf("failed to get trip info: %w", err)

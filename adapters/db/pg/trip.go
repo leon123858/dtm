@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"dtm/db/db"
+	"dtm/adapters/db/db"
 	"dtm/domain"
 	"dtm/libs/chainlist"
 

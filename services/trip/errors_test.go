@@ -1,4 +1,4 @@
-package chain
+package trip
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"dtm/db/db"
+	"dtm/adapters/db/db"
 	"dtm/domain"
 
 	"github.com/google/uuid"

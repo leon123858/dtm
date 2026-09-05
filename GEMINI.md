@@ -48,13 +48,16 @@
 .
 ├── cmd/          # Application entry points (server, cli, migrate)
 ├── config/       # Project configuration files
-├── db/           # Database-related logic (pg, mem)
+├── adapters/     # Database and message queue adapters
+│   ├── db/       # Database contracts and implementations (pg, mem)
+│   └── mq/       # Message queue contracts and implementations (goch, gcppubsub, rabbit)
 ├── e2e/          # End-to-end tests (Jest)
 ├── graph/        # GraphQL core (schema, resolvers, generated code)
 ├── infra/        # Infrastructure configuration (Terraform)
 ├── migration/    # Database migration files
-├── mq/           # Message Queue implementations (gcppubsub, rabbit)
-├── tx/           # Core expense-splitting algorithm
+├── services/     # Business services
+│   ├── trip/     # Trip management and record-chain behavior
+│   └── tx/       # Core expense-splitting algorithm
 ├── web/          # Web server (Gin handler, middleware)
 ├── dtm.go        # Main project entry point
 ├── go.mod        # Go module dependencies
@@ -65,9 +68,9 @@
 
   - **`cmd/`**: Contains the main entry points for the application. `server.go` starts the GraphQL web service, `share.go` handles the CLI mode, and `migrate.go` is used for running database migrations.
   - **`graph/`**: This is the core of the GraphQL API. `schema.graphqls` defines the API's structure, while `resolver.go` and `schema.resolvers.go` contain the business logic that implements the API.
-  - **`db/`**: Responsible for all database interactions. It is divided into different backend implementations like `pg` (PostgreSQL) and `mem` (in-memory), a structure that makes it easy to swap or test databases.
-  - **`tx/`**: Contains the project's most critical algorithm, which calculates the most simplified transaction plan based on all expense records.
-  - **`mq/`**: Contains integration code for message queue services (like RabbitMQ, GCP Pub/Sub), indicating the system might handle asynchronous tasks via an event-driven approach (e.g., notifying other systems after a record is updated).
+  - **`adapters/db/`**: Responsible for all database interactions. It is divided into different backend implementations like `pg` (PostgreSQL) and `mem` (in-memory), a structure that makes it easy to swap or test databases.
+  - **`services/tx/`**: Contains the project's most critical algorithm, which calculates the most simplified transaction plan based on all expense records.
+  - **`adapters/mq/`**: Contains integration code for message queue services (like RabbitMQ, GCP Pub/Sub), indicating the system might handle asynchronous tasks via an event-driven approach (e.g., notifying other systems after a record is updated).
   - **`e2e/`**: Contains end-to-end tests written in JavaScript (Jest) to test the functionality of the GraphQL API from a user's perspective.
   - **`infra/`**: Stores Terraform code for automatically provisioning the cloud infrastructure required for the project.
   - **`Makefile`**: Provides a series of convenient development commands, such as `make test` (run unit tests), `make serve` (start the service), `make gql` (regenerate GraphQL code), etc.

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"dtm/db/db"
+	"dtm/adapters/db/db"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"

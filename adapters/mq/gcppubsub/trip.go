@@ -2,7 +2,7 @@ package gcppubsub
 
 import (
 	"context"
-	"dtm/mq/mq"
+	"dtm/adapters/mq/mq"
 	"encoding/json"
 	"errors"
 	"fmt"

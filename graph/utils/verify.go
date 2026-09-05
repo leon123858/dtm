@@ -58,7 +58,7 @@ func VerifyStringListRequest(s []string) bool {
 }
 
 // NormalizeRecordRequest handles only transport-shape concerns that cannot be
-// represented by domain.Record. Domain validation belongs to chain.RecordPolicy.
+// represented by domain.Record. Domain validation belongs to the trip service.
 func NormalizeRecordRequest(r *model.NewRecord) bool {
 	if len(r.ExtendPayMsg) > len(r.ShouldPayAddressIds) {
 		return false

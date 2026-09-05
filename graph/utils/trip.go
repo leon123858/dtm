@@ -1,8 +1,8 @@
 package utils
 
 import (
+	"dtm/adapters/mq/mq"
 	"dtm/graph/model"
-	"dtm/mq/mq"
 
 	"github.com/google/uuid"
 )

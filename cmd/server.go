@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"dtm/mq/mq"
+	"dtm/adapters/mq/mq"
 	"dtm/web"
 
 	"github.com/spf13/cobra"

@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"dtm/domain"
-	"dtm/tx"
+	"dtm/services/tx"
 	"encoding/csv"
 	"fmt"
 	"log"

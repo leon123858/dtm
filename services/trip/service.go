@@ -1,14 +1,14 @@
-// Package chain owns record-chain behavior and exposes it through small
+// Package trip owns trip management, record-chain behavior, and settlement through small
 // interfaces. Concrete implementations are intentionally private.
-package chain
+package trip
 
 import (
 	"context"
 	"errors"
 
-	"dtm/db/db"
+	"dtm/adapters/db/db"
 	"dtm/domain"
-	"dtm/tx"
+	"dtm/services/tx"
 
 	"github.com/google/uuid"
 )

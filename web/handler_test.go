@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"dtm/db/db"
-	"dtm/db/mem"
+	"dtm/adapters/db/db"
+	"dtm/adapters/db/mem"
 	"dtm/domain"
 
 	"github.com/99designs/gqlgen/graphql"

@@ -2,7 +2,7 @@ package rabbit
 
 import (
 	"context"
-	"dtm/mq/mq"
+	"dtm/adapters/mq/mq"
 	"encoding/json"
 	"fmt"
 	"log"

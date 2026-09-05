@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"dtm/db/db"
-	"dtm/db/internal/testutil"
+	"dtm/adapters/db/db"
+	"dtm/adapters/db/internal/testutil"
 	"dtm/domain"
 	"dtm/libs/chainlist"
 

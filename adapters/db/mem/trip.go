@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	dbpkg "dtm/db/db"
+	dbpkg "dtm/adapters/db/db"
 	"dtm/domain"
 	"dtm/libs/chainlist"
 

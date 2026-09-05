@@ -1,4 +1,4 @@
-package chain
+package trip
 
 import (
 	"fmt"
@@ -6,9 +6,9 @@ import (
 	"slices"
 	"unicode"
 
-	"dtm/db/db"
+	"dtm/adapters/db/db"
 	"dtm/domain"
-	"dtm/tx"
+	"dtm/services/tx"
 
 	"github.com/google/uuid"
 )

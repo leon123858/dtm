@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository is a Go expense-splitting service with CLI and GraphQL API modes. `dtm.go` is the main entry point. `cmd/` contains Cobra commands for `serve`, `share`, and migrations. Core settlement logic lives in `tx/`; GraphQL schema, resolvers, models, and generated code live in `graph/`; HTTP setup is in `web/`. Persistence code is split between `db/pg`, `db/mem`, and shared `db/db` interfaces. Message queue adapters are under `mq/`. Database migrations are in `migration/`. End-to-end GraphQL tests are in `e2e/`, and Terraform infrastructure is in `infra/`.
+This repository is a Go expense-splitting service with CLI and GraphQL API modes. `dtm.go` is the main entry point. `cmd/` contains Cobra commands for `serve`, `share`, and migrations. Trip management and record-chain behavior live in `services/trip/`; core settlement logic lives in `services/tx/`; GraphQL schema, resolvers, models, and generated code live in `graph/`; HTTP setup is in `web/`. Persistence code is split between `adapters/db/pg`, `adapters/db/mem`, and shared `adapters/db/db` interfaces. Message queue adapters are under `adapters/mq/`. Database migrations are in `migration/`. End-to-end GraphQL tests are in `e2e/`, and Terraform infrastructure is in `infra/`.
 
 ## Build, Test, and Development Commands
 

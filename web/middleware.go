@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"os"
 
-	"dtm/db/db"
+	"dtm/adapters/db/db"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/secure"

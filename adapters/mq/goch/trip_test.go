@@ -2,8 +2,8 @@ package goch
 
 import (
 	// Assuming these paths are correct as per your project structure
+	"dtm/adapters/mq/mq"
 	"dtm/domain"
-	"dtm/mq/mq"
 
 	// For error comparison
 	"fmt" // Used in some error messages, and by the code under test

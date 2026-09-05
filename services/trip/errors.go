@@ -1,10 +1,10 @@
-package chain
+package trip
 
 import (
 	"errors"
 	"fmt"
 
-	"dtm/db/db"
+	"dtm/adapters/db/db"
 )
 
 // Translate persistence classifications at the object boundary while retaining

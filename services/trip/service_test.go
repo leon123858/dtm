@@ -1,4 +1,4 @@
-package chain
+package trip
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"dtm/db/db"
+	"dtm/adapters/db/db"
 	"dtm/domain"
 	"dtm/libs/chainlist"
 

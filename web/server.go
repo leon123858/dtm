@@ -2,17 +2,17 @@ package web
 
 import (
 	"context"
-	"dtm/chain"
+	"dtm/adapters/mq/gcppubsub"
+	"dtm/adapters/mq/goch"
+	"dtm/adapters/mq/mq"
+	"dtm/adapters/mq/rabbit"
 	"dtm/graph"
-	"dtm/mq/gcppubsub"
-	"dtm/mq/goch"
-	"dtm/mq/mq"
-	"dtm/mq/rabbit"
+	tripservice "dtm/services/trip"
 	"log"
 
-	"dtm/db/db"
-	"dtm/db/mem"
-	"dtm/db/pg"
+	"dtm/adapters/db/db"
+	"dtm/adapters/db/mem"
+	"dtm/adapters/db/pg"
 
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
@@ -87,8 +87,8 @@ func Serve(config ServiceConfig) {
 		return db.TripDataLoaderFromContext(ctx)
 	}
 	executableSchema := graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{
-		RecordFactory:           chain.NewRecordFactory(readerProvider),
-		TripFactory:             chain.NewTripFactory(dbDep, readerProvider),
+		RecordFactory:           tripservice.NewRecordFactory(readerProvider),
+		TripFactory:             tripservice.NewTripFactory(dbDep, readerProvider),
 		TripMessageQueueWrapper: mqDep,
 	}})
 	if config.IsDev {

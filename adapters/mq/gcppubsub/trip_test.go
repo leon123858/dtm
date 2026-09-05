@@ -2,9 +2,9 @@ package gcppubsub_test
 
 import (
 	"context"
+	"dtm/adapters/mq/gcppubsub" // Import the package to be tested
+	"dtm/adapters/mq/mq"
 	"dtm/domain"
-	"dtm/mq/gcppubsub" // Import the package to be tested
-	"dtm/mq/mq"
 	"log"
 	"os"
 	"reflect"

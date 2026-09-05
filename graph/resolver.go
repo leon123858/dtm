@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"dtm/chain"
-	"dtm/mq/mq"
+	"dtm/adapters/mq/mq"
+	tripservice "dtm/services/trip"
 
 	"github.com/google/uuid"
 )
@@ -16,19 +16,19 @@ import (
 // ex: put your database connection or HTTP client in here.
 
 type Resolver struct {
-	RecordFactory           chain.RecordFactory
-	TripFactory             chain.TripFactory
+	RecordFactory           tripservice.RecordFactory
+	TripFactory             tripservice.TripFactory
 	TripMessageQueueWrapper mq.TripMessageQueueWrapper
 }
 
-func (r *Resolver) recordFactory(ctx context.Context) (chain.RecordFactory, error) {
+func (r *Resolver) recordFactory(ctx context.Context) (tripservice.RecordFactory, error) {
 	if r.RecordFactory == nil {
 		return nil, fmt.Errorf("record factory is not configured")
 	}
 	return r.RecordFactory, nil
 }
 
-func (r *Resolver) tripForID(tripID uuid.UUID) (chain.Trip, error) {
+func (r *Resolver) tripForID(tripID uuid.UUID) (tripservice.Trip, error) {
 	if r.TripFactory == nil {
 		return nil, fmt.Errorf("trip factory is not configured")
 	}
