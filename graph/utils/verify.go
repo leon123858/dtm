@@ -1,15 +1,11 @@
 package utils
 
 import (
-	"dtm/domain"
 	"dtm/graph/model"
-	"dtm/tx"
 	"fmt"
 	"strconv"
 	"time"
 	"unicode"
-
-	"github.com/google/uuid"
 )
 
 func IsSecureString(s string) bool {
@@ -32,22 +28,6 @@ func IsSecureString(s string) bool {
 		}
 	}
 	return true
-}
-
-// ValidatePaymentRecord is the common payment validation used for create and
-// for the complete `new` snapshot of update. IsDeleted does not relax it.
-func ValidatePaymentRecord(record domain.Record) bool {
-	payment := tx.UserPayment{
-		Name: record.Name, Amount: record.Amount, PrePayAddress: record.PrePayAddress,
-		ShouldPayAddress: make([]domain.Address, len(record.ShouldPayAddress)),
-		ExtendPayMsg:     make([]float64, len(record.ShouldPayAddress)), PaymentType: int(record.Category),
-	}
-	for i, address := range record.ShouldPayAddress {
-		payment.ShouldPayAddress[i] = address.Address
-		payment.ExtendPayMsg[i] = address.ExtendMsg
-	}
-	transaction, err := payment.ToTx(tx.ShareMoneyStrategyFactory(payment.PaymentType))
-	return err == nil && transaction.BoolValidate()
 }
 
 func VerifyStringRequest(s string) bool {
@@ -77,37 +57,9 @@ func VerifyStringListRequest(s []string) bool {
 	return true
 }
 
-func VerifyFloatListRequest(floats []float64) bool {
-	return len(floats) <= 100
-}
-
-func VerifyRecordRequestAndSetDefault(r *model.NewRecord) bool {
-	if !VerifyStringRequest(r.Name) {
-		return false
-	}
-	if r.Amount <= 0 {
-		return false
-	}
-	if _, err := uuid.Parse(r.PrePayAddressID); err != nil {
-		return false
-	}
-	if len(r.ShouldPayAddressIds) == 0 || len(r.ShouldPayAddressIds) > 100 {
-		return false
-	}
-	seen := make(map[uuid.UUID]struct{}, len(r.ShouldPayAddressIds))
-	for _, rawID := range r.ShouldPayAddressIds {
-		id, err := uuid.Parse(rawID)
-		if err != nil {
-			return false
-		}
-		if _, duplicate := seen[id]; duplicate {
-			return false
-		}
-		seen[id] = struct{}{}
-	}
-	if !VerifyFloatListRequest(r.ExtendPayMsg) {
-		return false
-	}
+// NormalizeRecordRequest handles only transport-shape concerns that cannot be
+// represented by domain.Record. Domain validation belongs to chain.RecordPolicy.
+func NormalizeRecordRequest(r *model.NewRecord) bool {
 	if len(r.ExtendPayMsg) > len(r.ShouldPayAddressIds) {
 		return false
 	}

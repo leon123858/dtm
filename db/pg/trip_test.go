@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"dtm/db/db"
+	"dtm/db/internal/testutil"
 	"dtm/domain"
 
 	"github.com/google/uuid"
@@ -66,13 +67,14 @@ func TestAppendPatchRoundTripAndConcurrentSerialization(t *testing.T) {
 	wrapper, cleanup, tripID, payer, member := setupTrip(t)
 	defer cleanup()
 	rootID := uuid.New()
-	require.NoError(t, wrapper.AppendNew(context.Background(), tripID, pgPayment(rootID, payer, member)))
+	_, err := wrapper.AppendNew(context.Background(), tripID, pgPayment(rootID, payer, member), testutil.Materializer{})
+	require.NoError(t, err)
 	name := "dinner"
-	_, first, appended, err := wrapper.AppendPatch(context.Background(), rootID, domain.RecordPatch{Name: &name})
+	_, first, appended, err := wrapper.AppendPatch(context.Background(), rootID, domain.RecordPatch{Name: &name}, testutil.Materializer{})
 	require.NoError(t, err)
 	assert.True(t, appended)
 	assert.Equal(t, rootID, *first.ParentRecordID)
-	_, same, appended, err := wrapper.AppendPatch(context.Background(), rootID, domain.RecordPatch{Name: &name})
+	_, same, appended, err := wrapper.AppendPatch(context.Background(), rootID, domain.RecordPatch{Name: &name}, testutil.Materializer{})
 	require.NoError(t, err)
 	assert.False(t, appended)
 	assert.Equal(t, first.ID, same.ID)
@@ -83,7 +85,7 @@ func TestAppendPatchRoundTripAndConcurrentSerialization(t *testing.T) {
 		group.Add(1)
 		go func(amount float64) {
 			defer group.Done()
-			_, _, _, appendErr := wrapper.AppendPatch(context.Background(), rootID, domain.RecordPatch{Amount: &amount})
+			_, _, _, appendErr := wrapper.AppendPatch(context.Background(), rootID, domain.RecordPatch{Amount: &amount}, testutil.Materializer{})
 			errs <- appendErr
 		}(float64(i + 1))
 	}

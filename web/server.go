@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"dtm/chain"
 	"dtm/graph"
 	"dtm/mq/gcppubsub"
 	"dtm/mq/goch"
@@ -82,9 +83,12 @@ func Serve(config ServiceConfig) {
 		panic("Unsupported message queue mode: " + string(config.MqMode))
 	}
 	// GraphQL endpoint
+	readerProvider := func(ctx context.Context) (db.Reader, error) {
+		return db.TripDataLoaderFromContext(ctx)
+	}
 	executableSchema := graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{
-		TripDB:                  dbDep,
-		ChainStore:              dbDep,
+		RecordFactory:           chain.NewRecordFactory(readerProvider),
+		TripFactory:             chain.NewTripFactory(dbDep, readerProvider),
 		TripMessageQueueWrapper: mqDep,
 	}})
 	if config.IsDev {

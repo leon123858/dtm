@@ -2,9 +2,9 @@ package graph
 
 import (
 	"context"
+	"fmt"
 
 	"dtm/chain"
-	"dtm/db/db"
 	"dtm/mq/mq"
 
 	"github.com/google/uuid"
@@ -16,38 +16,21 @@ import (
 // ex: put your database connection or HTTP client in here.
 
 type Resolver struct {
-	TripDB                  db.TripDBWrapper
-	ChainStore              chain.Store
+	RecordFactory           chain.RecordFactory
+	TripFactory             chain.TripFactory
 	TripMessageQueueWrapper mq.TripMessageQueueWrapper
 }
 
-func (r *Resolver) recordChainStore() chain.Store {
-	if r.ChainStore != nil {
-		return r.ChainStore
+func (r *Resolver) recordFactory(ctx context.Context) (chain.RecordFactory, error) {
+	if r.RecordFactory == nil {
+		return nil, fmt.Errorf("record factory is not configured")
 	}
-	return r.TripDB
+	return r.RecordFactory, nil
 }
 
-func (r *Resolver) chainReader(ctx context.Context) (chain.Reader, error) {
-	loader, err := db.TripDataLoaderFromContext(ctx)
-	if err != nil {
-		return nil, err
+func (r *Resolver) tripForID(tripID uuid.UUID) (chain.Trip, error) {
+	if r.TripFactory == nil {
+		return nil, fmt.Errorf("trip factory is not configured")
 	}
-	return loader, nil
-}
-
-func (r *Resolver) recordFactory(ctx context.Context) (*chain.RecordFactory, error) {
-	reader, err := r.chainReader(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return chain.NewRecordFactory(r.recordChainStore(), reader), nil
-}
-
-func (r *Resolver) newTrip(ctx context.Context, tripID uuid.UUID) (*chain.Trip, error) {
-	reader, err := r.chainReader(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return chain.NewTrip(tripID, r.recordChainStore(), reader), nil
+	return r.TripFactory.ForTrip(tripID), nil
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"dtm/chain"
 	"dtm/domain"
 
 	"github.com/google/uuid"
@@ -13,11 +12,11 @@ import (
 )
 
 type debugLoaderStore struct {
-	records map[uuid.UUID]chain.RecordNode
+	records map[uuid.UUID]RecordNode
 }
 
-func (s *debugLoaderStore) DataLoaderGetRecordList(_ context.Context, ids []uuid.UUID) (map[uuid.UUID]chain.RecordNode, error) {
-	result := make(map[uuid.UUID]chain.RecordNode, len(ids))
+func (s *debugLoaderStore) DataLoaderGetRecordList(_ context.Context, ids []uuid.UUID) (map[uuid.UUID]RecordNode, error) {
+	result := make(map[uuid.UUID]RecordNode, len(ids))
 	for _, id := range ids {
 		if record, ok := s.records[id]; ok {
 			result[id] = record
@@ -39,28 +38,27 @@ func (*debugLoaderStore) DataLoaderGetTripInfoList(context.Context, []uuid.UUID)
 	return map[uuid.UUID]*domain.TripInfo{}, nil
 }
 
-func TestTripDataLoaderImplementsChainReaderAndCachesUntilReset(t *testing.T) {
+func TestTripDataLoaderImplementsReaderAndCachesUntilReset(t *testing.T) {
 	tripID, rootID, childID := uuid.New(), uuid.New(), uuid.New()
-	store := &debugLoaderStore{records: map[uuid.UUID]chain.RecordNode{
+	store := &debugLoaderStore{records: map[uuid.UUID]RecordNode{
 		rootID:  {TripID: tripID, Info: domain.RecordInfo{ID: rootID, ChildRecordID: &childID}},
 		childID: {TripID: tripID, Info: domain.RecordInfo{ID: childID, ParentRecordID: &rootID}},
 	}}
 	DataLoaderDebug.Reset()
 	reader := NewTripDataLoader(store)
-	factory := chain.NewRecordFactory(nil, reader)
 
-	_, err := factory.ByID(context.Background(), childID)
+	_, err := reader.LoadRecord(context.Background(), childID)
 	require.NoError(t, err)
 	first := DataLoaderDebug.Snapshot()
 	assert.Equal(t, DataLoadCount{Batches: 1, Keys: 1}, first.Records)
 
-	_, err = factory.ByID(context.Background(), childID)
+	_, err = reader.LoadRecord(context.Background(), childID)
 	require.NoError(t, err)
 	cached := DataLoaderDebug.Snapshot()
 	assert.Equal(t, first.Records, cached.Records, "the second traversal must be served entirely from cache")
 
 	reader.Reset()
-	_, err = factory.ByID(context.Background(), childID)
+	_, err = reader.LoadRecord(context.Background(), childID)
 	require.NoError(t, err)
 	invalidated := DataLoaderDebug.Snapshot()
 	assert.Equal(t, DataLoadCount{Batches: 2, Keys: 2}, invalidated.Records)
@@ -69,7 +67,7 @@ func TestTripDataLoaderImplementsChainReaderAndCachesUntilReset(t *testing.T) {
 
 func TestTripDataLoaderResetDropsEveryCache(t *testing.T) {
 	id := uuid.New()
-	store := &debugLoaderStore{records: map[uuid.UUID]chain.RecordNode{id: {Info: domain.RecordInfo{ID: id}}}}
+	store := &debugLoaderStore{records: map[uuid.UUID]RecordNode{id: {Info: domain.RecordInfo{ID: id}}}}
 	loader := NewTripDataLoader(store)
 	ctx := context.Background()
 	loadEveryCache := func() {

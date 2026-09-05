@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	chainpkg "dtm/chain"
 	"dtm/db/db"
 	"dtm/domain"
 	"dtm/libs/chainlist"
@@ -36,20 +35,38 @@ func (p *pgDBWrapper) CreateTrip(info *domain.TripInfo) error {
 	return p.db.Create(&tripModel).Error
 }
 
-func (p *pgDBWrapper) AppendNew(ctx context.Context, tripID uuid.UUID, record domain.Record) error {
-	if record.ParentRecordID != nil || record.ChildRecordID != nil {
-		return fmt.Errorf("root record must not have chain links")
+func (p *pgDBWrapper) AppendNew(ctx context.Context, tripID uuid.UUID, record domain.Record, policy db.RecordMaterializer) (materialized domain.Record, err error) {
+	if policy == nil {
+		return domain.Record{}, db.ErrMaterializerRequired
 	}
-	return p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return insertRecord(tx, tripID, record)
+	err = p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		addresses, loadErr := loadTripAddresses(tx, tripID)
+		if loadErr != nil {
+			if errors.Is(loadErr, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("%w: %s", db.ErrTripNotFound, tripID)
+			}
+			return loadErr
+		}
+		materialized, loadErr = policy.PrepareNew(record, addresses)
+		if loadErr != nil {
+			return loadErr
+		}
+		return insertRecord(tx, tripID, materialized)
 	})
+	return
 }
 
-func (p *pgDBWrapper) AppendPatch(ctx context.Context, targetID uuid.UUID, patch domain.RecordPatch) (tripID uuid.UUID, materialized domain.Record, appended bool, err error) {
+func (p *pgDBWrapper) AppendPatch(ctx context.Context, targetID uuid.UUID, patch domain.RecordPatch, policy db.RecordMaterializer) (tripID uuid.UUID, materialized domain.Record, appended bool, err error) {
+	if policy == nil {
+		return uuid.Nil, domain.Record{}, false, db.ErrMaterializerRequired
+	}
 	err = p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		root, resolveErr := resolveRootModel(tx, targetID)
 		if resolveErr != nil {
-			return &chainpkg.TailResolutionError{TargetID: targetID, Err: resolveErr}
+			if errors.Is(resolveErr, chainlist.ErrNodeNotFound) {
+				return fmt.Errorf("%w: %s: %w", db.ErrRecordNotFound, targetID, resolveErr)
+			}
+			return fmt.Errorf("%w: %w", db.ErrInvalidChain, resolveErr)
 		}
 		tripID = root.TripID
 		if lockErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND trip_id = ?", root.ID, tripID).First(&root).Error; lockErr != nil {
@@ -66,18 +83,18 @@ func (p *pgDBWrapper) AppendPatch(ctx context.Context, targetID uuid.UUID, patch
 				return chainlist.Node[uuid.UUID, domain.RecordInfo]{}, loadErr
 			}
 			info := recordInfoFromModel(model, nil)
-			return chainpkg.InfoNode(info), nil
+			return chainlist.Node[uuid.UUID, domain.RecordInfo]{ID: info.ID, ParentID: info.ParentRecordID, ChildID: info.ChildRecordID, Value: info}, nil
 		})
 		source, _ := chainlist.NewLazySource(loader, nil)
 		var tailInfo domain.RecordInfo
 		for node, walkErr := range source.WalkCanonical(ctx, targetID) {
 			if walkErr != nil {
-				return &chainpkg.TailResolutionError{TargetID: targetID, Err: walkErr}
+				return fmt.Errorf("%w: %w", db.ErrInvalidChain, walkErr)
 			}
 			tailInfo = node.Value
 		}
 		if tailInfo.ID == uuid.Nil {
-			return &chainpkg.TailResolutionError{TargetID: targetID, Err: fmt.Errorf("%w: %s", chainlist.ErrNodeNotFound, targetID)}
+			return fmt.Errorf("%w: %s: %w", db.ErrRecordNotFound, targetID, chainlist.ErrNodeNotFound)
 		}
 		tail, loadErr := loadDomainRecord(tx, tripID, tailInfo.ID)
 		if loadErr != nil {
@@ -87,7 +104,7 @@ func (p *pgDBWrapper) AppendPatch(ctx context.Context, targetID uuid.UUID, patch
 		if loadErr != nil {
 			return loadErr
 		}
-		merged, changed, mergeErr := chainpkg.MergeRecordPatch(tail, patch, addresses)
+		merged, changed, mergeErr := policy.ApplyPatch(tail, patch, addresses)
 		if mergeErr != nil {
 			return mergeErr
 		}
@@ -292,7 +309,7 @@ func (p *pgDBWrapper) DataLoaderGetRecordInfoList(ctx context.Context, tripIds [
 	return result, nil
 }
 
-func (p *pgDBWrapper) DataLoaderGetRecordList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID]chainpkg.RecordNode, error) {
+func (p *pgDBWrapper) DataLoaderGetRecordList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID]db.RecordNode, error) {
 	var records []RecordModel
 	if err := p.db.WithContext(ctx).Where("id IN ?", recordIds).Find(&records).Error; err != nil {
 		return nil, err
@@ -301,14 +318,14 @@ func (p *pgDBWrapper) DataLoaderGetRecordList(ctx context.Context, recordIds []u
 	if err != nil {
 		return nil, err
 	}
-	result := make(map[uuid.UUID]chainpkg.RecordNode, len(records))
+	result := make(map[uuid.UUID]db.RecordNode, len(records))
 	for _, record := range records {
-		result[record.ID] = chainpkg.RecordNode{TripID: record.TripID, Info: recordInfoFromModel(record, addresses)}
+		result[record.ID] = db.RecordNode{TripID: record.TripID, Info: recordInfoFromModel(record, addresses)}
 	}
 	errorsByID := make(map[uuid.UUID]error)
 	for _, id := range recordIds {
 		if _, ok := result[id]; !ok {
-			errorsByID[id] = fmt.Errorf("%w: record %s", chainlist.ErrNodeNotFound, id)
+			errorsByID[id] = fmt.Errorf("%w: %w: %s", db.ErrRecordNotFound, chainlist.ErrNodeNotFound, id)
 		}
 	}
 	if len(errorsByID) > 0 {

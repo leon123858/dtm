@@ -18,6 +18,7 @@ func TestBusinessLayersDoNotDependOnPersistenceModels(t *testing.T) {
 	}
 	root := filepath.Dir(currentFile)
 	targets := []string{
+		filepath.Join(root, "db"),
 		filepath.Join(root, "chain"),
 		filepath.Join(root, "domain"),
 		filepath.Join(root, "tx"),
@@ -50,13 +51,14 @@ func TestBusinessLayersDoNotDependOnPersistenceModels(t *testing.T) {
 	}
 }
 
-func TestGraphQLResolversDoNotDependOnDataLoader(t *testing.T) {
+func TestGraphQLResolversDoNotDependOnPersistence(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("cannot locate repository root")
 	}
 	root := filepath.Dir(currentFile)
 	resolverFiles := []string{
+		filepath.Join(root, "graph", "resolver.go"),
 		filepath.Join(root, "graph", "schema.resolvers.go"),
 	}
 
@@ -70,7 +72,7 @@ func TestGraphQLResolversDoNotDependOnDataLoader(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parse import in %s: %v", path, err)
 			}
-			if importPath == "dtm/db/db" {
+			if strings.HasPrefix(importPath, "dtm/db/") {
 				relative, relErr := filepath.Rel(root, path)
 				if relErr != nil {
 					relative = path
@@ -94,7 +96,13 @@ func checkLayerImports(t *testing.T, root, path string) {
 			t.Errorf("parse import in %s: %v", path, err)
 			continue
 		}
-		if importPath == "dtm/db/db" {
+		relative, _ := filepath.Rel(root, path)
+		inChain := strings.HasPrefix(relative, "chain"+string(filepath.Separator))
+		inDB := strings.HasPrefix(relative, "db"+string(filepath.Separator))
+		if inDB && !strings.HasSuffix(path, "_test.go") && importPath == "dtm/chain" {
+			t.Errorf("%s must not import upper layer %q", relative, importPath)
+		}
+		if strings.HasPrefix(importPath, "dtm/db/") && !inDB && (!inChain || importPath != "dtm/db/db") {
 			relative, relErr := filepath.Rel(root, path)
 			if relErr != nil {
 				relative = path

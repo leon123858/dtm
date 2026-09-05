@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"dtm/chain"
 	"dtm/domain"
 
 	"github.com/google/uuid"
@@ -15,14 +14,14 @@ type tripDataLoaderContextKey struct{}
 
 type TripDataLoader struct {
 	store                  DataLoaderStore
-	getRecord              *dataloadgen.Loader[uuid.UUID, chain.RecordNode]
+	getRecord              *dataloadgen.Loader[uuid.UUID, RecordNode]
 	getRecordInfoList      *dataloadgen.Loader[uuid.UUID, []domain.RecordInfo]
 	getTripAddressList     *dataloadgen.Loader[uuid.UUID, []domain.Address]
 	getRecordShouldPayList *dataloadgen.Loader[uuid.UUID, []domain.ExtendAddress]
 	getTripInfoList        *dataloadgen.Loader[uuid.UUID, *domain.TripInfo]
 }
 
-var _ chain.Reader = (*TripDataLoader)(nil)
+var _ Reader = (*TripDataLoader)(nil)
 
 // NewTripDataLoader creates request-scoped loaders over the read-only store.
 func NewTripDataLoader(dbWrapper DataLoaderStore) *TripDataLoader {
@@ -41,22 +40,22 @@ func (l *TripDataLoader) LoadTrip(ctx context.Context, tripID uuid.UUID) (*domai
 	return l.getTripInfoList.Load(ctx, tripID)
 }
 
-// LoadRecord implements chain.Reader through the request-scoped cache.
-func (l *TripDataLoader) LoadRecord(ctx context.Context, recordID uuid.UUID) (chain.RecordNode, error) {
+// LoadRecord implements Reader through the request-scoped cache.
+func (l *TripDataLoader) LoadRecord(ctx context.Context, recordID uuid.UUID) (RecordNode, error) {
 	return l.getRecord.Load(ctx, recordID)
 }
 
-// LoadTripRecords implements chain.Reader through the request-scoped cache.
+// LoadTripRecords implements Reader through the request-scoped cache.
 func (l *TripDataLoader) LoadTripRecords(ctx context.Context, tripID uuid.UUID) ([]domain.RecordInfo, error) {
 	return l.getRecordInfoList.Load(ctx, tripID)
 }
 
-// LoadTripAddresses implements chain.Reader through the request-scoped cache.
+// LoadTripAddresses implements Reader through the request-scoped cache.
 func (l *TripDataLoader) LoadTripAddresses(ctx context.Context, tripID uuid.UUID) ([]domain.Address, error) {
 	return l.getTripAddressList.Load(ctx, tripID)
 }
 
-// LoadRecordShouldPay implements chain.Reader through the request-scoped cache.
+// LoadRecordShouldPay implements Reader through the request-scoped cache.
 func (l *TripDataLoader) LoadRecordShouldPay(ctx context.Context, recordID uuid.UUID) ([]domain.ExtendAddress, error) {
 	return l.getRecordShouldPayList.Load(ctx, recordID)
 }

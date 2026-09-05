@@ -11,6 +11,7 @@ import (
 	"dtm/graph/model"
 	"dtm/graph/utils"
 	"dtm/mq/mq"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -23,20 +24,18 @@ func (r *mutationResolver) CreateTrip(ctx context.Context, input model.NewTrip) 
 		return nil, fmt.Errorf("invalid trip name")
 	}
 
-	dbTripInfo := r.TripDB
-	id := uuid.New()
-	tripInfo := &domain.TripInfo{
-		ID:   id,
-		Name: input.Name,
+	if r.TripFactory == nil {
+		return nil, fmt.Errorf("trip factory is not configured")
 	}
-	if err := dbTripInfo.CreateTrip(tripInfo); err != nil {
+	trip, err := r.TripFactory.Create(ctx, input.Name)
+	if err != nil {
 		return nil, fmt.Errorf("failed to create trip: %w", err)
 	}
-	trip := &model.Trip{
-		ID:   id.String(),
+	result := &model.Trip{
+		ID:   trip.ID().String(),
 		Name: input.Name,
 	}
-	return trip, nil
+	return result, nil
 }
 
 // UpdateTrip is the resolver for the updateTrip field.
@@ -45,34 +44,31 @@ func (r *mutationResolver) UpdateTrip(ctx context.Context, tripID string, input 
 		return nil, fmt.Errorf("invalid trip name")
 	}
 
-	dbTripInfo := r.TripDB
 	id, err := uuid.Parse(tripID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
 	}
 
-	tripInfo := &domain.TripInfo{
-		ID:   id,
-		Name: input.Name,
+	trip, err := r.tripForID(id)
+	if err != nil {
+		return nil, err
 	}
-	if err := dbTripInfo.UpdateTripInfo(tripInfo); err != nil {
+	tripInfo, err := trip.UpdateInfo(ctx, input.Name)
+	if err != nil {
 		return nil, fmt.Errorf("failed to update trip: %w", err)
 	}
 
-	trip := &model.Trip{
-		ID:   tripID,
-		Name: input.Name,
+	result := &model.Trip{
+		ID:   tripInfo.ID.String(),
+		Name: tripInfo.Name,
 	}
-	return trip, nil
+	return result, nil
 }
 
 // CreateRecord is the resolver for the createRecord field.
 func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, input model.NewRecord) (*model.Record, error) {
-	if !utils.VerifyRecordRequestAndSetDefault(&input) {
+	if !utils.NormalizeRecordRequest(&input) {
 		return nil, fmt.Errorf("invalid record input")
-	}
-	if input.IsDeleted != nil && *input.IsDeleted {
-		return nil, fmt.Errorf("new record cannot be deleted")
 	}
 
 	tripUUID, err := uuid.Parse(tripID)
@@ -84,9 +80,6 @@ func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, inpu
 	if err != nil {
 		return nil, err
 	}
-	if !utils.ValidatePaymentRecord(*record) {
-		return nil, fmt.Errorf("invalid record input")
-	}
 	factory, err := r.recordFactory(ctx)
 	if err != nil {
 		return nil, err
@@ -95,12 +88,15 @@ func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, inpu
 	if err != nil {
 		return nil, err
 	}
-	trip, err := r.newTrip(ctx, tripUUID)
+	trip, err := r.tripForID(tripUUID)
 	if err != nil {
 		return nil, err
 	}
 	appendResult, err := trip.Append(ctx, intent)
 	if err != nil {
+		if errors.Is(err, chain.ErrInvalidRecordSnapshot) {
+			return nil, fmt.Errorf("invalid record input: %w", err)
+		}
 		return nil, fmt.Errorf("failed to create record: %w", err)
 	}
 	recordValue := appendResult.Record.DomainRecord()
@@ -133,15 +129,12 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, in
 		category := model.RecordCategoryNormal
 		input.Old.Category = &category
 	}
-	if !utils.VerifyRecordRequestAndSetDefault(input.New) {
+	if !utils.NormalizeRecordRequest(input.New) {
 		return nil, fmt.Errorf("invalid record input")
 	}
 	newRecord, err := utils.MapNewRecordToDomainRecord(*input.New)
 	if err != nil {
 		return nil, err
-	}
-	if !utils.ValidatePaymentRecord(*newRecord) {
-		return nil, fmt.Errorf("invalid record input")
 	}
 
 	recordUUID, err := uuid.Parse(recordID)
@@ -157,12 +150,15 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, in
 	if err != nil {
 		return nil, fmt.Errorf("failed to update record: %w", err)
 	}
-	trip, err := r.newTrip(ctx, intent.TripID())
+	trip, err := r.tripForID(intent.TripID())
 	if err != nil {
 		return nil, err
 	}
 	result, err := trip.Append(ctx, intent)
 	if err != nil {
+		if errors.Is(err, chain.ErrInvalidRecordSnapshot) {
+			return nil, fmt.Errorf("invalid record input: %w", err)
+		}
 		return nil, fmt.Errorf("failed to update record: %w", err)
 	}
 	if !result.Appended {
@@ -195,13 +191,16 @@ func (r *mutationResolver) CreateAddress(ctx context.Context, tripID string, inp
 		return nil, fmt.Errorf("invalid address name")
 	}
 
-	dbTripInfo := r.TripDB
 	tripUUID, err := uuid.Parse(tripID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
 	}
 
-	address, err := dbTripInfo.CreateAddress(tripUUID, input.Name)
+	trip, err := r.tripForID(tripUUID)
+	if err != nil {
+		return nil, err
+	}
+	address, err := trip.CreateAddress(ctx, input.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create address: %w", err)
 	}
@@ -229,7 +228,11 @@ func (r *mutationResolver) UpdateAddress(ctx context.Context, tripID string, add
 	if err != nil {
 		return nil, fmt.Errorf("invalid address ID: %w", err)
 	}
-	address, err := r.TripDB.UpdateAddress(tripUUID, addressUUID, input.Name)
+	trip, err := r.tripForID(tripUUID)
+	if err != nil {
+		return nil, err
+	}
+	address, err := trip.UpdateAddress(ctx, addressUUID, input.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update address: %w", err)
 	}
@@ -242,7 +245,6 @@ func (r *mutationResolver) UpdateAddress(ctx context.Context, tripID string, add
 
 // DeleteAddress is the resolver for the deleteAddress field.
 func (r *mutationResolver) DeleteAddress(ctx context.Context, tripID string, addressID string) (*model.Address, error) {
-	dbTripInfo := r.TripDB
 	tripUUID, err := uuid.Parse(tripID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
@@ -251,7 +253,11 @@ func (r *mutationResolver) DeleteAddress(ctx context.Context, tripID string, add
 	if err != nil {
 		return nil, fmt.Errorf("invalid address ID: %w", err)
 	}
-	address, err := dbTripInfo.DeleteAddress(tripUUID, addressUUID)
+	trip, err := r.tripForID(tripUUID)
+	if err != nil {
+		return nil, err
+	}
+	address, err := trip.DeleteAddress(ctx, addressUUID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete address: %w", err)
 	}
@@ -273,12 +279,15 @@ func (r *queryResolver) Trip(ctx context.Context, tripID string) (*model.Trip, e
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
 	}
 
-	trip, err := r.newTrip(ctx, id)
+	trip, err := r.tripForID(id)
 	if err != nil {
 		return nil, err
 	}
 	tripInfo, err := trip.Info(ctx)
 	if err != nil {
+		if errors.Is(err, chain.ErrTripNotFound) {
+			return nil, fmt.Errorf("trip not found with ID %s: %w", tripID, err)
+		}
 		return nil, fmt.Errorf("failed to get trip info: %w", err)
 	}
 	if tripInfo == nil {
@@ -340,7 +349,7 @@ func (r *recordResolver) ExtendPayMsg(ctx context.Context, obj *model.Record) ([
 // IsValid is the resolver for the isValid field.
 func (r *recordResolver) IsValid(ctx context.Context, obj *model.Record) (bool, error) {
 	if !obj.EventValid {
-		return chain.NewRecordFactory(r.recordChainStore(), nil).FromInfo(domain.RecordInfo{}, false).Validate(ctx)
+		return false, nil
 	}
 	record, err := utils.ModelRecordInfo(obj)
 	if err != nil {
@@ -466,7 +475,7 @@ func (r *tripResolver) Records(ctx context.Context, obj *model.Trip) ([]*model.R
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
 	}
 
-	trip, err := r.newTrip(ctx, tripID)
+	trip, err := r.tripForID(tripID)
 	if err != nil {
 		return nil, err
 	}
@@ -490,7 +499,7 @@ func (r *tripResolver) MoneyShare(ctx context.Context, obj *model.Trip) ([]*mode
 	if err != nil {
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
 	}
-	trip, err := r.newTrip(ctx, tripID)
+	trip, err := r.tripForID(tripID)
 	if err != nil {
 		return nil, err
 	}
@@ -515,7 +524,7 @@ func (r *tripResolver) Addresses(ctx context.Context, obj *model.Trip) ([]*model
 	if err != nil {
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
 	}
-	trip, err := r.newTrip(ctx, tripID)
+	trip, err := r.tripForID(tripID)
 	if err != nil {
 		return nil, err
 	}
@@ -536,7 +545,7 @@ func (r *tripResolver) IsValid(ctx context.Context, obj *model.Trip) (bool, erro
 	if err != nil {
 		return false, fmt.Errorf("invalid trip ID: %w", err)
 	}
-	trip, err := r.newTrip(ctx, tripID)
+	trip, err := r.tripForID(tripID)
 	if err != nil {
 		return false, err
 	}
