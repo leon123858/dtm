@@ -57,6 +57,9 @@ type factoryReader struct {
 	err  error
 }
 
+func (factoryReader) LoadTrip(context.Context, uuid.UUID) (*domain.TripInfo, error) {
+	return nil, nil
+}
 func (r factoryReader) LoadRecord(context.Context, uuid.UUID) (RecordNode, error) {
 	return r.node, r.err
 }
@@ -84,21 +87,58 @@ func TestUpdateOnlyResolvesTargetIdentity(t *testing.T) {
 }
 
 type projectionReader struct {
-	records   []domain.RecordInfo
-	shouldPay map[uuid.UUID][]domain.ExtendAddress
+	tripInfo   *domain.TripInfo
+	records    []domain.RecordInfo
+	addresses  []domain.Address
+	shouldPay  map[uuid.UUID][]domain.ExtendAddress
+	tripErr    error
+	addressErr error
 }
 
+func (r projectionReader) LoadTrip(context.Context, uuid.UUID) (*domain.TripInfo, error) {
+	return r.tripInfo, r.tripErr
+}
 func (r projectionReader) LoadRecord(context.Context, uuid.UUID) (RecordNode, error) {
 	return RecordNode{}, errors.New("unused")
 }
 func (r projectionReader) LoadTripRecords(context.Context, uuid.UUID) ([]domain.RecordInfo, error) {
 	return r.records, nil
 }
-func (projectionReader) LoadTripAddresses(context.Context, uuid.UUID) ([]domain.Address, error) {
-	return nil, nil
+func (r projectionReader) LoadTripAddresses(context.Context, uuid.UUID) ([]domain.Address, error) {
+	return r.addresses, r.addressErr
 }
 func (r projectionReader) LoadRecordShouldPay(_ context.Context, id uuid.UUID) ([]domain.ExtendAddress, error) {
 	return r.shouldPay[id], nil
+}
+
+func TestTripReadsInfoAndAddressesThroughReader(t *testing.T) {
+	tripID := uuid.New()
+	info := &domain.TripInfo{ID: tripID, Name: "trip"}
+	addresses := []domain.Address{{ID: uuid.New(), Name: "member"}}
+	trip := NewTrip(tripID, nil, projectionReader{tripInfo: info, addresses: addresses})
+
+	actualInfo, err := trip.Info(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, info, actualInfo)
+	actualInfo.Name = "changed"
+	assert.Equal(t, "trip", info.Name)
+
+	actualAddresses, err := trip.Addresses(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, addresses, actualAddresses)
+	actualAddresses[0].Name = "changed"
+	assert.Equal(t, "member", addresses[0].Name)
+}
+
+func TestTripReadMethodsPropagateErrors(t *testing.T) {
+	tripErr := errors.New("trip read failed")
+	addressErr := errors.New("address read failed")
+	trip := NewTrip(uuid.New(), nil, projectionReader{tripErr: tripErr, addressErr: addressErr})
+
+	_, err := trip.Info(context.Background())
+	assert.ErrorIs(t, err, tripErr)
+	_, err = trip.Addresses(context.Background())
+	assert.ErrorIs(t, err, addressErr)
 }
 
 func TestSettlementUsesOnlyNonDeletedCanonicalTail(t *testing.T) {

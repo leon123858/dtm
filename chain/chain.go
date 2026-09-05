@@ -37,6 +37,7 @@ type RecordNode struct {
 }
 
 type Reader interface {
+	LoadTrip(context.Context, uuid.UUID) (*domain.TripInfo, error)
 	LoadRecord(context.Context, uuid.UUID) (RecordNode, error)
 	LoadTripRecords(context.Context, uuid.UUID) ([]domain.RecordInfo, error)
 	LoadTripAddresses(context.Context, uuid.UUID) ([]domain.Address, error)
@@ -193,6 +194,23 @@ type Trip struct {
 
 func NewTrip(tripID uuid.UUID, store Store, reader Reader) *Trip {
 	return &Trip{id: tripID, store: store, reader: reader}
+}
+
+func (t *Trip) Info(ctx context.Context) (*domain.TripInfo, error) {
+	info, err := t.reader.LoadTrip(ctx, t.id)
+	if err != nil || info == nil {
+		return info, err
+	}
+	result := *info
+	return &result, nil
+}
+
+func (t *Trip) Addresses(ctx context.Context) ([]domain.Address, error) {
+	addresses, err := t.reader.LoadTripAddresses(ctx, t.id)
+	if err != nil {
+		return nil, err
+	}
+	return slices.Clone(addresses), nil
 }
 
 func (t *Trip) Append(ctx context.Context, record Record) (AppendResult, error) {

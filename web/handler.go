@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"time"
 
+	"dtm/db/db"
+
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -19,6 +21,7 @@ import (
 
 func GraphQLHandler(executableSchema graphql.ExecutableSchema) gin.HandlerFunc {
 	srv := handler.New(executableSchema)
+	srv.AroundFields(resetTripDataLoaderAfterMutation)
 
 	srv.AddTransport(transport.GET{})
 	srv.AddTransport(transport.POST{})
@@ -57,6 +60,19 @@ func GraphQLHandler(executableSchema graphql.ExecutableSchema) gin.HandlerFunc {
 
 		srv.ServeHTTP(c.Writer, c.Request)
 	}
+}
+
+func resetTripDataLoaderAfterMutation(ctx context.Context, next graphql.Resolver) (result any, err error) {
+	field := graphql.GetFieldContext(ctx)
+	if field == nil || field.Object != "Mutation" {
+		return next(ctx)
+	}
+	defer func() {
+		if loader, loadErr := db.TripDataLoaderFromContext(ctx); loadErr == nil {
+			loader.Reset()
+		}
+	}()
+	return next(ctx)
 }
 
 func GraphQLPlaygroundHandler(title string, endpoint string) gin.HandlerFunc {

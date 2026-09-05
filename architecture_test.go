@@ -50,6 +50,37 @@ func TestBusinessLayersDoNotDependOnPersistenceModels(t *testing.T) {
 	}
 }
 
+func TestGraphQLResolversDoNotDependOnDataLoader(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate repository root")
+	}
+	root := filepath.Dir(currentFile)
+	resolverFiles := []string{
+		filepath.Join(root, "graph", "schema.resolvers.go"),
+	}
+
+	for _, path := range resolverFiles {
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		for _, spec := range file.Imports {
+			importPath, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				t.Fatalf("parse import in %s: %v", path, err)
+			}
+			if importPath == "dtm/db/db" {
+				relative, relErr := filepath.Rel(root, path)
+				if relErr != nil {
+					relative = path
+				}
+				t.Errorf("%s must read through chain objects instead of importing %q", relative, importPath)
+			}
+		}
+	}
+}
+
 func checkLayerImports(t *testing.T, root, path string) {
 	t.Helper()
 	file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)

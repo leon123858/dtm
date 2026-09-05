@@ -2,14 +2,13 @@ package web
 
 import (
 	"bytes"
-	"context"
-	"dtm/db/db"
-	"dtm/graph/utils"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
+
+	"dtm/db/db"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/secure"
@@ -70,14 +69,6 @@ func CorsConfig(webConfig ServiceConfig) cors.Config {
 //	return middleware
 //}
 
-func GinContextToContextMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		ctx := context.WithValue(c.Request.Context(), utils.GinContextKeyValue, c)
-		c.Request = c.Request.WithContext(ctx)
-		c.Next()
-	}
-}
-
 // GraphQLBodyLogMiddleware log post body
 func GraphQLBodyLogMiddleware(logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -125,8 +116,8 @@ func GraphQLBodyLogMiddleware(logger *slog.Logger) gin.HandlerFunc {
 
 func TripDataLoaderInjectionMiddleware(wrapper db.TripDBWrapper) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		DBTripDataLoader := *db.NewTripDataLoader(wrapper)
-		c.Set(string(db.DataLoaderKeyTripData), &DBTripDataLoader)
+		ctx := db.WithTripDataLoader(c.Request.Context(), db.NewTripDataLoader(wrapper))
+		c.Request = c.Request.WithContext(ctx)
 		c.Next()
 	}
 }
@@ -147,5 +138,4 @@ func setupMiddlewares(r *gin.Engine, webConfig ServiceConfig) {
 		// ContentSecurityPolicy: "default-src 'self'", // Customize as needed
 		ReferrerPolicy: "strict-origin-when-cross-origin",
 	}))
-	r.Use(GinContextToContextMiddleware())
 }

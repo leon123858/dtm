@@ -1,6 +1,9 @@
 package db
 
 import (
+	"context"
+	"fmt"
+
 	"dtm/chain"
 	"dtm/domain"
 
@@ -8,31 +11,54 @@ import (
 	"github.com/vikstrous/dataloadgen"
 )
 
-type dataLoaderKey string
-
-const (
-	DataLoaderKeyTripData dataLoaderKey = "trip_data_loader"
-)
+type tripDataLoaderContextKey struct{}
 
 type TripDataLoader struct {
 	store                  DataLoaderStore
-	GetRecord              *dataloadgen.Loader[uuid.UUID, chain.RecordNode]
-	GetRecordInfoList      *dataloadgen.Loader[uuid.UUID, []domain.RecordInfo]
-	GetTripAddressList     *dataloadgen.Loader[uuid.UUID, []domain.Address]
-	GetRecordShouldPayList *dataloadgen.Loader[uuid.UUID, []domain.ExtendAddress]
-	GetTripInfoList        *dataloadgen.Loader[uuid.UUID, *domain.TripInfo]
+	getRecord              *dataloadgen.Loader[uuid.UUID, chain.RecordNode]
+	getRecordInfoList      *dataloadgen.Loader[uuid.UUID, []domain.RecordInfo]
+	getTripAddressList     *dataloadgen.Loader[uuid.UUID, []domain.Address]
+	getRecordShouldPayList *dataloadgen.Loader[uuid.UUID, []domain.ExtendAddress]
+	getTripInfoList        *dataloadgen.Loader[uuid.UUID, *domain.TripInfo]
 }
+
+var _ chain.Reader = (*TripDataLoader)(nil)
 
 // NewTripDataLoader creates request-scoped loaders over the read-only store.
 func NewTripDataLoader(dbWrapper DataLoaderStore) *TripDataLoader {
 	return &TripDataLoader{
 		store:                  dbWrapper,
-		GetRecord:              dataloadgen.NewMappedLoader(instrumentMappedFetch(&DataLoaderDebug.Records, dbWrapper.DataLoaderGetRecordList)),
-		GetRecordInfoList:      dataloadgen.NewMappedLoader(instrumentMappedFetch(&DataLoaderDebug.TripRecords, dbWrapper.DataLoaderGetRecordInfoList)),
-		GetTripAddressList:     dataloadgen.NewMappedLoader(instrumentMappedFetch(&DataLoaderDebug.TripAddresses, dbWrapper.DataLoaderGetTripAddressList)),
-		GetRecordShouldPayList: dataloadgen.NewMappedLoader(instrumentMappedFetch(&DataLoaderDebug.RecordShouldPays, dbWrapper.DataLoaderGetRecordShouldPayList)),
-		GetTripInfoList:        dataloadgen.NewMappedLoader(instrumentMappedFetch(&DataLoaderDebug.Trips, dbWrapper.DataLoaderGetTripInfoList)),
+		getRecord:              dataloadgen.NewMappedLoader(instrumentMappedFetch(&DataLoaderDebug.Records, dbWrapper.DataLoaderGetRecordList)),
+		getRecordInfoList:      dataloadgen.NewMappedLoader(instrumentMappedFetch(&DataLoaderDebug.TripRecords, dbWrapper.DataLoaderGetRecordInfoList)),
+		getTripAddressList:     dataloadgen.NewMappedLoader(instrumentMappedFetch(&DataLoaderDebug.TripAddresses, dbWrapper.DataLoaderGetTripAddressList)),
+		getRecordShouldPayList: dataloadgen.NewMappedLoader(instrumentMappedFetch(&DataLoaderDebug.RecordShouldPays, dbWrapper.DataLoaderGetRecordShouldPayList)),
+		getTripInfoList:        dataloadgen.NewMappedLoader(instrumentMappedFetch(&DataLoaderDebug.Trips, dbWrapper.DataLoaderGetTripInfoList)),
 	}
+}
+
+// LoadTrip returns trip metadata through the request-scoped cache.
+func (l *TripDataLoader) LoadTrip(ctx context.Context, tripID uuid.UUID) (*domain.TripInfo, error) {
+	return l.getTripInfoList.Load(ctx, tripID)
+}
+
+// LoadRecord implements chain.Reader through the request-scoped cache.
+func (l *TripDataLoader) LoadRecord(ctx context.Context, recordID uuid.UUID) (chain.RecordNode, error) {
+	return l.getRecord.Load(ctx, recordID)
+}
+
+// LoadTripRecords implements chain.Reader through the request-scoped cache.
+func (l *TripDataLoader) LoadTripRecords(ctx context.Context, tripID uuid.UUID) ([]domain.RecordInfo, error) {
+	return l.getRecordInfoList.Load(ctx, tripID)
+}
+
+// LoadTripAddresses implements chain.Reader through the request-scoped cache.
+func (l *TripDataLoader) LoadTripAddresses(ctx context.Context, tripID uuid.UUID) ([]domain.Address, error) {
+	return l.getTripAddressList.Load(ctx, tripID)
+}
+
+// LoadRecordShouldPay implements chain.Reader through the request-scoped cache.
+func (l *TripDataLoader) LoadRecordShouldPay(ctx context.Context, recordID uuid.UUID) ([]domain.ExtendAddress, error) {
+	return l.getRecordShouldPayList.Load(ctx, recordID)
 }
 
 // Reset drops every cached request snapshot. Call it only between resolver
@@ -43,4 +69,18 @@ func (l *TripDataLoader) Reset() {
 	}
 	fresh := NewTripDataLoader(l.store)
 	*l = *fresh
+}
+
+// WithTripDataLoader attaches a request-scoped loader to ctx.
+func WithTripDataLoader(ctx context.Context, loader *TripDataLoader) context.Context {
+	return context.WithValue(ctx, tripDataLoaderContextKey{}, loader)
+}
+
+// TripDataLoaderFromContext returns the request-scoped loader attached to ctx.
+func TripDataLoaderFromContext(ctx context.Context) (*TripDataLoader, error) {
+	loader, ok := ctx.Value(tripDataLoaderContextKey{}).(*TripDataLoader)
+	if !ok || loader == nil {
+		return nil, fmt.Errorf("data loader is not available")
+	}
+	return loader, nil
 }

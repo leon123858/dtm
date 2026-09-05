@@ -39,14 +39,14 @@ func (*debugLoaderStore) DataLoaderGetTripInfoList(context.Context, []uuid.UUID)
 	return map[uuid.UUID]*domain.TripInfo{}, nil
 }
 
-func TestRecordChainReaderUsesCacheUntilExplicitInvalidation(t *testing.T) {
+func TestTripDataLoaderImplementsChainReaderAndCachesUntilReset(t *testing.T) {
 	tripID, rootID, childID := uuid.New(), uuid.New(), uuid.New()
 	store := &debugLoaderStore{records: map[uuid.UUID]chain.RecordNode{
 		rootID:  {TripID: tripID, Info: domain.RecordInfo{ID: rootID, ChildRecordID: &childID}},
 		childID: {TripID: tripID, Info: domain.RecordInfo{ID: childID, ParentRecordID: &rootID}},
 	}}
 	DataLoaderDebug.Reset()
-	reader := NewRecordChainReader(NewTripDataLoader(store))
+	reader := NewTripDataLoader(store)
 	factory := chain.NewRecordFactory(nil, reader)
 
 	_, err := factory.ByID(context.Background(), childID)
@@ -59,7 +59,7 @@ func TestRecordChainReaderUsesCacheUntilExplicitInvalidation(t *testing.T) {
 	cached := DataLoaderDebug.Snapshot()
 	assert.Equal(t, first.Records, cached.Records, "the second traversal must be served entirely from cache")
 
-	reader.(*recordChainReader).InvalidateRecords(rootID, childID)
+	reader.Reset()
 	_, err = factory.ByID(context.Background(), childID)
 	require.NoError(t, err)
 	invalidated := DataLoaderDebug.Snapshot()
@@ -73,11 +73,11 @@ func TestTripDataLoaderResetDropsEveryCache(t *testing.T) {
 	loader := NewTripDataLoader(store)
 	ctx := context.Background()
 	loadEveryCache := func() {
-		_, _ = loader.GetRecord.Load(ctx, id)
-		_, _ = loader.GetRecordInfoList.Load(ctx, id)
-		_, _ = loader.GetTripAddressList.Load(ctx, id)
-		_, _ = loader.GetRecordShouldPayList.Load(ctx, id)
-		_, _ = loader.GetTripInfoList.Load(ctx, id)
+		_, _ = loader.LoadRecord(ctx, id)
+		_, _ = loader.LoadTripRecords(ctx, id)
+		_, _ = loader.LoadTripAddresses(ctx, id)
+		_, _ = loader.LoadRecordShouldPay(ctx, id)
+		_, _ = loader.LoadTrip(ctx, id)
 	}
 	assertCounts := func(t *testing.T, want int64) {
 		t.Helper()
@@ -98,4 +98,15 @@ func TestTripDataLoaderResetDropsEveryCache(t *testing.T) {
 	loader.Reset()
 	loadEveryCache()
 	assertCounts(t, 2)
+}
+
+func TestTripDataLoaderContext(t *testing.T) {
+	_, err := TripDataLoaderFromContext(context.Background())
+	require.EqualError(t, err, "data loader is not available")
+
+	loader := NewTripDataLoader(&debugLoaderStore{})
+	ctx := WithTripDataLoader(context.Background(), loader)
+	actual, err := TripDataLoaderFromContext(ctx)
+	require.NoError(t, err)
+	assert.Same(t, loader, actual)
 }

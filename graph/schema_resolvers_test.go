@@ -2,17 +2,14 @@ package graph
 
 import (
 	"context"
-	"net/http/httptest"
 	"testing"
 
 	"dtm/db/db"
 	"dtm/db/mem"
 	"dtm/domain"
 	"dtm/graph/model"
-	"dtm/graph/utils"
 	"dtm/mq/mq"
 
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,10 +29,14 @@ func (r *recordQueryDB) DataLoaderGetRecordInfoList(_ context.Context, ids []uui
 }
 
 func resolverContext(wrapper db.TripDBWrapper) context.Context {
-	gin.SetMode(gin.TestMode)
-	ginContext, _ := gin.CreateTestContext(httptest.NewRecorder())
-	ginContext.Set(string(db.DataLoaderKeyTripData), db.NewTripDataLoader(wrapper))
-	return context.WithValue(context.Background(), utils.GinContextKeyValue, ginContext)
+	return db.WithTripDataLoader(context.Background(), db.NewTripDataLoader(wrapper))
+}
+
+func resetResolverDataLoader(t *testing.T, ctx context.Context) {
+	t.Helper()
+	loader, err := db.TripDataLoaderFromContext(ctx)
+	require.NoError(t, err)
+	loader.Reset()
 }
 
 func TestTripRecordsReturnsErrorForUnknownCategory(t *testing.T) {
@@ -44,6 +45,36 @@ func TestTripRecordsReturnsErrorForUnknownCategory(t *testing.T) {
 	_, err := (&tripResolver{Resolver: &Resolver{TripDB: store}}).Records(resolverContext(store), &model.Trip{ID: tripID.String()})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown RecordCategory")
+}
+
+func TestTripResolversShareRequestScopedLoaderCache(t *testing.T) {
+	database := mem.NewInMemoryTripDBWrapper()
+	tripID := uuid.New()
+	require.NoError(t, database.CreateTrip(&domain.TripInfo{ID: tripID, Name: "trip"}))
+	address, err := database.CreateAddress(tripID, "member")
+	require.NoError(t, err)
+	base := &Resolver{TripDB: database}
+	ctx := resolverContext(database)
+	db.DataLoaderDebug.Reset()
+
+	query := &queryResolver{Resolver: base}
+	for range 2 {
+		trip, queryErr := query.Trip(ctx, tripID.String())
+		require.NoError(t, queryErr)
+		assert.Equal(t, &model.Trip{ID: tripID.String(), Name: "trip"}, trip)
+	}
+
+	fields := &tripResolver{Resolver: base}
+	for range 2 {
+		addresses, addressErr := fields.Addresses(ctx, &model.Trip{ID: tripID.String()})
+		require.NoError(t, addressErr)
+		require.Len(t, addresses, 1)
+		assert.Equal(t, address.ID.String(), addresses[0].ID)
+	}
+
+	loads := db.DataLoaderDebug.Snapshot()
+	assert.Equal(t, db.DataLoadCount{Batches: 1, Keys: 1}, loads.Trips)
+	assert.Equal(t, db.DataLoadCount{Batches: 1, Keys: 1}, loads.TripAddresses)
 }
 
 func TestRecordIsValidRejectsInvalidEventBeforeReadingPayload(t *testing.T) {
@@ -96,12 +127,18 @@ func TestRecordMutationsKeepMQIdentityAndSkipNoOpPublish(t *testing.T) {
 
 	created, err := resolver.CreateRecord(ctx, tripID.String(), input)
 	require.NoError(t, err)
+	resetResolverDataLoader(t, ctx)
+	db.DataLoaderDebug.Reset()
 	require.Len(t, queues.queues[mq.ActionCreate].messages, 1)
 	assert.Equal(t, created.ID, queues.queues[mq.ActionCreate].messages[0].ID.String())
 	assert.Equal(t, tripID, queues.queues[mq.ActionCreate].messages[0].TripID)
 
 	updated, err := resolver.UpdateRecord(ctx, created.ID, model.EditRecord{Old: &input, New: &input})
 	require.NoError(t, err)
+	updateLoads := db.DataLoaderDebug.Snapshot()
+	assert.Equal(t, db.DataLoadCount{Batches: 1, Keys: 1}, updateLoads.Records)
+	assert.Zero(t, updateLoads.TripAddresses, "UpdateRecord must leave address canonicalization to AppendPatch")
+	resetResolverDataLoader(t, ctx)
 	assert.Equal(t, created.ID, updated.ID)
 	assert.Zero(t, queues.reads[mq.ActionUpdate])
 	assert.Empty(t, queues.queues[mq.ActionUpdate].messages)
@@ -110,11 +147,13 @@ func TestRecordMutationsKeepMQIdentityAndSkipNoOpPublish(t *testing.T) {
 	changed.Name = "dinner"
 	updated, err = resolver.UpdateRecord(ctx, created.ID, model.EditRecord{Old: &input, New: &changed})
 	require.NoError(t, err)
+	resetResolverDataLoader(t, ctx)
 	require.NotEqual(t, created.ID, updated.ID)
 	require.Len(t, queues.queues[mq.ActionUpdate].messages, 1)
 
 	latest, err := resolver.UpdateRecord(ctx, created.ID, model.EditRecord{Old: &changed, New: &changed})
 	require.NoError(t, err)
+	resetResolverDataLoader(t, ctx)
 	assert.Equal(t, updated.ID, latest.ID)
 	assert.True(t, latest.IsActive)
 	require.Len(t, queues.queues[mq.ActionUpdate].messages, 1)
