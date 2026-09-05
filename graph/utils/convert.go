@@ -3,9 +3,9 @@ package utils
 import (
 	"dtm/domain"
 	"dtm/graph/model"
+	"dtm/libs/recordpatch"
 	"dtm/services/tx"
 	"fmt"
-	"reflect"
 	"strconv"
 	"time"
 
@@ -143,37 +143,68 @@ func ModelRecordInfo(record *model.Record) (domain.RecordInfo, error) {
 	return info, nil
 }
 
-func BuildRecordPatch(oldInput, newInput model.NewRecord, newRecord *domain.Record) domain.RecordPatch {
-	var patch domain.RecordPatch
-	if oldInput.Name != newInput.Name {
-		patch.Name = &newRecord.Name
+// BuildRecordPatch compares normalized client values without consulting the DB.
+// The patch is later applied to the current tail inside the append transaction.
+func BuildRecordPatch(oldInput, newInput model.NewRecord) (domain.RecordPatch, error) {
+	if !NormalizeRecordRequest(&newInput) {
+		return domain.RecordPatch{}, fmt.Errorf("invalid record input")
 	}
-	if oldInput.Amount != newInput.Amount {
-		patch.Amount = &newRecord.Amount
+	timeOmitted := newInput.Time == nil
+	// Updates inherit omitted time, so never introduce the create-time default.
+	if newInput.Time == nil {
+		placeholder := "0"
+		newInput.Time = &placeholder
 	}
-	if oldInput.PrePayAddressID != newInput.PrePayAddressID {
-		patch.PrePayAddressID = &newRecord.PrePayAddress.ID
+	newRecord, err := MapNewRecordToDomainRecord(newInput)
+	if err != nil {
+		return domain.RecordPatch{}, err
 	}
-	if *oldInput.Category != *newInput.Category {
-		patch.Category = &newRecord.Category
+	old := recordInputFields(oldInput)
+	next := newRecord.EditableFields()
+	if timeOmitted {
+		next.Time = old.Time
 	}
-	if newInput.Time != nil && (oldInput.Time == nil || *oldInput.Time != *newInput.Time) {
-		patch.Time = &newRecord.Time
+	if newInput.IsDeleted == nil {
+		next.IsDeleted = old.IsDeleted
 	}
-	if !reflect.DeepEqual(oldInput.ShouldPayAddressIds, newInput.ShouldPayAddressIds) ||
-		!reflect.DeepEqual(oldInput.ExtendPayMsg, newInput.ExtendPayMsg) {
-		addresses := append([]domain.ExtendAddress(nil), newRecord.ShouldPayAddress...)
-		patch.ShouldPayAddress = &addresses
+	return recordpatch.Diff(old, next)
+}
+
+// Old is intentionally not validated: clients must be able to repair invalid
+// historical data. Normalize parseable values and retain malformed baselines.
+func recordInputFields(input model.NewRecord) domain.RecordFields {
+	fields := domain.RecordFields{
+		Name: input.Name, Amount: input.Amount, PrePayAddressID: canonicalRecordID(input.PrePayAddressID),
+		Category: strconv.Itoa(int(domain.CategoryNormal)), IsDeleted: input.IsDeleted != nil && *input.IsDeleted,
+		ShouldPayAddress: make(domain.RecordShares, len(input.ShouldPayAddressIds)),
 	}
-	// Omission means inherit the transaction-time tail. An explicit value only
-	// becomes a patch when it differs from the client's old baseline.
-	if newInput.IsDeleted != nil {
-		oldDeleted := oldInput.IsDeleted != nil && *oldInput.IsDeleted
-		if oldDeleted != *newInput.IsDeleted {
-			patch.IsDeleted = newInput.IsDeleted
+	if input.Category != nil {
+		if category, ok := Category2IntMap[*input.Category]; ok {
+			fields.Category = strconv.Itoa(category)
+		} else {
+			fields.Category = string(*input.Category)
 		}
 	}
-	return patch
+	if input.Time != nil {
+		fields.Time = *input.Time
+		if millis, err := strconv.ParseInt(fields.Time, 10, 64); err == nil {
+			fields.Time = strconv.FormatInt(millis, 10)
+		}
+	}
+	for i, rawID := range input.ShouldPayAddressIds {
+		fields.ShouldPayAddress[i].AddressID = canonicalRecordID(rawID)
+		if i < len(input.ExtendPayMsg) {
+			fields.ShouldPayAddress[i].ExtendMsg = input.ExtendPayMsg[i]
+		}
+	}
+	return fields
+}
+
+func canonicalRecordID(raw string) string {
+	if id, err := uuid.Parse(raw); err == nil {
+		return id.String()
+	}
+	return raw
 }
 
 // MapNewRecordToDomainRecord converts GraphQL input into a domain record.

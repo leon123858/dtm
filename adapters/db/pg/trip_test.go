@@ -70,11 +70,11 @@ func TestAppendPatchRoundTripAndConcurrentSerialization(t *testing.T) {
 	_, err := wrapper.AppendNew(context.Background(), tripID, pgPayment(rootID, payer, member), testutil.Materializer{})
 	require.NoError(t, err)
 	name := "dinner"
-	_, first, appended, err := wrapper.AppendPatch(context.Background(), rootID, domain.RecordPatch{Name: &name}, testutil.Materializer{})
+	_, first, appended, err := wrapper.AppendPatch(context.Background(), rootID, testutil.Patch(t, domain.RecordFields{}, domain.RecordFields{Name: name}), testutil.Materializer{})
 	require.NoError(t, err)
 	assert.True(t, appended)
 	assert.Equal(t, rootID, *first.ParentRecordID)
-	_, same, appended, err := wrapper.AppendPatch(context.Background(), rootID, domain.RecordPatch{Name: &name}, testutil.Materializer{})
+	_, same, appended, err := wrapper.AppendPatch(context.Background(), rootID, testutil.Patch(t, domain.RecordFields{}, domain.RecordFields{Name: name}), testutil.Materializer{})
 	require.NoError(t, err)
 	assert.False(t, appended)
 	assert.Equal(t, first.ID, same.ID)
@@ -85,7 +85,7 @@ func TestAppendPatchRoundTripAndConcurrentSerialization(t *testing.T) {
 		group.Add(1)
 		go func(amount float64) {
 			defer group.Done()
-			_, _, _, appendErr := wrapper.AppendPatch(context.Background(), rootID, domain.RecordPatch{Amount: &amount}, testutil.Materializer{})
+			_, _, _, appendErr := wrapper.AppendPatch(context.Background(), rootID, testutil.Patch(t, domain.RecordFields{}, domain.RecordFields{Amount: amount}), testutil.Materializer{})
 			errs <- appendErr
 		}(float64(i + 1))
 	}
@@ -97,4 +97,10 @@ func TestAppendPatchRoundTripAndConcurrentSerialization(t *testing.T) {
 	records, err := wrapper.DataLoaderGetRecordInfoList(context.Background(), []uuid.UUID{tripID})
 	require.NoError(t, err)
 	assert.Len(t, records[tripID], 8)
+}
+
+func TestChangelogAppendContract(t *testing.T) {
+	wrapper, cleanup := setupTestDB(t)
+	defer cleanup()
+	testutil.CheckPatchContract(t, wrapper)
 }

@@ -125,14 +125,7 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, in
 	if input.Old == nil || input.New == nil {
 		return nil, fmt.Errorf("old and new record inputs are required")
 	}
-	if input.Old.Category == nil {
-		category := model.RecordCategoryNormal
-		input.Old.Category = &category
-	}
-	if !utils.NormalizeRecordRequest(input.New) {
-		return nil, fmt.Errorf("invalid record input")
-	}
-	newRecord, err := utils.MapNewRecordToDomainRecord(*input.New)
+	patch, err := utils.BuildRecordPatch(*input.Old, *input.New)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +138,6 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, in
 	if err != nil {
 		return nil, err
 	}
-	patch := utils.BuildRecordPatch(*input.Old, *input.New, newRecord)
 	intent, err := factory.Update(ctx, recordUUID, patch)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update record: %w", err)

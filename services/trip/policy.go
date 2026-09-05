@@ -8,6 +8,7 @@ import (
 
 	"dtm/adapters/db/db"
 	"dtm/domain"
+	"dtm/libs/recordpatch"
 	"dtm/services/tx"
 
 	"github.com/google/uuid"
@@ -35,27 +36,9 @@ func (recordPolicy) PrepareNew(value domain.Record, addresses []domain.Address) 
 }
 
 func (recordPolicy) ApplyPatch(tail domain.Record, patch domain.RecordPatch, addresses []domain.Address) (domain.Record, bool, error) {
-	result := cloneDomainRecord(tail)
-	if patch.Name != nil {
-		result.Name = *patch.Name
-	}
-	if patch.Amount != nil {
-		result.Amount = *patch.Amount
-	}
-	if patch.Time != nil {
-		result.Time = *patch.Time
-	}
-	if patch.PrePayAddressID != nil {
-		result.PrePayAddress = domain.Address{ID: *patch.PrePayAddressID}
-	}
-	if patch.Category != nil {
-		result.Category = *patch.Category
-	}
-	if patch.ShouldPayAddress != nil {
-		result.ShouldPayAddress = cloneAddresses(*patch.ShouldPayAddress)
-	}
-	if patch.IsDeleted != nil {
-		result.IsDeleted = *patch.IsDeleted
+	result, err := recordpatch.Apply(tail, patch)
+	if err != nil {
+		return domain.Record{}, false, fmt.Errorf("%w: %w", ErrInvalidRecordSnapshot, err)
 	}
 	if err := canonicalizeRecordAddresses(addresses, &result); err != nil {
 		return domain.Record{}, false, err
@@ -158,38 +141,6 @@ func paymentFromRecord(value domain.RecordInfo, addresses []domain.ExtendAddress
 		payment.ShouldPayAddress[i], payment.ExtendPayMsg[i] = address.Address, address.ExtendMsg
 	}
 	return payment
-}
-
-func clonePatch(p domain.RecordPatch) domain.RecordPatch {
-	if p.Name != nil {
-		v := *p.Name
-		p.Name = &v
-	}
-	if p.Amount != nil {
-		v := *p.Amount
-		p.Amount = &v
-	}
-	if p.Time != nil {
-		v := *p.Time
-		p.Time = &v
-	}
-	if p.PrePayAddressID != nil {
-		v := *p.PrePayAddressID
-		p.PrePayAddressID = &v
-	}
-	if p.Category != nil {
-		v := *p.Category
-		p.Category = &v
-	}
-	if p.ShouldPayAddress != nil {
-		v := cloneAddresses(*p.ShouldPayAddress)
-		p.ShouldPayAddress = &v
-	}
-	if p.IsDeleted != nil {
-		v := *p.IsDeleted
-		p.IsDeleted = &v
-	}
-	return p
 }
 
 func cloneAddresses(v []domain.ExtendAddress) []domain.ExtendAddress { return slices.Clone(v) }

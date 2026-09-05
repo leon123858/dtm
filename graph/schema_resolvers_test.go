@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"dtm/adapters/db/db"
@@ -363,3 +364,54 @@ func (seedRecordPolicy) ApplyPatch(domain.Record, domain.RecordPatch, []domain.A
 	panic("not used")
 }
 func (seedRecordPolicy) Validate(domain.Record) error { return nil }
+
+func TestEquivalentStaleInputPreservesTailAndSkipsPublish(t *testing.T) {
+	database := mem.NewInMemoryTripDBWrapper()
+	tripID := uuid.New()
+	require.NoError(t, database.CreateTrip(&domain.TripInfo{ID: tripID, Name: "trip"}))
+	payer, err := database.CreateAddress(tripID, "payer")
+	require.NoError(t, err)
+	member, err := database.CreateAddress(tripID, "member")
+	require.NoError(t, err)
+	queues := &trackingMQ{}
+	base := resolverWithChain(database)
+	base.TripMessageQueueWrapper = queues
+	resolver := &mutationResolver{Resolver: base}
+	stamp := "1234"
+	old := model.NewRecord{Name: "meal", Amount: 20, Time: &stamp, PrePayAddressID: payer.ID.String(), ShouldPayAddressIds: []string{member.ID.String()}}
+	created, err := resolver.CreateRecord(resolverContext(database), tripID.String(), old)
+	require.NoError(t, err)
+
+	latest := old
+	latest.PrePayAddressID = member.ID.String()
+	latest.ShouldPayAddressIds = []string{payer.ID.String()}
+	later := "4567"
+	latest.Time = &later
+	first, err := resolver.UpdateRecord(resolverContext(database), created.ID, model.EditRecord{Old: &old, New: &latest})
+	require.NoError(t, err)
+	require.Len(t, queues.queues[mq.ActionUpdate].messages, 1)
+
+	formatted := old
+	formatted.PrePayAddressID = strings.ToUpper(old.PrePayAddressID)
+	formatted.ShouldPayAddressIds = []string{strings.ToUpper(old.ShouldPayAddressIds[0])}
+	formatted.ExtendPayMsg = []float64{0}
+	formattedTime := "+001234"
+	formatted.Time = &formattedTime
+	noop, err := resolver.UpdateRecord(resolverContext(database), created.ID, model.EditRecord{Old: &old, New: &formatted})
+	require.NoError(t, err)
+	assert.Equal(t, first.ID, noop.ID)
+	require.Len(t, queues.queues[mq.ActionUpdate].messages, 1)
+
+	formatted.Name = "dinner"
+	second, err := resolver.UpdateRecord(resolverContext(database), created.ID, model.EditRecord{Old: &old, New: &formatted})
+	require.NoError(t, err)
+	assert.Equal(t, first.ID, *second.ParentRecordID)
+	assert.Equal(t, "dinner", *second.Name)
+	assert.Equal(t, member.ID.String(), second.PrePayAddress.ID)
+	assert.Equal(t, later, second.Time)
+	require.Len(t, queues.queues[mq.ActionUpdate].messages, 2)
+	message := queues.queues[mq.ActionUpdate].messages[1]
+	require.Len(t, message.ShouldPayAddress, 1)
+	assert.Equal(t, *payer, message.ShouldPayAddress[0].Address)
+	assert.Equal(t, uuid.MustParse(first.ID), *message.ParentRecordID)
+}

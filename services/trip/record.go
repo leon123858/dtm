@@ -104,7 +104,7 @@ func (f *recordFactory) Update(ctx context.Context, recordID uuid.UUID, patch do
 		}
 		return nil, fromStoreError(err)
 	}
-	return &record{tripID: node.TripID, readers: f.readers, intent: intentPatch, targetID: recordID, patch: clonePatch(patch)}, nil
+	return &record{tripID: node.TripID, readers: f.readers, intent: intentPatch, targetID: recordID, patch: patch.Clone()}, nil
 }
 
 func (f *recordFactory) ByID(ctx context.Context, recordID uuid.UUID) (Record, error) {

@@ -63,15 +63,3 @@ type Record struct {
 	RecordInfo
 	RecordData
 }
-
-// RecordPatch describes fields the client intended to change. Nil fields are
-// left unchanged; ShouldPayAddress replaces the complete collection when set.
-type RecordPatch struct {
-	Name             *string
-	Amount           *float64
-	Time             *time.Time
-	PrePayAddressID  *uuid.UUID
-	Category         *RecordCategory
-	ShouldPayAddress *[]ExtendAddress
-	IsDeleted        *bool
-}

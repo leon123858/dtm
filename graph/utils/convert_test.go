@@ -1,8 +1,8 @@
 package utils
 
 import (
+	"strings"
 	"testing"
-	"time"
 
 	"dtm/domain"
 	"dtm/graph/model"
@@ -32,74 +32,119 @@ func TestToModelRecordCheckedReturnsNonNullablePaymentPayload(t *testing.T) {
 	assert.False(t, record.EventValid)
 }
 
-func TestBuildRecordPatchDeletionPresence(t *testing.T) {
+func validPatchInput() model.NewRecord {
 	category := model.RecordCategoryNormal
-	oldInput := model.NewRecord{Category: &category}
-	newInput := oldInput
-	assert.Nil(t, BuildRecordPatch(oldInput, newInput, &domain.Record{}).IsDeleted)
+	return model.NewRecord{Name: "meal", Amount: 20, PrePayAddressID: uuid.NewString(), ShouldPayAddressIds: []string{uuid.NewString()}, Category: &category}
+}
 
-	deleted := true
-	newInput.IsDeleted = &deleted
-	patch := BuildRecordPatch(oldInput, newInput, &domain.Record{})
-	if assert.NotNil(t, patch.IsDeleted) {
-		assert.True(t, *patch.IsDeleted)
+func changedFields(t *testing.T, old, next model.NewRecord) map[string]any {
+	t.Helper()
+	patch, err := BuildRecordPatch(old, next)
+	require.NoError(t, err)
+	fields := map[string]any{}
+	for _, change := range patch.Changes {
+		require.Len(t, change.Path, 1)
+		fields[change.Path[0]] = change.To
 	}
+	return fields
+}
 
-	oldInput.IsDeleted = &deleted
-	assert.Nil(t, BuildRecordPatch(oldInput, newInput, &domain.Record{}).IsDeleted)
-	restored := false
-	newInput.IsDeleted = &restored
-	patch = BuildRecordPatch(oldInput, newInput, &domain.Record{})
-	if assert.NotNil(t, patch.IsDeleted) {
-		assert.False(t, *patch.IsDeleted)
+func TestBuildRecordPatchDeletionPresence(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		old, next *bool
+		changed   bool
+	}{
+		{"omitted", nil, nil, false},
+		{"delete", nil, ptr(true), true},
+		{"default false", nil, ptr(false), false},
+		{"already deleted", ptr(true), ptr(true), false},
+		{"inherit deletion", ptr(true), nil, false},
+		{"restore", ptr(true), ptr(false), true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			old := validPatchInput()
+			next := old
+			old.IsDeleted, next.IsDeleted = test.old, test.next
+			fields := changedFields(t, old, next)
+			_, changed := fields["IsDeleted"]
+			assert.Equal(t, test.changed, changed)
+			if changed {
+				assert.Equal(t, *test.next, fields["IsDeleted"])
+			}
+		})
 	}
 }
 
 func TestBuildRecordPatchIncludesOnlyChangedFields(t *testing.T) {
-	oldCategory := model.RecordCategoryNormal
-	newCategory := model.RecordCategoryFix
-	oldInput := model.NewRecord{
-		Name: "meal", Amount: 20, PrePayAddressID: uuid.NewString(),
-		ShouldPayAddressIds: []string{uuid.NewString()}, ExtendPayMsg: []float64{10}, Category: &oldCategory,
-	}
-	newInput := oldInput
-	newInput.Amount = 30
-	newInput.PrePayAddressID = uuid.NewString()
-	newInput.ShouldPayAddressIds = []string{uuid.NewString()}
-	newInput.ExtendPayMsg = []float64{30}
-	newInput.Category = &newCategory
-	timestamp := "1234"
-	newInput.Time = &timestamp
-
-	prePayID := uuid.MustParse(newInput.PrePayAddressID)
-	shouldPayID := uuid.MustParse(newInput.ShouldPayAddressIds[0])
-	recordTime := time.UnixMilli(1234)
-	newRecord := domain.Record{
-		RecordInfo: domain.RecordInfo{
-			Name: newInput.Name, Amount: newInput.Amount, Time: recordTime,
-			PrePayAddress: domain.Address{ID: prePayID}, Category: domain.CategoryFix,
-		},
-		RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{{Address: domain.Address{ID: shouldPayID}, ExtendMsg: 30}}},
-	}
-
-	patch := BuildRecordPatch(oldInput, newInput, &newRecord)
-	assert.Nil(t, patch.Name)
-	if assert.NotNil(t, patch.Amount) {
-		assert.Equal(t, float64(30), *patch.Amount)
-	}
-	if assert.NotNil(t, patch.PrePayAddressID) {
-		assert.Equal(t, prePayID, *patch.PrePayAddressID)
-	}
-	if assert.NotNil(t, patch.Category) {
-		assert.Equal(t, domain.CategoryFix, *patch.Category)
-	}
-	if assert.NotNil(t, patch.Time) {
-		assert.Equal(t, recordTime, *patch.Time)
-	}
-	if assert.NotNil(t, patch.ShouldPayAddress) {
-		require.Len(t, *patch.ShouldPayAddress, 1)
-		assert.Equal(t, shouldPayID, (*patch.ShouldPayAddress)[0].Address.ID)
-		assert.Empty(t, (*patch.ShouldPayAddress)[0].Address.Name, "patch addresses need not be canonicalized in the resolver")
-	}
-	assert.Nil(t, patch.IsDeleted)
+	old := validPatchInput()
+	next := old
+	next.Amount = 30
+	next.PrePayAddressID = uuid.NewString()
+	next.Category = ptr(model.RecordCategoryFix)
+	next.Time = ptr("1234")
+	next.ShouldPayAddressIds = []string{uuid.NewString()}
+	next.ExtendPayMsg = []float64{30}
+	assert.Equal(t, map[string]any{
+		"Amount": float64(30), "PrePayAddressID": next.PrePayAddressID,
+		"Category": "1", "Time": "1234",
+		"ShouldPayAddress": domain.RecordShares{{AddressID: next.ShouldPayAddressIds[0], ExtendMsg: 30}},
+	}, changedFields(t, old, next))
 }
+
+func TestBuildRecordPatchEquivalentInputs(t *testing.T) {
+	old := validPatchInput()
+	old.Time = ptr("001234")
+	old.Category = nil
+	next := old
+	next.Time = ptr("+1234")
+	next.Category = ptr(model.RecordCategoryNormal)
+	next.PrePayAddressID = strings.ToUpper(old.PrePayAddressID)
+	next.ShouldPayAddressIds = []string{strings.ToUpper(old.ShouldPayAddressIds[0])}
+	for _, amounts := range [][]float64{nil, {}, {0}} {
+		next.ExtendPayMsg = amounts
+		assert.Empty(t, changedFields(t, old, next))
+	}
+}
+
+func TestBuildRecordPatchTimePresence(t *testing.T) {
+	old := validPatchInput()
+	next := old
+	assert.Empty(t, changedFields(t, old, next))
+	old.Time = ptr("broken old timestamp")
+	assert.Empty(t, changedFields(t, old, next))
+	next.Time = ptr("0")
+	assert.Equal(t, map[string]any{"Time": "0"}, changedFields(t, old, next))
+	old.Time = nil
+	assert.Equal(t, map[string]any{"Time": "0"}, changedFields(t, old, next))
+}
+
+func TestBuildRecordPatchRepairsMalformedBaseline(t *testing.T) {
+	next := validPatchInput()
+	next.Time = ptr("1234")
+	old := next
+	old.PrePayAddressID = "broken"
+	old.ShouldPayAddressIds = []string{"broken"}
+	old.Time = ptr("broken")
+	old.Category = ptr(model.RecordCategory("BROKEN"))
+	old.Amount = 0
+	assert.Len(t, changedFields(t, old, next), 5)
+}
+
+func TestBuildRecordPatchRejectsMalformedNew(t *testing.T) {
+	old := validPatchInput()
+	for _, edit := range []func(*model.NewRecord){
+		func(r *model.NewRecord) { r.Time = ptr("bad") },
+		func(r *model.NewRecord) { r.PrePayAddressID = "bad" },
+		func(r *model.NewRecord) { r.ShouldPayAddressIds = []string{"bad"} },
+		func(r *model.NewRecord) { r.Category = ptr(model.RecordCategory("bad")) },
+		func(r *model.NewRecord) { r.ExtendPayMsg = []float64{0, 0} },
+	} {
+		next := old
+		edit(&next)
+		_, err := BuildRecordPatch(old, next)
+		require.Error(t, err)
+	}
+}
+
+func ptr[T any](value T) *T { return &value }

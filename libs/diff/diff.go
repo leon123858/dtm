@@ -7,54 +7,41 @@ import (
 	odiff "github.com/r3labs/diff/v3"
 )
 
-func GetCustomDiffer() *odiff.Differ {
-	ret, err := odiff.NewDiffer(odiff.CustomValueDiffers(&UUIDComparer{}))
+// GetCustomDiffer returns an independent differ; Differ keeps mutable state.
+func GetCustomDiffer(extra ...odiff.ValueDiffer) *odiff.Differ {
+	comparers := append([]odiff.ValueDiffer{&UUIDComparer{}}, extra...)
+	ret, err := odiff.NewDiffer(odiff.SliceOrdering(true), odiff.CustomValueDiffers(comparers...))
 	if err != nil {
 		panic(err)
 	}
 	return ret
 }
 
-type UUIDComparer struct{}
+// AtomicComparer treats T as one value instead of diffing its children. This is
+// useful for collections whose patch semantics are whole-field replacement.
+type AtomicComparer[T any] struct{}
 
-var (
-	uuidType = reflect.TypeOf(uuid.UUID{})
-)
-
-// Match check is field match this custom type
-func (c UUIDComparer) Match(a, b reflect.Value) bool {
-	aok := a.Kind() == uuidType.Kind() && a.Type() == uuidType
-	bok := b.Kind() == uuidType.Kind() && b.Type() == uuidType
-	return (aok && bok) || (a.Kind() == reflect.Invalid && bok) || (b.Kind() == reflect.Invalid && aok)
+func (AtomicComparer[T]) Match(a, b reflect.Value) bool {
+	t := reflect.TypeFor[T]()
+	aok := a.IsValid() && a.Type() == t
+	bok := b.IsValid() && b.Type() == t
+	return (aok && bok) || (!a.IsValid() && bok) || (!b.IsValid() && aok)
 }
 
-// Diff check is diff or not
-func (c UUIDComparer) Diff(_ odiff.DiffType, _ odiff.DiffFunc, cl *odiff.Changelog, path []string, a reflect.Value, b reflect.Value, _ interface{}) error {
-	// 取得實際數值 (處理可能為指標的情況)
-	valA := reflect.Indirect(a)
-	valB := reflect.Indirect(b)
-
-	// 如果其中一個是無效值 (nil)，則視為不同
-	if !valA.IsValid() || !valB.IsValid() {
-		if valA.IsValid() != valB.IsValid() {
-			cl.Add(odiff.UPDATE, path, a.Interface(), b.Interface())
-		}
-		return nil
-	}
-
-	u1 := valA.Interface().(uuid.UUID)
-	u2 := valB.Interface().(uuid.UUID)
-
-	// 核心比對邏輯
-	if u1 != u2 {
-		// 將其視為一個 Update 動作，而不是深層比對陣列內部的 byte
-		cl.Add(odiff.UPDATE, path, u1, u2)
+func (AtomicComparer[T]) Diff(_ odiff.DiffType, _ odiff.DiffFunc, cl *odiff.Changelog, path []string, a, b reflect.Value, _ interface{}) error {
+	switch {
+	case !a.IsValid():
+		cl.Add(odiff.CREATE, path, nil, b.Interface())
+	case !b.IsValid():
+		cl.Add(odiff.DELETE, path, a.Interface(), nil)
+	case !reflect.DeepEqual(a.Interface(), b.Interface()):
+		cl.Add(odiff.UPDATE, path, a.Interface(), b.Interface())
 	}
 	return nil
 }
 
-// InsertParentDiffer do something with parent，
-// uuid is leaf, so do not thing
-func (c UUIDComparer) InsertParentDiffer(_ func(path []string, a reflect.Value, b reflect.Value, p interface{}) error) {
-	// do not thing
+func (AtomicComparer[T]) InsertParentDiffer(_ func([]string, reflect.Value, reflect.Value, interface{}) error) {
 }
+
+// UUIDs are atomic values, including when a collection adds or removes one.
+type UUIDComparer struct{ AtomicComparer[uuid.UUID] }

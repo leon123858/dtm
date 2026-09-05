@@ -10,6 +10,7 @@ import (
 	"dtm/adapters/db/db"
 	"dtm/domain"
 	"dtm/libs/chainlist"
+	"dtm/libs/recordpatch"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -26,7 +27,7 @@ func TestRecordPolicyApplyPatchFieldsDeletionAndDeepCopy(t *testing.T) {
 	tail := testPayment(uuid.New(), domain.Address{ID: payer.ID, Name: "stale"}, domain.Address{ID: member.ID, Name: "stale"})
 	name, deleted := "dinner", true
 	should := []domain.ExtendAddress{{Address: domain.Address{ID: payer.ID}, ExtendMsg: 20}}
-	merged, changed, err := (recordPolicy{}).ApplyPatch(tail, domain.RecordPatch{Name: &name, IsDeleted: &deleted, ShouldPayAddress: &should}, []domain.Address{payer, member})
+	merged, changed, err := (recordPolicy{}).ApplyPatch(tail, policyTestPatch(t, tail, func(next *domain.Record) { next.Name = name; next.IsDeleted = deleted; next.ShouldPayAddress = should }), []domain.Address{payer, member})
 	require.NoError(t, err)
 	assert.True(t, changed)
 	assert.Equal(t, "dinner", merged.Name)
@@ -48,7 +49,7 @@ func TestRecordPolicyApplyPatchRejectsForeignAddress(t *testing.T) {
 	member := domain.Address{ID: uuid.New()}
 	tail := testPayment(uuid.New(), payer, member)
 	foreign := uuid.New()
-	_, _, err := (recordPolicy{}).ApplyPatch(tail, domain.RecordPatch{PrePayAddressID: &foreign}, []domain.Address{payer, member})
+	_, _, err := (recordPolicy{}).ApplyPatch(tail, policyTestPatch(t, tail, func(next *domain.Record) { next.PrePayAddress.ID = foreign }), []domain.Address{payer, member})
 	assert.ErrorIs(t, err, ErrInvalidRecordAddresses)
 }
 
@@ -264,4 +265,28 @@ func TestSettlementUsesOnlyNonDeletedCanonicalTail(t *testing.T) {
 
 func staticReader(reader db.Reader) db.ReaderProvider {
 	return func(context.Context) (db.Reader, error) { return reader, nil }
+}
+
+func policyTestPatch(t *testing.T, old domain.Record, edit func(*domain.Record)) domain.RecordPatch {
+	t.Helper()
+	next := cloneDomainRecord(old)
+	edit(&next)
+	patch, err := recordpatch.Diff(old.EditableFields(), next.EditableFields())
+	require.NoError(t, err)
+	return patch
+}
+
+func TestUpdateIntentOwnsPatch(t *testing.T) {
+	target, tripID := uuid.New(), uuid.New()
+	old := domain.RecordFields{ShouldPayAddress: domain.RecordShares{{AddressID: uuid.NewString()}}}
+	next := domain.RecordFields{ShouldPayAddress: domain.RecordShares{{AddressID: uuid.NewString(), ExtendMsg: 20}}}
+	patch, err := recordpatch.Diff(old, next)
+	require.NoError(t, err)
+	intent, err := NewRecordFactory(staticReader(factoryReader{node: db.RecordNode{TripID: tripID, Info: domain.RecordInfo{ID: target}}})).Update(context.Background(), target, patch)
+	require.NoError(t, err)
+	patch.Changes[0].Path[0] = "bad"
+	patch.Changes[0].To.(domain.RecordShares)[0].ExtendMsg = 99
+	stored := intent.(*record).patch
+	assert.Equal(t, []string{"ShouldPayAddress"}, stored.Changes[0].Path)
+	assert.Equal(t, float64(20), stored.Changes[0].To.(domain.RecordShares)[0].ExtendMsg)
 }
