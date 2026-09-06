@@ -12,11 +12,11 @@ import (
 )
 
 type debugLoaderStore struct {
-	records map[uuid.UUID]RecordNode
+	records map[uuid.UUID]RecordSnapshot
 }
 
-func (s *debugLoaderStore) DataLoaderGetRecordList(_ context.Context, ids []uuid.UUID) (map[uuid.UUID]RecordNode, error) {
-	result := make(map[uuid.UUID]RecordNode, len(ids))
+func (s *debugLoaderStore) DataLoaderGetRecordList(_ context.Context, ids []uuid.UUID) (map[uuid.UUID]RecordSnapshot, error) {
+	result := make(map[uuid.UUID]RecordSnapshot, len(ids))
 	for _, id := range ids {
 		if record, ok := s.records[id]; ok {
 			result[id] = record
@@ -25,14 +25,11 @@ func (s *debugLoaderStore) DataLoaderGetRecordList(_ context.Context, ids []uuid
 	return result, nil
 }
 
-func (*debugLoaderStore) DataLoaderGetRecordInfoList(context.Context, []uuid.UUID) (map[uuid.UUID][]domain.RecordInfo, error) {
-	return map[uuid.UUID][]domain.RecordInfo{}, nil
+func (*debugLoaderStore) DataLoaderGetTripRecords(context.Context, []uuid.UUID, RecordReadOptions) (map[uuid.UUID][]RecordSnapshot, error) {
+	return map[uuid.UUID][]RecordSnapshot{}, nil
 }
 func (*debugLoaderStore) DataLoaderGetTripAddressList(context.Context, []uuid.UUID) (map[uuid.UUID][]domain.Address, error) {
 	return map[uuid.UUID][]domain.Address{}, nil
-}
-func (*debugLoaderStore) DataLoaderGetRecordShouldPayList(context.Context, []uuid.UUID) (map[uuid.UUID][]domain.ExtendAddress, error) {
-	return map[uuid.UUID][]domain.ExtendAddress{}, nil
 }
 func (*debugLoaderStore) DataLoaderGetTripInfoList(context.Context, []uuid.UUID) (map[uuid.UUID]*domain.TripInfo, error) {
 	return map[uuid.UUID]*domain.TripInfo{}, nil
@@ -40,9 +37,9 @@ func (*debugLoaderStore) DataLoaderGetTripInfoList(context.Context, []uuid.UUID)
 
 func TestTripDataLoaderImplementsReaderAndCachesUntilReset(t *testing.T) {
 	tripID, rootID, childID := uuid.New(), uuid.New(), uuid.New()
-	store := &debugLoaderStore{records: map[uuid.UUID]RecordNode{
-		rootID:  {TripID: tripID, Info: domain.RecordInfo{ID: rootID, ChildRecordID: &childID}},
-		childID: {TripID: tripID, Info: domain.RecordInfo{ID: childID, ParentRecordID: &rootID}},
+	store := &debugLoaderStore{records: map[uuid.UUID]RecordSnapshot{
+		rootID:  {TripID: tripID, Record: domain.Record{RecordInfo: domain.RecordInfo{ID: rootID, ChildRecordID: &childID}}},
+		childID: {TripID: tripID, Record: domain.Record{RecordInfo: domain.RecordInfo{ID: childID, ParentRecordID: &rootID}}},
 	}}
 	DataLoaderDebug.Reset()
 	reader := NewTripDataLoader(store)
@@ -67,14 +64,13 @@ func TestTripDataLoaderImplementsReaderAndCachesUntilReset(t *testing.T) {
 
 func TestTripDataLoaderResetDropsEveryCache(t *testing.T) {
 	id := uuid.New()
-	store := &debugLoaderStore{records: map[uuid.UUID]RecordNode{id: {Info: domain.RecordInfo{ID: id}}}}
+	store := &debugLoaderStore{records: map[uuid.UUID]RecordSnapshot{id: {Record: domain.Record{RecordInfo: domain.RecordInfo{ID: id}}}}}
 	loader := NewTripDataLoader(store)
 	ctx := context.Background()
 	loadEveryCache := func() {
 		_, _ = loader.LoadRecord(ctx, id)
-		_, _ = loader.LoadTripRecords(ctx, id)
+		_, _ = loader.LoadTripRecords(ctx, id, RecordReadOptions{})
 		_, _ = loader.LoadTripAddresses(ctx, id)
-		_, _ = loader.LoadRecordShouldPay(ctx, id)
 		_, _ = loader.LoadTrip(ctx, id)
 	}
 	assertCounts := func(t *testing.T, want int64) {
@@ -82,7 +78,7 @@ func TestTripDataLoaderResetDropsEveryCache(t *testing.T) {
 		got := DataLoaderDebug.Snapshot()
 		for name, count := range map[string]DataLoadCount{
 			"records": got.Records, "trip records": got.TripRecords, "trip addresses": got.TripAddresses,
-			"record should-pays": got.RecordShouldPays, "trips": got.Trips,
+			"trips": got.Trips,
 		} {
 			assert.Equal(t, DataLoadCount{Batches: want, Keys: want}, count, name)
 		}

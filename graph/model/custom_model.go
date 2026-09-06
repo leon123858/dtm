@@ -5,24 +5,25 @@ type Address struct {
 	Name string `json:"name"`
 }
 
-// custom define query model without some fields can let gqlgen auto generate recursive resolver
-// it can improve performance and reduce unnecessary data operations
-// use `make gql` to generate code
+// Trip retains read options for its field resolvers.
 
 type Trip struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	HaveHistory bool   `json:"-"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
 }
 
 type Record struct {
-	ID             string         `json:"id"`
-	Name           *string        `json:"name"`
-	Amount         *float64       `json:"amount"`
-	Time           string         `json:"time"` // unix timestamp as string
-	PrePayAddress  *Address       `json:"prePayAddress"`
-	Category       RecordCategory `json:"category"`
-	ParentRecordID *string        `json:"parentRecordId"`
-	IsDeleted      bool           `json:"isDeleted"`
-	IsActive       bool           `json:"isActive"`
-	EventValid     bool           `json:"-"`
+	ShouldPayAddress []*Address     `json:"shouldPayAddress"`
+	ExtendPayMsg     []float64      `json:"extendPayMsg"`
+	IsValid          bool           `json:"isValid"`
+	ID               string         `json:"id"`
+	Name             *string        `json:"name"`
+	Amount           *float64       `json:"amount"`
+	Time             string         `json:"time"` // unix timestamp as string
+	PrePayAddress    *Address       `json:"prePayAddress"`
+	Category         RecordCategory `json:"category"`
+	ParentRecordID   *string        `json:"parentRecordId"`
+	IsDeleted        bool           `json:"isDeleted"`
+	IsActive         bool           `json:"isActive"`
 }

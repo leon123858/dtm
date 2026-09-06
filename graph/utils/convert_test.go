@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"dtm/adapters/mq/mq"
 	"dtm/domain"
 	"dtm/graph/model"
 
@@ -13,7 +14,7 @@ import (
 )
 
 func TestToModelRecordCheckedRejectsUnknownCategory(t *testing.T) {
-	_, err := ToModelRecordChecked(domain.RecordInfo{ID: uuid.New(), Category: domain.RecordCategory(99)}, false, false)
+	_, err := ToModelRecordChecked(domain.Record{RecordInfo: domain.RecordInfo{ID: uuid.New(), Category: domain.RecordCategory(99)}}, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown RecordCategory")
 }
@@ -22,14 +23,13 @@ func TestToModelRecordCheckedReturnsNonNullablePaymentPayload(t *testing.T) {
 	info := domain.RecordInfo{
 		ID: uuid.New(), Category: domain.CategoryNormal, Name: "", Amount: 0,
 	}
-	record, err := ToModelRecordChecked(info, false, false)
+	record, err := ToModelRecordChecked(domain.Record{RecordInfo: info}, false)
 	require.NoError(t, err)
 	require.NotNil(t, record.Name)
 	assert.Equal(t, "", *record.Name)
 	require.NotNil(t, record.Amount)
 	assert.Equal(t, float64(0), *record.Amount)
 	require.NotNil(t, record.PrePayAddress)
-	assert.False(t, record.EventValid)
 }
 
 func validPatchInput() model.NewRecord {
@@ -148,3 +148,44 @@ func TestBuildRecordPatchRejectsMalformedNew(t *testing.T) {
 }
 
 func ptr[T any](value T) *T { return &value }
+
+func TestSubscriptionCarriesCompleteRecord(t *testing.T) {
+	payer := domain.Address{ID: uuid.New(), Name: "payer"}
+	member := domain.Address{ID: uuid.New(), Name: "member"}
+	message := mq.TripRecordMessage{ID: uuid.New(), Name: "deleted meal", Time: "1234", Amount: 20, PrePayAddress: payer, Category: 0, IsDeleted: true, ShouldPayAddress: []domain.ExtendAddress{{Address: member, ExtendMsg: 7}}}
+	record, skipped, err := TripRecordMQ2GQL(message)
+	require.NoError(t, err)
+	assert.False(t, skipped)
+	assert.True(t, record.IsDeleted)
+	assert.Equal(t, "1234", record.Time)
+	assert.Equal(t, []*model.Address{ToModelAddress(member)}, record.ShouldPayAddress)
+	assert.Equal(t, []float64{7}, record.ExtendPayMsg)
+	message.ShouldPayAddress[0].ExtendMsg = 999
+	assert.Equal(t, float64(7), record.ExtendPayMsg[0])
+}
+
+func TestToModelRecordCheckedMaterializesShares(t *testing.T) {
+	payer := domain.Address{ID: uuid.New(), Name: "payer"}
+	first := domain.Address{ID: uuid.New(), Name: "first"}
+	second := domain.Address{ID: uuid.New(), Name: "second"}
+	value := domain.Record{
+		RecordInfo: domain.RecordInfo{ID: uuid.New(), Name: "meal", Amount: 20, Category: domain.CategoryNormal, PrePayAddress: payer},
+		RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{{Address: first, ExtendMsg: 3}, {Address: second, ExtendMsg: 7}}},
+	}
+	record, err := ToModelRecordChecked(value, true)
+	require.NoError(t, err)
+	assert.True(t, record.IsValid)
+	assert.Equal(t, []*model.Address{ToModelAddress(first), ToModelAddress(second)}, record.ShouldPayAddress)
+	assert.Equal(t, []float64{3, 7}, record.ExtendPayMsg)
+	value.ShouldPayAddress[0].Address.Name = "changed"
+	value.ShouldPayAddress[0].ExtendMsg = 99
+	assert.Equal(t, "first", record.ShouldPayAddress[0].Name)
+	assert.Equal(t, float64(3), record.ExtendPayMsg[0])
+
+	value.ShouldPayAddress = nil
+	record, err = ToModelRecordChecked(value, true)
+	require.NoError(t, err)
+	assert.False(t, record.IsValid)
+	assert.Equal(t, []*model.Address{}, record.ShouldPayAddress)
+	assert.Equal(t, []float64{}, record.ExtendPayMsg)
+}

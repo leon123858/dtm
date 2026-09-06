@@ -50,13 +50,13 @@ func TestAppendPatchUsesCanonicalTailAndSupportsNoOp(t *testing.T) {
 	_, err := database.AppendNew(context.Background(), tripID, paymentRecord(rootID, payer, member), testutil.Materializer{})
 	require.NoError(t, err)
 	name := "dinner"
-	gotTrip, first, appended, err := database.AppendPatch(context.Background(), rootID, testutil.Patch(t, domain.RecordFields{}, domain.RecordFields{Name: name}), testutil.Materializer{})
+	gotTrip, first, appended, err := database.AppendPatch(context.Background(), tripID, rootID, testutil.Patch(t, domain.RecordFields{}, domain.RecordFields{Name: name}), testutil.Materializer{})
 	require.NoError(t, err)
 	assert.Equal(t, tripID, gotTrip)
 	assert.True(t, appended)
 	assert.Equal(t, rootID, *first.ParentRecordID)
 
-	_, same, appended, err := database.AppendPatch(context.Background(), rootID, testutil.Patch(t, domain.RecordFields{}, domain.RecordFields{Name: name}), testutil.Materializer{})
+	_, same, appended, err := database.AppendPatch(context.Background(), tripID, rootID, testutil.Patch(t, domain.RecordFields{}, domain.RecordFields{Name: name}), testutil.Materializer{})
 	require.NoError(t, err)
 	assert.False(t, appended)
 	assert.Equal(t, first.ID, same.ID)
@@ -72,7 +72,7 @@ func TestConcurrentPatchesFromHistoricalIDsStayLinear(t *testing.T) {
 		group.Add(1)
 		go func(amount float64) {
 			defer group.Done()
-			_, _, _, err := database.AppendPatch(context.Background(), rootID, testutil.Patch(t, domain.RecordFields{}, domain.RecordFields{Amount: amount}), testutil.Materializer{})
+			_, _, _, err := database.AppendPatch(context.Background(), tripID, rootID, testutil.Patch(t, domain.RecordFields{}, domain.RecordFields{Amount: amount}), testutil.Materializer{})
 			require.NoError(t, err)
 		}(float64(i + 1))
 	}
@@ -103,15 +103,15 @@ func TestDeleteRestoreAndDeepCopies(t *testing.T) {
 	_, err := database.AppendNew(context.Background(), tripID, paymentRecord(rootID, payer, member), testutil.Materializer{})
 	require.NoError(t, err)
 	deleted := true
-	_, deletion, appended, err := database.AppendPatch(context.Background(), rootID, testutil.Patch(t, domain.RecordFields{}, domain.RecordFields{IsDeleted: deleted}), testutil.Materializer{})
+	_, deletion, appended, err := database.AppendPatch(context.Background(), tripID, rootID, testutil.Patch(t, domain.RecordFields{}, domain.RecordFields{IsDeleted: deleted}), testutil.Materializer{})
 	require.NoError(t, err)
 	assert.True(t, appended)
 	assert.True(t, deletion.IsDeleted)
-	_, _, appended, err = database.AppendPatch(context.Background(), rootID, testutil.Patch(t, domain.RecordFields{}, domain.RecordFields{IsDeleted: deleted}), testutil.Materializer{})
+	_, _, appended, err = database.AppendPatch(context.Background(), tripID, rootID, testutil.Patch(t, domain.RecordFields{}, domain.RecordFields{IsDeleted: deleted}), testutil.Materializer{})
 	require.NoError(t, err)
 	assert.False(t, appended)
 	restored := false
-	_, restoration, appended, err := database.AppendPatch(context.Background(), deletion.ID, testutil.Patch(t, domain.RecordFields{IsDeleted: true}, domain.RecordFields{IsDeleted: restored}), testutil.Materializer{})
+	_, restoration, appended, err := database.AppendPatch(context.Background(), tripID, deletion.ID, testutil.Patch(t, domain.RecordFields{IsDeleted: true}, domain.RecordFields{IsDeleted: restored}), testutil.Materializer{})
 	require.NoError(t, err)
 	assert.True(t, appended)
 	assert.False(t, restoration.IsDeleted)
@@ -130,16 +130,20 @@ func TestAppendPatchReturnsStableResolutionErrors(t *testing.T) {
 	branch.ParentRecordID = &rootID
 	database.tripsData[tripID].Records = []domain.Record{root, canonical, branch}
 
-	_, _, _, err := database.AppendPatch(context.Background(), branchID, domain.RecordPatch{}, testutil.Materializer{})
+	_, _, _, err := database.AppendPatch(context.Background(), tripID, branchID, domain.RecordPatch{}, testutil.Materializer{})
 	require.ErrorIs(t, err, db.ErrInvalidChain)
 	assert.True(t, errors.Is(err, chainlist.ErrNonCanonical))
 
 	missing := uuid.New()
-	_, _, _, err = database.AppendPatch(context.Background(), missing, domain.RecordPatch{}, testutil.Materializer{})
+	_, _, _, err = database.AppendPatch(context.Background(), tripID, missing, domain.RecordPatch{}, testutil.Materializer{})
 	require.ErrorIs(t, err, db.ErrRecordNotFound)
 	assert.True(t, errors.Is(err, chainlist.ErrNodeNotFound))
 }
 
 func TestChangelogAppendContract(t *testing.T) {
 	testutil.CheckPatchContract(t, NewInMemoryTripDBWrapper())
+}
+
+func TestCompleteRecordReadContract(t *testing.T) {
+	testutil.CheckReadContract(t, NewInMemoryTripDBWrapper())
 }

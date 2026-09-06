@@ -8,6 +8,7 @@ import (
 	"dtm/adapters/db/db"
 	"dtm/adapters/db/mem"
 	"dtm/domain"
+	tripservice "dtm/services/trip"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/google/uuid"
@@ -36,8 +37,11 @@ func TestResetTripDataLoaderAfterMutation(t *testing.T) {
 			ctx := db.WithTripDataLoader(context.Background(), loader)
 			ctx = graphql.WithFieldContext(ctx, &graphql.FieldContext{Object: tt.object})
 
+			trip := tripservice.NewTripFactory(store, func(context.Context) (db.Reader, error) { return loader, nil }).ForTrip(tripID)
 			db.DataLoaderDebug.Reset()
-			_, err := loader.LoadTrip(ctx, tripID)
+			_, err := trip.List(ctx)
+			require.NoError(t, err)
+			_, err = loader.LoadTrip(ctx, tripID)
 			require.NoError(t, err)
 			_, err = loader.LoadTrip(ctx, tripID)
 			require.NoError(t, err)
@@ -51,6 +55,9 @@ func TestResetTripDataLoaderAfterMutation(t *testing.T) {
 			_, err = loader.LoadTrip(ctx, tripID)
 			require.NoError(t, err)
 			assert.Equal(t, db.DataLoadCount{Batches: tt.wantBatches, Keys: tt.wantBatches}, db.DataLoaderDebug.Snapshot().Trips)
+			_, err = trip.List(ctx)
+			require.NoError(t, err)
+			assert.Equal(t, db.DataLoadCount{Batches: tt.wantBatches, Keys: tt.wantBatches}, db.DataLoaderDebug.Snapshot().TripRecords)
 		})
 	}
 }

@@ -28,9 +28,9 @@ func (r *Resolver) recordFactory(ctx context.Context) (tripservice.RecordFactory
 	return r.RecordFactory, nil
 }
 
-func (r *Resolver) tripForID(tripID uuid.UUID) (tripservice.Trip, error) {
+func (r *Resolver) tripForID(tripID uuid.UUID, options ...tripservice.ReadOptions) (tripservice.Trip, error) {
 	if r.TripFactory == nil {
 		return nil, fmt.Errorf("trip factory is not configured")
 	}
-	return r.TripFactory.ForTrip(tripID), nil
+	return r.TripFactory.ForTrip(tripID, options...), nil
 }

@@ -56,54 +56,47 @@ func (p *pgDBWrapper) AppendNew(ctx context.Context, tripID uuid.UUID, record do
 	return
 }
 
-func (p *pgDBWrapper) AppendPatch(ctx context.Context, targetID uuid.UUID, patch domain.RecordPatch, policy db.RecordMaterializer) (tripID uuid.UUID, materialized domain.Record, appended bool, err error) {
+func (p *pgDBWrapper) AppendPatch(ctx context.Context, tripID, targetID uuid.UUID, patch domain.RecordPatch, policy db.RecordMaterializer) (resultTripID uuid.UUID, materialized domain.Record, appended bool, err error) {
 	if policy == nil {
 		return uuid.Nil, domain.Record{}, false, db.ErrMaterializerRequired
 	}
 	err = p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		root, resolveErr := resolveRootModel(tx, targetID)
-		if resolveErr != nil {
-			if errors.Is(resolveErr, chainlist.ErrNodeNotFound) {
-				return fmt.Errorf("%w: %s: %w", db.ErrRecordNotFound, targetID, resolveErr)
-			}
-			return fmt.Errorf("%w: %w", db.ErrInvalidChain, resolveErr)
-		}
-		tripID = root.TripID
-		if lockErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND trip_id = ?", root.ID, tripID).First(&root).Error; lockErr != nil {
-			return lockErr
-		}
-
-		loader := chainlist.LoaderFunc[uuid.UUID, domain.RecordInfo](func(ctx context.Context, id uuid.UUID) (chainlist.Node[uuid.UUID, domain.RecordInfo], error) {
+		// Lock forward in chain order. After waiting, Read Committed returns
+		// the updated child link so concurrent patches inherit the newest tail.
+		loader := chainlist.LoaderFunc[uuid.UUID, RecordModel](func(ctx context.Context, id uuid.UUID) (chainlist.Node[uuid.UUID, RecordModel], error) {
 			var model RecordModel
-			loadErr := tx.WithContext(ctx).Where("id = ? AND trip_id = ?", id, tripID).First(&model).Error
+			loadErr := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "NO KEY UPDATE"}).Where("id = ? AND trip_id = ?", id, tripID).First(&model).Error
 			if errors.Is(loadErr, gorm.ErrRecordNotFound) {
-				return chainlist.Node[uuid.UUID, domain.RecordInfo]{}, fmt.Errorf("%w: %s", chainlist.ErrNodeNotFound, id)
+				return chainlist.Node[uuid.UUID, RecordModel]{}, fmt.Errorf("%w: %s", chainlist.ErrNodeNotFound, id)
 			}
 			if loadErr != nil {
-				return chainlist.Node[uuid.UUID, domain.RecordInfo]{}, loadErr
+				return chainlist.Node[uuid.UUID, RecordModel]{}, loadErr
 			}
-			info := recordInfoFromModel(model, nil)
-			return chainlist.Node[uuid.UUID, domain.RecordInfo]{ID: info.ID, ParentID: info.ParentRecordID, ChildID: info.ChildRecordID, Value: info}, nil
+			return chainlist.Node[uuid.UUID, RecordModel]{ID: model.ID, ParentID: model.ParentRecordID, ChildID: model.ChildRecordID, Value: model}, nil
 		})
 		source, _ := chainlist.NewLazySource(loader, nil)
-		var tailInfo domain.RecordInfo
-		for node, walkErr := range source.WalkCanonical(ctx, targetID) {
+		var tailModel RecordModel
+		for node, walkErr := range source.WalkCanonical(ctx, targetID, false) {
 			if walkErr != nil {
+				if tailModel.ID == uuid.Nil && errors.Is(walkErr, chainlist.ErrNodeNotFound) {
+					return fmt.Errorf("%w: %s: %w", db.ErrRecordNotFound, targetID, walkErr)
+				}
 				return fmt.Errorf("%w: %w", db.ErrInvalidChain, walkErr)
 			}
-			tailInfo = node.Value
+			tailModel = node.Value
 		}
-		if tailInfo.ID == uuid.Nil {
+		if tailModel.ID == uuid.Nil {
 			return fmt.Errorf("%w: %s: %w", db.ErrRecordNotFound, targetID, chainlist.ErrNodeNotFound)
-		}
-		tail, loadErr := loadDomainRecord(tx, tripID, tailInfo.ID)
-		if loadErr != nil {
-			return loadErr
 		}
 		addresses, loadErr := loadTripAddresses(tx, tripID)
 		if loadErr != nil {
 			return loadErr
 		}
+		tail, loadErr := loadDomainRecord(tx, tailModel, addresses)
+		if loadErr != nil {
+			return loadErr
+		}
+		resultTripID = tripID
 		merged, changed, mergeErr := policy.ApplyPatch(tail, patch, addresses)
 		if mergeErr != nil {
 			return mergeErr
@@ -140,58 +133,14 @@ func insertRecord(tx *gorm.DB, tripID uuid.UUID, record domain.Record) error {
 	if err := tx.Create(&model).Error; err != nil {
 		return err
 	}
-	for _, address := range record.ShouldPayAddress {
-		item := RecordShouldPayAddressListModel{RecordID: record.ID, TripID: tripID, AddressID: address.Address.ID, ExtendedMsg: address.ExtendMsg}
-		if err := tx.Create(&item).Error; err != nil {
-			return err
-		}
+	if len(record.ShouldPayAddress) == 0 {
+		return nil
 	}
-	return nil
-}
-
-func resolveRootModel(tx *gorm.DB, targetID uuid.UUID) (RecordModel, error) {
-	currentID := targetID
-	seen := make(map[uuid.UUID]struct{})
-	var tripID uuid.UUID
-	for {
-		if _, duplicate := seen[currentID]; duplicate {
-			return RecordModel{}, fmt.Errorf("%w at node %s", chainlist.ErrCycle, currentID)
-		}
-		seen[currentID] = struct{}{}
-		var current RecordModel
-		query := tx.Where("id = ?", currentID)
-		if tripID != uuid.Nil {
-			query = query.Where("trip_id = ?", tripID)
-		}
-		err := query.First(&current).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			if currentID == targetID {
-				return RecordModel{}, fmt.Errorf("%w: %s", chainlist.ErrNodeNotFound, currentID)
-			}
-			return RecordModel{}, fmt.Errorf("%w: parent %s", chainlist.ErrDanglingParent, currentID)
-		}
-		if err != nil {
-			return RecordModel{}, err
-		}
-		if tripID == uuid.Nil {
-			tripID = current.TripID
-		}
-		if current.ParentRecordID == nil {
-			return current, nil
-		}
-		var parent RecordModel
-		err = tx.Where("id = ? AND trip_id = ?", *current.ParentRecordID, tripID).First(&parent).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return RecordModel{}, fmt.Errorf("%w: parent %s of node %s", chainlist.ErrDanglingParent, *current.ParentRecordID, current.ID)
-		}
-		if err != nil {
-			return RecordModel{}, err
-		}
-		if parent.ChildRecordID == nil || *parent.ChildRecordID != current.ID {
-			return RecordModel{}, fmt.Errorf("%w: parent %s does not select child %s", chainlist.ErrNonCanonical, parent.ID, current.ID)
-		}
-		currentID = parent.ID
+	items := make([]RecordShouldPayAddressListModel, len(record.ShouldPayAddress))
+	for i, address := range record.ShouldPayAddress {
+		items[i] = RecordShouldPayAddressListModel{RecordID: record.ID, TripID: tripID, AddressID: address.Address.ID, ExtendedMsg: address.ExtendMsg}
 	}
+	return tx.Create(&items).Error
 }
 
 func loadTripAddresses(tx *gorm.DB, tripID uuid.UUID) ([]domain.Address, error) {
@@ -206,21 +155,13 @@ func loadTripAddresses(tx *gorm.DB, tripID uuid.UUID) ([]domain.Address, error) 
 	return result, nil
 }
 
-func loadDomainRecord(tx *gorm.DB, tripID, recordID uuid.UUID) (domain.Record, error) {
-	var model RecordModel
-	if err := tx.Where("id = ? AND trip_id = ?", recordID, tripID).First(&model).Error; err != nil {
-		return domain.Record{}, err
-	}
-	addresses, err := loadTripAddresses(tx, tripID)
-	if err != nil {
-		return domain.Record{}, err
-	}
+func loadDomainRecord(tx *gorm.DB, model RecordModel, addresses []domain.Address) (domain.Record, error) {
 	byID := make(map[uuid.UUID]domain.Address, len(addresses))
 	for _, address := range addresses {
 		byID[address.ID] = address
 	}
 	var shouldPay []RecordShouldPayAddressListModel
-	if err := tx.Where("record_id = ? AND trip_id = ?", recordID, tripID).Find(&shouldPay).Error; err != nil {
+	if err := tx.Where("record_id = ? AND trip_id = ?", model.ID, model.TripID).Find(&shouldPay).Error; err != nil {
 		return domain.Record{}, err
 	}
 	result := domain.Record{RecordInfo: recordInfoFromModel(model, byID), RecordData: domain.RecordData{ShouldPayAddress: make([]domain.ExtendAddress, len(shouldPay))}}
@@ -283,44 +224,74 @@ func (p *pgDBWrapper) DeleteTrip(id uuid.UUID) error {
 	})
 }
 
-// DataLoaderGetRecordInfoList Data Loader
-// These are more complex and often involve custom SQL or optimized GORM queries
-// to avoid N+1 problems. The implementations below are basic.
-func (p *pgDBWrapper) DataLoaderGetRecordInfoList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]domain.RecordInfo, error) {
-	var records []RecordModel
-	if err := p.db.WithContext(ctx).Where("trip_id IN ?", tripIds).Find(&records).Error; err != nil {
+// joinedRecords materializes complete records in one SQL statement.
+func (p *pgDBWrapper) joinedRecords(ctx context.Context, column string, ids []uuid.UUID, options db.RecordReadOptions) ([]db.RecordSnapshot, error) {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	addresses, err := p.addressesByID(recordModelsAddressIDs(records))
-	if err != nil {
+	if len(ids) == 0 {
+		return []db.RecordSnapshot{}, nil
+	}
+	var rows []struct {
+		RecordModel    `gorm:"embedded"`
+		PayerName      string
+		ShareAddressID *uuid.UUID
+		ShareName      string
+		ExtendedMsg    float64
+	}
+	query := p.db.WithContext(ctx).Table("records AS r").
+		Select("r.*, payer.name AS payer_name, share.address_id AS share_address_id, recipient.name AS share_name, share.extended_msg").
+		Joins("LEFT JOIN addresses AS payer ON payer.id = r.pre_pay_address_id AND payer.trip_id = r.trip_id").
+		Joins("LEFT JOIN record_should_pay_address_lists AS share ON share.record_id = r.id AND share.trip_id = r.trip_id").
+		Joins("LEFT JOIN addresses AS recipient ON recipient.id = share.address_id AND recipient.trip_id = share.trip_id").
+		Where(column+" IN ?", ids)
+	if !options.HaveHistory {
+		query = query.Where("r.child_record_id IS NULL AND r.is_deleted = false")
+	}
+	if err := query.Order("r.created_at, r.id, share.address_id").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
-
-	result := make(map[uuid.UUID][]domain.RecordInfo)
-	for _, r := range records {
-		result[r.TripID] = append(result[r.TripID], recordInfoFromModel(r, addresses))
-	}
-	// Ensure all requested tripIds have an entry in the map, even if empty
-	for _, tripID := range tripIds {
-		if _, ok := result[tripID]; !ok {
-			result[tripID] = []domain.RecordInfo{}
+	result := make([]db.RecordSnapshot, 0)
+	indexes := make(map[uuid.UUID]int)
+	for _, row := range rows {
+		index, exists := indexes[row.ID]
+		if !exists {
+			index = len(result)
+			indexes[row.ID] = index
+			payer := domain.Address{ID: row.PrePayAddressID, Name: row.PayerName}
+			info := recordInfoFromModel(row.RecordModel, map[uuid.UUID]domain.Address{payer.ID: payer})
+			result = append(result, db.RecordSnapshot{TripID: row.TripID, Record: domain.Record{RecordInfo: info, RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{}}}})
+		}
+		if row.ShareAddressID != nil {
+			result[index].ShouldPayAddress = append(result[index].ShouldPayAddress, domain.ExtendAddress{Address: domain.Address{ID: *row.ShareAddressID, Name: row.ShareName}, ExtendMsg: row.ExtendedMsg})
 		}
 	}
 	return result, nil
 }
 
-func (p *pgDBWrapper) DataLoaderGetRecordList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID]db.RecordNode, error) {
-	var records []RecordModel
-	if err := p.db.WithContext(ctx).Where("id IN ?", recordIds).Find(&records).Error; err != nil {
-		return nil, err
-	}
-	addresses, err := p.addressesByID(recordModelsAddressIDs(records))
+func (p *pgDBWrapper) DataLoaderGetTripRecords(ctx context.Context, tripIds []uuid.UUID, options db.RecordReadOptions) (map[uuid.UUID][]db.RecordSnapshot, error) {
+	records, err := p.joinedRecords(ctx, "r.trip_id", tripIds, options)
 	if err != nil {
 		return nil, err
 	}
-	result := make(map[uuid.UUID]db.RecordNode, len(records))
+	result := make(map[uuid.UUID][]db.RecordSnapshot, len(tripIds))
+	for _, id := range tripIds {
+		result[id] = []db.RecordSnapshot{}
+	}
 	for _, record := range records {
-		result[record.ID] = db.RecordNode{TripID: record.TripID, Info: recordInfoFromModel(record, addresses)}
+		result[record.TripID] = append(result[record.TripID], record)
+	}
+	return result, nil
+}
+
+func (p *pgDBWrapper) DataLoaderGetRecordList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID]db.RecordSnapshot, error) {
+	records, err := p.joinedRecords(ctx, "r.id", recordIds, db.RecordReadOptions{HaveHistory: true})
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[uuid.UUID]db.RecordSnapshot, len(records))
+	for _, record := range records {
+		result[record.ID] = record
 	}
 	errorsByID := make(map[uuid.UUID]error)
 	for _, id := range recordIds {
@@ -348,37 +319,6 @@ func (p *pgDBWrapper) DataLoaderGetTripAddressList(ctx context.Context, tripIds 
 	for _, tripID := range tripIds {
 		if _, ok := result[tripID]; !ok {
 			result[tripID] = []domain.Address{}
-		}
-	}
-	return result, nil
-}
-
-func (p *pgDBWrapper) DataLoaderGetRecordShouldPayList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID][]domain.ExtendAddress, error) {
-	var shouldPayAddresses []RecordShouldPayAddressListModel
-	// Assuming RecordShouldPayAddressListModel has RecordID and Address
-	if err := p.db.WithContext(ctx).Where("record_id IN ?", recordIds).Find(&shouldPayAddresses).Error; err != nil {
-		return nil, err
-	}
-
-	addressIDs := make([]uuid.UUID, 0, len(shouldPayAddresses))
-	for _, sp := range shouldPayAddresses {
-		addressIDs = append(addressIDs, sp.AddressID)
-	}
-	addressByID, err := p.addressesByID(addressIDs)
-	if err != nil {
-		return nil, err
-	}
-	result := make(map[uuid.UUID][]domain.ExtendAddress)
-	for _, sp := range shouldPayAddresses {
-		result[sp.RecordID] = append(result[sp.RecordID], domain.ExtendAddress{
-			Address:   addressByID[sp.AddressID],
-			ExtendMsg: sp.ExtendedMsg,
-		})
-	}
-	// Ensure all requested recordIds have an entry in the map, even if empty
-	for _, recordID := range recordIds {
-		if _, ok := result[recordID]; !ok {
-			result[recordID] = []domain.ExtendAddress{}
 		}
 	}
 	return result, nil

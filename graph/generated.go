@@ -42,7 +42,6 @@ type Config struct {
 type ResolverRoot interface {
 	Mutation() MutationResolver
 	Query() QueryResolver
-	Record() RecordResolver
 	Subscription() SubscriptionResolver
 	Trip() TripResolver
 }
@@ -72,7 +71,7 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
-		Trip func(childComplexity int, tripID string) int
+		Trip func(childComplexity int, tripID string, haveHistory bool) int
 	}
 
 	Record struct {
@@ -123,13 +122,7 @@ type MutationResolver interface {
 	DeleteAddress(ctx context.Context, tripID string, addressID string) (*model.Address, error)
 }
 type QueryResolver interface {
-	Trip(ctx context.Context, tripID string) (*model.Trip, error)
-}
-type RecordResolver interface {
-	ShouldPayAddress(ctx context.Context, obj *model.Record) ([]*model.Address, error)
-	ExtendPayMsg(ctx context.Context, obj *model.Record) ([]float64, error)
-
-	IsValid(ctx context.Context, obj *model.Record) (bool, error)
+	Trip(ctx context.Context, tripID string, haveHistory bool) (*model.Trip, error)
 }
 type SubscriptionResolver interface {
 	SubRecordCreate(ctx context.Context, tripID string) (<-chan *model.Record, error)
@@ -286,7 +279,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Query.Trip(childComplexity, args["tripId"].(string)), true
+		return e.complexity.Query.Trip(childComplexity, args["tripId"].(string), args["haveHistory"].(bool)), true
 
 	case "Record.amount":
 		if e.complexity.Record.Amount == nil {
@@ -951,6 +944,11 @@ func (ec *executionContext) field_Query_trip_args(ctx context.Context, rawArgs m
 		return nil, err
 	}
 	args["tripId"] = arg0
+	arg1, err := ec.field_Query_trip_argsHaveHistory(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["haveHistory"] = arg1
 	return args, nil
 }
 func (ec *executionContext) field_Query_trip_argsTripID(
@@ -963,6 +961,19 @@ func (ec *executionContext) field_Query_trip_argsTripID(
 	}
 
 	var zeroVal string
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Query_trip_argsHaveHistory(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (bool, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("haveHistory"))
+	if tmp, ok := rawArgs["haveHistory"]; ok {
+		return ec.unmarshalNBoolean2bool(ctx, tmp)
+	}
+
+	var zeroVal bool
 	return zeroVal, nil
 }
 
@@ -1860,7 +1871,7 @@ func (ec *executionContext) _Query_trip(ctx context.Context, field graphql.Colle
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Trip(rctx, fc.Args["tripId"].(string))
+		return ec.resolvers.Query().Trip(rctx, fc.Args["tripId"].(string), fc.Args["haveHistory"].(bool))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -2274,7 +2285,7 @@ func (ec *executionContext) _Record_shouldPayAddress(ctx context.Context, field 
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Record().ShouldPayAddress(rctx, obj)
+		return obj.ShouldPayAddress, nil
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -2292,8 +2303,8 @@ func (ec *executionContext) fieldContext_Record_shouldPayAddress(_ context.Conte
 	fc = &graphql.FieldContext{
 		Object:     "Record",
 		Field:      field,
-		IsMethod:   true,
-		IsResolver: true,
+		IsMethod:   false,
+		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
 			case "id":
@@ -2321,7 +2332,7 @@ func (ec *executionContext) _Record_extendPayMsg(ctx context.Context, field grap
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Record().ExtendPayMsg(rctx, obj)
+		return obj.ExtendPayMsg, nil
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -2339,8 +2350,8 @@ func (ec *executionContext) fieldContext_Record_extendPayMsg(_ context.Context, 
 	fc = &graphql.FieldContext{
 		Object:     "Record",
 		Field:      field,
-		IsMethod:   true,
-		IsResolver: true,
+		IsMethod:   false,
+		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Float does not have child fields")
 		},
@@ -2491,7 +2502,7 @@ func (ec *executionContext) _Record_isValid(ctx context.Context, field graphql.C
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Record().IsValid(rctx, obj)
+		return obj.IsValid, nil
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -2512,8 +2523,8 @@ func (ec *executionContext) fieldContext_Record_isValid(_ context.Context, field
 	fc = &graphql.FieldContext{
 		Object:     "Record",
 		Field:      field,
-		IsMethod:   true,
-		IsResolver: true,
+		IsMethod:   false,
+		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Boolean does not have child fields")
 		},
@@ -5767,7 +5778,7 @@ func (ec *executionContext) _Record(ctx context.Context, sel ast.SelectionSet, o
 		case "id":
 			out.Values[i] = ec._Record_id(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				atomic.AddUint32(&out.Invalids, 1)
+				out.Invalids++
 			}
 		case "name":
 			out.Values[i] = ec._Record_name(ctx, field, obj)
@@ -5778,126 +5789,33 @@ func (ec *executionContext) _Record(ctx context.Context, sel ast.SelectionSet, o
 		case "time":
 			out.Values[i] = ec._Record_time(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				atomic.AddUint32(&out.Invalids, 1)
+				out.Invalids++
 			}
 		case "shouldPayAddress":
-			field := field
-
-			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
-				defer func() {
-					if r := recover(); r != nil {
-						ec.Error(ctx, ec.Recover(ctx, r))
-					}
-				}()
-				res = ec._Record_shouldPayAddress(ctx, field, obj)
-				return res
-			}
-
-			if field.Deferrable != nil {
-				dfs, ok := deferred[field.Deferrable.Label]
-				di := 0
-				if ok {
-					dfs.AddField(field)
-					di = len(dfs.Values) - 1
-				} else {
-					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
-					deferred[field.Deferrable.Label] = dfs
-				}
-				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
-					return innerFunc(ctx, dfs)
-				})
-
-				// don't run the out.Concurrently() call below
-				out.Values[i] = graphql.Null
-				continue
-			}
-
-			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			out.Values[i] = ec._Record_shouldPayAddress(ctx, field, obj)
 		case "extendPayMsg":
-			field := field
-
-			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
-				defer func() {
-					if r := recover(); r != nil {
-						ec.Error(ctx, ec.Recover(ctx, r))
-					}
-				}()
-				res = ec._Record_extendPayMsg(ctx, field, obj)
-				return res
-			}
-
-			if field.Deferrable != nil {
-				dfs, ok := deferred[field.Deferrable.Label]
-				di := 0
-				if ok {
-					dfs.AddField(field)
-					di = len(dfs.Values) - 1
-				} else {
-					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
-					deferred[field.Deferrable.Label] = dfs
-				}
-				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
-					return innerFunc(ctx, dfs)
-				})
-
-				// don't run the out.Concurrently() call below
-				out.Values[i] = graphql.Null
-				continue
-			}
-
-			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			out.Values[i] = ec._Record_extendPayMsg(ctx, field, obj)
 		case "category":
 			out.Values[i] = ec._Record_category(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				atomic.AddUint32(&out.Invalids, 1)
+				out.Invalids++
 			}
 		case "parentRecordId":
 			out.Values[i] = ec._Record_parentRecordId(ctx, field, obj)
 		case "isDeleted":
 			out.Values[i] = ec._Record_isDeleted(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				atomic.AddUint32(&out.Invalids, 1)
+				out.Invalids++
 			}
 		case "isValid":
-			field := field
-
-			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
-				defer func() {
-					if r := recover(); r != nil {
-						ec.Error(ctx, ec.Recover(ctx, r))
-					}
-				}()
-				res = ec._Record_isValid(ctx, field, obj)
-				if res == graphql.Null {
-					atomic.AddUint32(&fs.Invalids, 1)
-				}
-				return res
+			out.Values[i] = ec._Record_isValid(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
 			}
-
-			if field.Deferrable != nil {
-				dfs, ok := deferred[field.Deferrable.Label]
-				di := 0
-				if ok {
-					dfs.AddField(field)
-					di = len(dfs.Values) - 1
-				} else {
-					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
-					deferred[field.Deferrable.Label] = dfs
-				}
-				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
-					return innerFunc(ctx, dfs)
-				})
-
-				// don't run the out.Concurrently() call below
-				out.Values[i] = graphql.Null
-				continue
-			}
-
-			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		case "isActive":
 			out.Values[i] = ec._Record_isActive(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				atomic.AddUint32(&out.Invalids, 1)
+				out.Invalids++
 			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))

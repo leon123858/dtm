@@ -4,6 +4,7 @@ import (
 	"dtm/domain"
 	"dtm/graph/model"
 	"dtm/libs/recordpatch"
+	tripservice "dtm/services/trip"
 	"dtm/services/tx"
 	"fmt"
 	"strconv"
@@ -77,22 +78,31 @@ func ToModelAddress(address domain.Address) *model.Address {
 	return &model.Address{ID: address.ID.String(), Name: address.Name}
 }
 
-func ToModelRecord(info domain.RecordInfo, active bool) *model.Record {
-	result, err := ToModelRecordChecked(info, active, true)
+func ToModelRecord(record domain.Record, active bool) *model.Record {
+	result, err := ToModelRecordChecked(record, active)
 	if err != nil {
 		panic(err)
 	}
 	return result
 }
 
-func ToModelRecordChecked(info domain.RecordInfo, active, eventValid bool) (*model.Record, error) {
+func ToModelRecordChecked(record domain.Record, active bool) (*model.Record, error) {
+	info := record.RecordInfo
 	category, err := Int2RecordCategoryChecked(int(info.Category))
 	if err != nil {
 		return nil, fmt.Errorf("record %s: %w", info.ID, err)
 	}
+	valid, err := tripservice.NewRecordFactory(nil).FromRecord(record).Validate()
+	if err != nil {
+		return nil, fmt.Errorf("record %s: %w", info.ID, err)
+	}
 	result := &model.Record{
+		IsValid:          valid,
+		ShouldPayAddress: make([]*model.Address, len(record.ShouldPayAddress)),
+		ExtendPayMsg:     make([]float64, len(record.ShouldPayAddress)),
+
 		ID: info.ID.String(), Time: strconv.FormatInt(info.Time.UnixMilli(), 10),
-		Category: category, IsDeleted: info.IsDeleted, IsActive: active, EventValid: eventValid,
+		Category: category, IsDeleted: info.IsDeleted, IsActive: active,
 	}
 	if info.ParentRecordID != nil {
 		parent := info.ParentRecordID.String()
@@ -101,6 +111,10 @@ func ToModelRecordChecked(info domain.RecordInfo, active, eventValid bool) (*mod
 	result.Name = &info.Name
 	result.Amount = &info.Amount
 	result.PrePayAddress = ToModelAddress(info.PrePayAddress)
+	for i, share := range record.ShouldPayAddress {
+		result.ShouldPayAddress[i] = ToModelAddress(share.Address)
+		result.ExtendPayMsg[i] = share.ExtendMsg
+	}
 	return result, nil
 }
 
@@ -113,34 +127,6 @@ func ToDomainAddress(address *model.Address) (domain.Address, error) {
 		return domain.Address{}, fmt.Errorf("invalid address ID: %w", err)
 	}
 	return domain.Address{ID: id, Name: address.Name}, nil
-}
-
-func ModelRecordInfo(record *model.Record) (domain.RecordInfo, error) {
-	id, err := uuid.Parse(record.ID)
-	if err != nil {
-		return domain.RecordInfo{}, fmt.Errorf("invalid record ID: %w", err)
-	}
-	info := domain.RecordInfo{ID: id, Category: domain.RecordCategory(RecordCategory2Int(&record.Category)), IsDeleted: record.IsDeleted}
-	if record.ParentRecordID != nil {
-		parentID, parseErr := uuid.Parse(*record.ParentRecordID)
-		if parseErr != nil {
-			return domain.RecordInfo{}, fmt.Errorf("invalid parent record ID: %w", parseErr)
-		}
-		info.ParentRecordID = &parentID
-	}
-	if record.Name != nil {
-		info.Name = *record.Name
-	}
-	if record.Amount != nil {
-		info.Amount = *record.Amount
-	}
-	if record.PrePayAddress != nil {
-		info.PrePayAddress, err = ToDomainAddress(record.PrePayAddress)
-		if err != nil {
-			return domain.RecordInfo{}, err
-		}
-	}
-	return info, nil
 }
 
 // BuildRecordPatch compares normalized client values without consulting the DB.

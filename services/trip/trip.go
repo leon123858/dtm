@@ -36,15 +36,20 @@ func (f *tripFactory) Create(ctx context.Context, name string) (Trip, error) {
 	return &trip{id: id, store: f.store, readers: f.readers, policy: f.policy}, nil
 }
 
-func (f *tripFactory) ForTrip(id uuid.UUID) Trip {
-	return &trip{id: id, store: f.store, readers: f.readers, policy: f.policy}
+func (f *tripFactory) ForTrip(id uuid.UUID, options ...ReadOptions) Trip {
+	var readOptions ReadOptions
+	if len(options) > 0 {
+		readOptions = options[0]
+	}
+	return &trip{id: id, store: f.store, readers: f.readers, policy: f.policy, readOptions: readOptions}
 }
 
 type trip struct {
-	id      uuid.UUID
-	store   db.TripStore
-	readers db.ReaderProvider
-	policy  recordPolicy
+	readOptions ReadOptions
+	id          uuid.UUID
+	store       db.TripStore
+	readers     db.ReaderProvider
+	policy      recordPolicy
 }
 
 var _ Trip = (*trip)(nil)
@@ -161,68 +166,98 @@ func (t *trip) Append(ctx context.Context, value Record) (AppendResult, error) {
 		if err != nil {
 			return AppendResult{}, fromStoreError(err)
 		}
-		result := newMaterializedRecord(t.id, materialized, t.readers)
+		result := newMaterializedRecord(t.id, materialized)
 		return AppendResult{TripID: t.id, Record: result, Appended: true}, nil
 	case intentPatch:
-		tripID, materialized, appended, err := t.store.AppendPatch(ctx, r.targetID, r.patch, t.policy)
+		tripID, materialized, appended, err := t.store.AppendPatch(ctx, t.id, r.targetID, r.patch, t.policy)
 		if err != nil {
 			return AppendResult{}, fromStoreError(err)
 		}
-		result := newMaterializedRecord(tripID, materialized, t.readers)
+		result := newMaterializedRecord(tripID, materialized)
 		return AppendResult{TripID: tripID, Record: result, Appended: appended}, nil
 	default:
 		return AppendResult{TripID: t.id, Record: value, Appended: false}, nil
 	}
 }
 
-func (t *trip) List(ctx context.Context) ([]Record, error) {
+type recordProjection struct {
+	records []db.RecordSnapshot
+	tails   []db.RecordSnapshot
+	active  map[uuid.UUID]bool
+}
+
+// loadProjection reads through the DataLoader and derives the requested view.
+func (t *trip) loadProjection(ctx context.Context) (recordProjection, error) {
+	if err := ctx.Err(); err != nil {
+		return recordProjection{}, err
+	}
+
 	reader, err := t.reader(ctx)
 	if err != nil {
-		return nil, fromStoreError(err)
+		return recordProjection{}, err
 	}
-	infos, chains, err := loadChains(ctx, reader, t.id)
+	records, err := reader.LoadTripRecords(ctx, t.id, db.RecordReadOptions{HaveHistory: t.readOptions.HaveHistory})
+	if err != nil {
+		return recordProjection{}, fromStoreError(err)
+	}
+	projection := recordProjection{records: records, active: make(map[uuid.UUID]bool, len(records))}
+	if t.readOptions.HaveHistory {
+		chains, err := scanChains(ctx, records)
+		if err != nil {
+			return recordProjection{}, err
+		}
+		projection.active = activeTailIDs(chains)
+		byID := make(map[uuid.UUID]db.RecordSnapshot, len(records))
+		for _, record := range records {
+			byID[record.ID] = record
+		}
+		for _, chain := range chains {
+			if len(chain) == 0 {
+				continue
+			}
+			tail := byID[chain[len(chain)-1].ID]
+			if !tail.IsDeleted {
+				projection.tails = append(projection.tails, tail)
+			}
+		}
+	} else {
+		for _, record := range records {
+			projection.active[record.ID] = true
+		}
+		projection.tails = records
+	}
+
+	return projection, nil
+}
+
+func (t *trip) List(ctx context.Context) ([]Record, error) {
+	projection, err := t.loadProjection(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load records for trip %s: %w", t.id, err)
 	}
-	active := activeTailIDs(chains)
-	result := make([]Record, len(infos))
-	for i, info := range infos {
-		result[i] = &record{tripID: t.id, data: domain.Record{RecordInfo: cloneRecordInfo(info)}, active: active[info.ID], eventValid: eventShapeValid(info), readers: t.readers}
+	result := make([]Record, len(projection.records))
+	for i, value := range projection.records {
+		result[i] = &record{tripID: t.id, data: cloneDomainRecord(value.Record), active: projection.active[value.ID]}
 	}
 	return result, nil
 }
 
 func (t *trip) CalculateMoneyShare(ctx context.Context) (MoneyShareResult, error) {
-	reader, err := t.reader(ctx)
+	projection, err := t.loadProjection(ctx)
 	if err != nil {
-		return MoneyShareResult{}, fromStoreError(err)
+		return MoneyShareResult{}, err
 	}
-	_, chains, err := loadChains(ctx, reader, t.id)
-	if err != nil {
-		return MoneyShareResult{}, fromStoreError(err)
-	}
-	payments := make([]tx.UserPayment, 0, len(chains))
-	for _, c := range chains {
-		if len(c) == 0 {
-			continue
-		}
-		tail := c[len(c)-1].Value
-		if tail.IsDeleted {
-			continue
-		}
-		addresses, loadErr := reader.LoadRecordShouldPay(ctx, tail.ID)
-		if loadErr != nil {
-			return MoneyShareResult{}, fmt.Errorf("load should-pay addresses for record %s: %w", tail.ID, fromStoreError(loadErr))
-		}
-		value := domain.Record{RecordInfo: cloneRecordInfo(tail), RecordData: domain.RecordData{ShouldPayAddress: cloneAddresses(addresses)}}
-		if validateErr := t.policy.Validate(value); validateErr != nil {
+	payments := make([]tx.UserPayment, 0, len(projection.tails))
+	for _, tail := range projection.tails {
+		if validateErr := t.policy.Validate(tail.Record); validateErr != nil {
 			if errors.Is(validateErr, ErrInvalidRecordSnapshot) {
 				return MoneyShareResult{Valid: false}, nil
 			}
 			return MoneyShareResult{}, validateErr
 		}
-		payments = append(payments, paymentFromRecord(tail, addresses))
+		payments = append(payments, paymentFromRecord(tail.RecordInfo, tail.ShouldPayAddress))
 	}
+
 	pkg, remaining, err := tx.ShareMoneyEasy(payments)
 	if err != nil {
 		return MoneyShareResult{Valid: false}, nil
@@ -230,6 +265,6 @@ func (t *trip) CalculateMoneyShare(ctx context.Context) (MoneyShareResult, error
 	return MoneyShareResult{Package: pkg, TotalRemaining: remaining, Valid: true}, nil
 }
 
-func newMaterializedRecord(tripID uuid.UUID, value domain.Record, readers db.ReaderProvider) Record {
-	return &record{tripID: tripID, data: cloneDomainRecord(value), active: true, eventValid: eventShapeValid(value.RecordInfo), readers: readers}
+func newMaterializedRecord(tripID uuid.UUID, value domain.Record) Record {
+	return &record{tripID: tripID, data: cloneDomainRecord(value), active: true}
 }

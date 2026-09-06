@@ -99,7 +99,7 @@ func TestMemoryAndLazySourcesImplementChainList(t *testing.T) {
 				t.Fatalf("tail ID = %d, want 3", tail.ID)
 			}
 
-			chain, chainErr := collectWalk(implementation.list.WalkCanonical(context.Background(), 2))
+			chain, chainErr := collectWalk(implementation.list.WalkCanonical(context.Background(), 2, true))
 			if chainErr != nil {
 				t.Fatal(chainErr)
 			}
@@ -175,7 +175,7 @@ func TestWalkCanonicalReturnsRootToTail(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	chain, err := collectWalk(WalkCanonical(context.Background(), source, 2))
+	chain, err := collectWalk(WalkCanonical(context.Background(), source, 2, true))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestNonCanonicalBranchIsIgnored(t *testing.T) {
 		t.Fatalf("canonical chains = %v, want [[1 2]]", chains)
 	}
 
-	_, err = collectWalk(WalkCanonical(context.Background(), source, 3))
+	_, err = collectWalk(WalkCanonical(context.Background(), source, 3, true))
 	if !errors.Is(err, ErrNonCanonical) {
 		t.Fatalf("WalkCanonical branch error = %v, want ErrNonCanonical", err)
 	}
@@ -268,7 +268,7 @@ func TestTraversalErrors(t *testing.T) {
 				t.Fatal(err)
 			}
 			if tt.walk == "canonical" {
-				_, err = collectWalk(WalkCanonical(context.Background(), source, tt.start))
+				_, err = collectWalk(WalkCanonical(context.Background(), source, tt.start, true))
 			} else {
 				_, err = collectWalk(WalkFrom(context.Background(), source, tt.start))
 			}
@@ -333,4 +333,49 @@ func TestChainsRejectsNilComparator(t *testing.T) {
 		return
 	}
 	t.Fatal("expected comparator error")
+}
+
+func TestWalkCanonicalWithoutRootTrace(t *testing.T) {
+	tests := []struct {
+		name  string
+		nodes map[int]Node[int, string]
+		want  error
+	}{
+		{"ignores ancestors", map[int]Node[int, string]{2: {ID: 2, ParentID: pointer(99), ChildID: pointer(3)}, 3: {ID: 3, ParentID: pointer(2)}}, nil},
+		{"cycle", map[int]Node[int, string]{2: {ID: 2, ParentID: pointer(3), ChildID: pointer(3)}, 3: {ID: 3, ParentID: pointer(2), ChildID: pointer(2)}}, ErrCycle},
+		{"missing child", map[int]Node[int, string]{2: {ID: 2, ChildID: pointer(3)}}, ErrDanglingChild},
+		{"bad backlink", map[int]Node[int, string]{2: {ID: 2, ChildID: pointer(3)}, 3: {ID: 3}}, ErrInconsistentLink},
+		{"wrong ID", map[int]Node[int, string]{2: {ID: 9}}, ErrInconsistentLink},
+		{"missing start", map[int]Node[int, string]{}, ErrNodeNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var loaded []int
+			loader := LoaderFunc[int, string](func(_ context.Context, id int) (Node[int, string], error) {
+				loaded = append(loaded, id)
+				node, ok := tt.nodes[id]
+				if !ok {
+					return Node[int, string]{}, ErrNodeNotFound
+				}
+				return node, nil
+			})
+			source, err := NewLazySource(loader, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			nodes, err := collectWalk(source.WalkCanonical(context.Background(), 2, false))
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("error = %v, want %v", err, tt.want)
+			}
+			if tt.want == nil && (!slices.Equal(loaded, []int{2, 3}) || !slices.Equal(ids(nodes), []int{2, 3})) {
+				t.Fatalf("loaded %v, yielded %v", loaded, ids(nodes))
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			_, err = collectWalk(source.WalkCanonical(ctx, 2, false))
+			if !errors.Is(err, context.Canceled) {
+				t.Fatal(err)
+			}
+		})
+	}
 }

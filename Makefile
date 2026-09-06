@@ -54,3 +54,6 @@ dev-gcp:
 
 docker-build:
 	docker build -t dtm .
+
+bench-trip:
+	DTM_TRIP_BENCH=1 GIN_MODE=release go test ./web -run '^TestTripQueryPostgresLoad$$' -count=1 -timeout=60m -v

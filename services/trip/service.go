@@ -27,16 +27,15 @@ type Record interface {
 	Info() domain.RecordInfo
 	DomainRecord() domain.Record
 	IsActive() bool
-	EventValid() bool
-	GetShouldPay(context.Context) ([]domain.ExtendAddress, error)
-	Validate(context.Context) (bool, error)
+	GetShouldPay() []domain.ExtendAddress
+	Validate() (bool, error)
 }
 
 type RecordFactory interface {
 	New(context.Context, uuid.UUID, domain.Record) (Record, error)
 	Update(context.Context, uuid.UUID, domain.RecordPatch) (Record, error)
 	ByID(context.Context, uuid.UUID) (Record, error)
-	FromInfo(domain.RecordInfo, bool) Record
+	FromRecord(domain.Record) Record
 }
 
 type Trip interface {
@@ -52,9 +51,12 @@ type Trip interface {
 	CalculateMoneyShare(context.Context) (MoneyShareResult, error)
 }
 
+// ReadOptions selects complete history or the live tails used by default.
+type ReadOptions struct{ HaveHistory bool }
+
 type TripFactory interface {
 	Create(context.Context, string) (Trip, error)
-	ForTrip(uuid.UUID) Trip
+	ForTrip(uuid.UUID, ...ReadOptions) Trip
 }
 
 type AppendResult struct {

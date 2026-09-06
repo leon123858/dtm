@@ -21,14 +21,12 @@ const (
 )
 
 type record struct {
-	tripID     uuid.UUID
-	data       domain.Record
-	active     bool
-	eventValid bool
-	readers    db.ReaderProvider
-	intent     intentKind
-	targetID   uuid.UUID
-	patch      domain.RecordPatch
+	tripID   uuid.UUID
+	data     domain.Record
+	active   bool
+	intent   intentKind
+	targetID uuid.UUID
+	patch    domain.RecordPatch
 }
 
 var _ Record = (*record)(nil)
@@ -38,37 +36,13 @@ func (r *record) TripID() uuid.UUID           { return r.tripID }
 func (r *record) Info() domain.RecordInfo     { return cloneRecordInfo(r.data.RecordInfo) }
 func (r *record) DomainRecord() domain.Record { return cloneDomainRecord(r.data) }
 func (r *record) IsActive() bool              { return r.active }
-func (r *record) EventValid() bool            { return r.eventValid }
 
-func (r *record) GetShouldPay(ctx context.Context) ([]domain.ExtendAddress, error) {
-	if r.data.ShouldPayAddress != nil {
-		return cloneAddresses(r.data.ShouldPayAddress), nil
-	}
-	reader, err := readerFrom(ctx, r.readers)
-	if err != nil {
-		return nil, fromStoreError(err)
-	}
-	if reader == nil {
-		return nil, nil
-	}
-	addresses, err := reader.LoadRecordShouldPay(ctx, r.data.ID)
-	if err != nil {
-		return nil, fmt.Errorf("load should-pay addresses for record %s: %w", r.data.ID, fromStoreError(err))
-	}
-	return cloneAddresses(addresses), nil
+func (r *record) GetShouldPay() []domain.ExtendAddress {
+	return cloneAddresses(r.data.ShouldPayAddress)
 }
 
-func (r *record) Validate(ctx context.Context) (bool, error) {
-	if !r.eventValid {
-		return false, nil
-	}
-	value := r.DomainRecord()
-	addresses, err := r.GetShouldPay(ctx)
-	if err != nil {
-		return false, err
-	}
-	value.ShouldPayAddress = addresses
-	if err := (recordPolicy{}).Validate(value); err != nil {
+func (r *record) Validate() (bool, error) {
+	if err := (recordPolicy{}).Validate(r.data); err != nil {
 		if errors.Is(err, ErrInvalidRecordSnapshot) {
 			return false, nil
 		}
@@ -86,7 +60,7 @@ func (f *recordFactory) New(_ context.Context, tripID uuid.UUID, value domain.Re
 	value.ID = uuid.New()
 	value.ParentRecordID = nil
 	value.ChildRecordID = nil
-	return &record{tripID: tripID, data: value, active: true, eventValid: true, readers: f.readers, intent: intentCreate}, nil
+	return &record{tripID: tripID, data: value, active: true, intent: intentCreate}, nil
 }
 
 func (f *recordFactory) Update(ctx context.Context, recordID uuid.UUID, patch domain.RecordPatch) (Record, error) {
@@ -104,7 +78,7 @@ func (f *recordFactory) Update(ctx context.Context, recordID uuid.UUID, patch do
 		}
 		return nil, fromStoreError(err)
 	}
-	return &record{tripID: node.TripID, readers: f.readers, intent: intentPatch, targetID: recordID, patch: patch.Clone()}, nil
+	return &record{tripID: node.TripID, intent: intentPatch, targetID: recordID, patch: patch.Clone()}, nil
 }
 
 func (f *recordFactory) ByID(ctx context.Context, recordID uuid.UUID) (Record, error) {
@@ -122,11 +96,11 @@ func (f *recordFactory) ByID(ctx context.Context, recordID uuid.UUID) (Record, e
 		}
 		return nil, fromStoreError(err)
 	}
-	return &record{tripID: node.TripID, data: domain.Record{RecordInfo: cloneRecordInfo(node.Info)}, active: node.Info.ChildRecordID == nil, eventValid: eventShapeValid(node.Info), readers: f.readers}, nil
+	return &record{tripID: node.TripID, data: cloneDomainRecord(node.Record), active: node.ChildRecordID == nil}, nil
 }
 
-func (f *recordFactory) FromInfo(info domain.RecordInfo, eventValid bool) Record {
-	return &record{data: domain.Record{RecordInfo: cloneRecordInfo(info)}, active: info.ChildRecordID == nil, eventValid: eventValid, readers: f.readers}
+func (f *recordFactory) FromRecord(value domain.Record) Record {
+	return &record{data: cloneDomainRecord(value), active: value.ChildRecordID == nil}
 }
 
 func readerFrom(ctx context.Context, provider db.ReaderProvider) (db.Reader, error) {

@@ -76,7 +76,7 @@ type Subscription {
 }
 
 type Query {
-	trip(tripId: ID!): Trip
+	trip(tripId: ID!, haveHistory: Boolean! = false): Trip
 }
 
 input NewRecord {

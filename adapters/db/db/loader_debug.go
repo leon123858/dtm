@@ -11,11 +11,10 @@ type DataLoadCounter struct {
 }
 
 type DataLoaderDebugCounters struct {
-	Records          DataLoadCounter
-	TripRecords      DataLoadCounter
-	TripAddresses    DataLoadCounter
-	RecordShouldPays DataLoadCounter
-	Trips            DataLoadCounter
+	Records       DataLoadCounter
+	TripRecords   DataLoadCounter
+	TripAddresses DataLoadCounter
+	Trips         DataLoadCounter
 }
 
 type DataLoadCount struct {
@@ -24,33 +23,31 @@ type DataLoadCount struct {
 }
 
 type DataLoaderDebugSnapshot struct {
-	Records          DataLoadCount
-	TripRecords      DataLoadCount
-	TripAddresses    DataLoadCount
-	RecordShouldPays DataLoadCount
-	Trips            DataLoadCount
+	Records       DataLoadCount
+	TripRecords   DataLoadCount
+	TripAddresses DataLoadCount
+	Trips         DataLoadCount
 }
 
 // DataLoaderDebug records actual backing-store fetches, not Loader.Load calls.
-// It is always safe to read and reset in tests; production code may also use a
-// snapshot for temporary diagnostics.
+// Its individual fields are atomic, but Snapshot and Reset are not atomic as a
+// whole. For exact measurements, reset only while fetches are idle and snapshot
+// after all measured requests finish. Production snapshots are approximate.
 var DataLoaderDebug DataLoaderDebugCounters
 
 func (d *DataLoaderDebugCounters) Reset() {
 	d.Records.reset()
 	d.TripRecords.reset()
 	d.TripAddresses.reset()
-	d.RecordShouldPays.reset()
 	d.Trips.reset()
 }
 
 func (d *DataLoaderDebugCounters) Snapshot() DataLoaderDebugSnapshot {
 	return DataLoaderDebugSnapshot{
-		Records:          d.Records.snapshot(),
-		TripRecords:      d.TripRecords.snapshot(),
-		TripAddresses:    d.TripAddresses.snapshot(),
-		RecordShouldPays: d.RecordShouldPays.snapshot(),
-		Trips:            d.Trips.snapshot(),
+		Records:       d.Records.snapshot(),
+		TripRecords:   d.TripRecords.snapshot(),
+		TripAddresses: d.TripAddresses.snapshot(),
+		Trips:         d.Trips.snapshot(),
 	}
 }
 

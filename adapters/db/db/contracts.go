@@ -16,17 +16,19 @@ var (
 	ErrMaterializerRequired = errors.New("record materializer is required")
 )
 
-type RecordNode struct {
+// RecordSnapshot is fully materialized, including payer and all shares.
+type RecordSnapshot struct {
 	TripID uuid.UUID
-	Info   domain.RecordInfo
+	domain.Record
 }
+
+type RecordReadOptions struct{ HaveHistory bool }
 
 type Reader interface {
 	LoadTrip(context.Context, uuid.UUID) (*domain.TripInfo, error)
-	LoadRecord(context.Context, uuid.UUID) (RecordNode, error)
-	LoadTripRecords(context.Context, uuid.UUID) ([]domain.RecordInfo, error)
+	LoadRecord(context.Context, uuid.UUID) (RecordSnapshot, error)
+	LoadTripRecords(context.Context, uuid.UUID, RecordReadOptions) ([]RecordSnapshot, error)
 	LoadTripAddresses(context.Context, uuid.UUID) ([]domain.Address, error)
-	LoadRecordShouldPay(context.Context, uuid.UUID) ([]domain.ExtendAddress, error)
 }
 
 type ReaderProvider func(context.Context) (Reader, error)
@@ -40,7 +42,7 @@ type RecordMaterializer interface {
 
 type RecordStore interface {
 	AppendNew(context.Context, uuid.UUID, domain.Record, RecordMaterializer) (domain.Record, error)
-	AppendPatch(context.Context, uuid.UUID, domain.RecordPatch, RecordMaterializer) (uuid.UUID, domain.Record, bool, error)
+	AppendPatch(context.Context, uuid.UUID, uuid.UUID, domain.RecordPatch, RecordMaterializer) (uuid.UUID, domain.Record, bool, error)
 }
 
 type TripStore interface {
@@ -55,9 +57,8 @@ type TripStore interface {
 // DataLoaderStore is the read-only batching contract used by request-scoped
 // GraphQL loaders and the chain Reader adapter.
 type DataLoaderStore interface {
-	DataLoaderGetRecordInfoList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]domain.RecordInfo, error)
-	DataLoaderGetRecordList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID]RecordNode, error)
+	DataLoaderGetTripRecords(ctx context.Context, tripIds []uuid.UUID, options RecordReadOptions) (map[uuid.UUID][]RecordSnapshot, error)
+	DataLoaderGetRecordList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID]RecordSnapshot, error)
 	DataLoaderGetTripAddressList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]domain.Address, error)
-	DataLoaderGetRecordShouldPayList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID][]domain.ExtendAddress, error)
 	DataLoaderGetTripInfoList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID]*domain.TripInfo, error)
 }

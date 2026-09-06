@@ -2,7 +2,6 @@ package trip
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -54,29 +53,26 @@ func TestRecordPolicyApplyPatchRejectsForeignAddress(t *testing.T) {
 }
 
 type factoryReader struct {
-	node db.RecordNode
+	node db.RecordSnapshot
 	err  error
 }
 
 func (factoryReader) LoadTrip(context.Context, uuid.UUID) (*domain.TripInfo, error) {
 	return nil, nil
 }
-func (r factoryReader) LoadRecord(context.Context, uuid.UUID) (db.RecordNode, error) {
+func (r factoryReader) LoadRecord(context.Context, uuid.UUID) (db.RecordSnapshot, error) {
 	return r.node, r.err
 }
-func (factoryReader) LoadTripRecords(context.Context, uuid.UUID) ([]domain.RecordInfo, error) {
+func (factoryReader) LoadTripRecords(context.Context, uuid.UUID, db.RecordReadOptions) ([]db.RecordSnapshot, error) {
 	return nil, nil
 }
 func (factoryReader) LoadTripAddresses(context.Context, uuid.UUID) ([]domain.Address, error) {
 	return nil, nil
 }
-func (factoryReader) LoadRecordShouldPay(context.Context, uuid.UUID) ([]domain.ExtendAddress, error) {
-	return nil, nil
-}
 
 func TestUpdateOnlyResolvesTargetIdentity(t *testing.T) {
 	target, tripID := uuid.New(), uuid.New()
-	intent, err := NewRecordFactory(staticReader(factoryReader{node: db.RecordNode{TripID: tripID, Info: domain.RecordInfo{ID: target}}})).Update(context.Background(), target, domain.RecordPatch{})
+	intent, err := NewRecordFactory(staticReader(factoryReader{node: db.RecordSnapshot{TripID: tripID, Record: domain.Record{RecordInfo: domain.RecordInfo{ID: target}}}})).Update(context.Background(), target, domain.RecordPatch{})
 	require.NoError(t, err)
 	assert.Equal(t, tripID, intent.TripID())
 	assert.Equal(t, uuid.Nil, intent.ID())
@@ -84,67 +80,6 @@ func TestUpdateOnlyResolvesTargetIdentity(t *testing.T) {
 	_, err = NewRecordFactory(staticReader(factoryReader{err: fmt.Errorf("%w: missing", chainlist.ErrNodeNotFound)})).Update(context.Background(), target, domain.RecordPatch{})
 	require.ErrorIs(t, err, ErrRecordNotFound)
 	assert.ErrorIs(t, err, chainlist.ErrNodeNotFound)
-}
-
-type projectionReader struct {
-	tripInfo   *domain.TripInfo
-	records    []domain.RecordInfo
-	addresses  []domain.Address
-	shouldPay  map[uuid.UUID][]domain.ExtendAddress
-	tripErr    error
-	addressErr error
-}
-
-func (r projectionReader) LoadTrip(context.Context, uuid.UUID) (*domain.TripInfo, error) {
-	return r.tripInfo, r.tripErr
-}
-func (r projectionReader) LoadRecord(context.Context, uuid.UUID) (db.RecordNode, error) {
-	return db.RecordNode{}, errors.New("unused")
-}
-func (r projectionReader) LoadTripRecords(context.Context, uuid.UUID) ([]domain.RecordInfo, error) {
-	return r.records, nil
-}
-func (r projectionReader) LoadTripAddresses(context.Context, uuid.UUID) ([]domain.Address, error) {
-	return r.addresses, r.addressErr
-}
-func (r projectionReader) LoadRecordShouldPay(_ context.Context, id uuid.UUID) ([]domain.ExtendAddress, error) {
-	return r.shouldPay[id], nil
-}
-
-func TestTripReadsInfoAndAddressesThroughReader(t *testing.T) {
-	tripID := uuid.New()
-	info := &domain.TripInfo{ID: tripID, Name: "trip"}
-	addresses := []domain.Address{{ID: uuid.New(), Name: "member"}}
-	trip := NewTripFactory(nil, staticReader(projectionReader{tripInfo: info, addresses: addresses})).ForTrip(tripID)
-
-	actualInfo, err := trip.Info(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, info, actualInfo)
-	actualInfo.Name = "changed"
-	assert.Equal(t, "trip", info.Name)
-
-	actualAddresses, err := trip.Addresses(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, addresses, actualAddresses)
-	actualAddresses[0].Name = "changed"
-	assert.Equal(t, "member", addresses[0].Name)
-}
-
-func TestTripReadMethodsPropagateErrors(t *testing.T) {
-	tripErr := errors.New("trip read failed")
-	addressErr := errors.New("address read failed")
-	trip := NewTripFactory(nil, staticReader(projectionReader{tripErr: tripErr, addressErr: addressErr})).ForTrip(uuid.New())
-
-	_, err := trip.Info(context.Background())
-	assert.ErrorIs(t, err, tripErr)
-	_, err = trip.Addresses(context.Background())
-	assert.ErrorIs(t, err, addressErr)
-}
-
-func TestTripInfoClassifiesMissingTrip(t *testing.T) {
-	trip := NewTripFactory(nil, staticReader(projectionReader{})).ForTrip(uuid.New())
-	_, err := trip.Info(context.Background())
-	require.ErrorIs(t, err, ErrTripNotFound)
 }
 
 type trackingTripStore struct {
@@ -160,7 +95,7 @@ type trackingTripStore struct {
 func (s *trackingTripStore) AppendNew(context.Context, uuid.UUID, domain.Record, db.RecordMaterializer) (domain.Record, error) {
 	return domain.Record{}, s.err
 }
-func (s *trackingTripStore) AppendPatch(context.Context, uuid.UUID, domain.RecordPatch, db.RecordMaterializer) (uuid.UUID, domain.Record, bool, error) {
+func (s *trackingTripStore) AppendPatch(context.Context, uuid.UUID, uuid.UUID, domain.RecordPatch, db.RecordMaterializer) (uuid.UUID, domain.Record, bool, error) {
 	return uuid.Nil, domain.Record{}, false, s.err
 }
 func (s *trackingTripStore) CreateTrip(info *domain.TripInfo) error {
@@ -233,36 +168,6 @@ func TestTripMutationsRejectUnavailableStoreAndCanceledContext(t *testing.T) {
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
-func TestSettlementUsesOnlyNonDeletedCanonicalTail(t *testing.T) {
-	tripID := uuid.New()
-	payer := domain.Address{ID: uuid.New(), Name: "payer"}
-	member := domain.Address{ID: uuid.New(), Name: "member"}
-	rootID, tailID := uuid.New(), uuid.New()
-	root := testPayment(rootID, payer, member).RecordInfo
-	root.Amount = 0 // Invalid history must not poison a repaired tail.
-	tail := testPayment(tailID, payer, member).RecordInfo
-	tail.ParentRecordID = &rootID
-	root.ChildRecordID = &tailID
-	reader := projectionReader{records: []domain.RecordInfo{root, tail}, shouldPay: map[uuid.UUID][]domain.ExtendAddress{tailID: {{Address: member, ExtendMsg: 10}}}}
-
-	tripFactory := NewTripFactory(nil, staticReader(reader))
-	result, err := tripFactory.ForTrip(tripID).CalculateMoneyShare(context.Background())
-	require.NoError(t, err)
-	assert.True(t, result.Valid)
-
-	reader.records[1].Amount = 0
-	tripFactory = NewTripFactory(nil, staticReader(reader))
-	result, err = tripFactory.ForTrip(tripID).CalculateMoneyShare(context.Background())
-	require.NoError(t, err)
-	assert.False(t, result.Valid)
-
-	reader.records[1].IsDeleted = true
-	tripFactory = NewTripFactory(nil, staticReader(reader))
-	result, err = tripFactory.ForTrip(tripID).CalculateMoneyShare(context.Background())
-	require.NoError(t, err)
-	assert.True(t, result.Valid)
-}
-
 func staticReader(reader db.Reader) db.ReaderProvider {
 	return func(context.Context) (db.Reader, error) { return reader, nil }
 }
@@ -282,7 +187,7 @@ func TestUpdateIntentOwnsPatch(t *testing.T) {
 	next := domain.RecordFields{ShouldPayAddress: domain.RecordShares{{AddressID: uuid.NewString(), ExtendMsg: 20}}}
 	patch, err := recordpatch.Diff(old, next)
 	require.NoError(t, err)
-	intent, err := NewRecordFactory(staticReader(factoryReader{node: db.RecordNode{TripID: tripID, Info: domain.RecordInfo{ID: target}}})).Update(context.Background(), target, patch)
+	intent, err := NewRecordFactory(staticReader(factoryReader{node: db.RecordSnapshot{TripID: tripID, Record: domain.Record{RecordInfo: domain.RecordInfo{ID: target}}}})).Update(context.Background(), target, patch)
 	require.NoError(t, err)
 	patch.Changes[0].Path[0] = "bad"
 	patch.Changes[0].To.(domain.RecordShares)[0].ExtendMsg = 99

@@ -51,7 +51,7 @@ func (f LoaderFunc[K, V]) Load(ctx context.Context, id K) (Node[K, V], error) {
 type ChainList[K comparable, V any] interface {
 	WalkFrom(context.Context, K) iter.Seq2[Node[K, V], error]
 	TailFrom(context.Context, K) (Node[K, V], error)
-	WalkCanonical(context.Context, K) iter.Seq2[Node[K, V], error]
+	WalkCanonical(context.Context, K, bool) iter.Seq2[Node[K, V], error]
 	Chains(context.Context, func(a, b Node[K, V]) int) iter.Seq2[[]Node[K, V], error]
 }
 
@@ -97,9 +97,10 @@ func (s *MemorySource[K, V]) TailFrom(ctx context.Context, startID K) (Node[K, V
 }
 
 // WalkCanonical traverses the complete canonical chain in the in-memory
-// snapshot that contains nodeID.
-func (s *MemorySource[K, V]) WalkCanonical(ctx context.Context, nodeID K) iter.Seq2[Node[K, V], error] {
-	return WalkCanonical(ctx, s, nodeID)
+// snapshot that contains nodeID when rootTrace is true; otherwise it walks
+// forward from nodeID.
+func (s *MemorySource[K, V]) WalkCanonical(ctx context.Context, nodeID K, rootTrace bool) iter.Seq2[Node[K, V], error] {
+	return WalkCanonical(ctx, s, nodeID, rootTrace)
 }
 
 // LazySource adapts a Loader to ChainList. It does not preload nodes: each
@@ -144,9 +145,10 @@ func (s *LazySource[K, V]) TailFrom(ctx context.Context, startID K) (Node[K, V],
 }
 
 // WalkCanonical incrementally resolves the root and then yields its canonical
-// chain one node at a time.
-func (s *LazySource[K, V]) WalkCanonical(ctx context.Context, nodeID K) iter.Seq2[Node[K, V], error] {
-	return WalkCanonical(ctx, s, nodeID)
+// chain one node at a time when rootTrace is true; otherwise it walks forward
+// from nodeID without resolving ancestors.
+func (s *LazySource[K, V]) WalkCanonical(ctx context.Context, nodeID K, rootTrace bool) iter.Seq2[Node[K, V], error] {
+	return WalkCanonical(ctx, s, nodeID, rootTrace)
 }
 
 // Chains resolves the configured roots, orders them with compare, and then
@@ -259,10 +261,14 @@ func TailFrom[K comparable, V any](ctx context.Context, loader Loader[K, V], sta
 	return tail, nil
 }
 
-// WalkCanonical first walks through parent links to find the root and verifies
+// WalkCanonical with rootTrace enabled first finds the root and verifies
 // that each parent selected the requested ancestry through ChildID. It then
-// yields the complete canonical chain from root to tail.
-func WalkCanonical[K comparable, V any](ctx context.Context, loader Loader[K, V], nodeID K) iter.Seq2[Node[K, V], error] {
+// yields the complete canonical chain from root to tail. With rootTrace disabled,
+// it only walks forward from nodeID, without validating its ancestors.
+func WalkCanonical[K comparable, V any](ctx context.Context, loader Loader[K, V], nodeID K, rootTrace bool) iter.Seq2[Node[K, V], error] {
+	if !rootTrace {
+		return WalkFrom(ctx, loader, nodeID)
+	}
 	return func(yield func(Node[K, V], error) bool) {
 		rootID, err := canonicalRoot(ctx, loader, nodeID)
 		if err != nil {

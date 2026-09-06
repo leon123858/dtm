@@ -10,6 +10,7 @@ import (
 	"dtm/adapters/mq/mq"
 	"dtm/domain"
 	"dtm/graph/model"
+	"dtm/graph/utils"
 	tripservice "dtm/services/trip"
 
 	"github.com/google/uuid"
@@ -22,10 +23,15 @@ type recordQueryDB struct {
 	records map[uuid.UUID][]domain.RecordInfo
 }
 
-func (r *recordQueryDB) DataLoaderGetRecordInfoList(_ context.Context, ids []uuid.UUID) (map[uuid.UUID][]domain.RecordInfo, error) {
-	result := map[uuid.UUID][]domain.RecordInfo{}
+func (r *recordQueryDB) DataLoaderGetTripRecords(_ context.Context, ids []uuid.UUID, options db.RecordReadOptions) (map[uuid.UUID][]db.RecordSnapshot, error) {
+	result := map[uuid.UUID][]db.RecordSnapshot{}
 	for _, id := range ids {
-		result[id] = r.records[id]
+		for _, info := range r.records[id] {
+			if !options.HaveHistory && (info.ChildRecordID != nil || info.IsDeleted) {
+				continue
+			}
+			result[id] = append(result[id], db.RecordSnapshot{TripID: id, Record: domain.Record{RecordInfo: info}})
+		}
 	}
 	return result, nil
 }
@@ -71,7 +77,7 @@ func TestTripResolversShareRequestScopedLoaderCache(t *testing.T) {
 
 	query := &queryResolver{Resolver: base}
 	for range 2 {
-		trip, queryErr := query.Trip(ctx, tripID.String())
+		trip, queryErr := query.Trip(ctx, tripID.String(), false)
 		require.NoError(t, queryErr)
 		assert.Equal(t, &model.Trip{ID: tripID.String(), Name: "trip"}, trip)
 	}
@@ -89,10 +95,10 @@ func TestTripResolversShareRequestScopedLoaderCache(t *testing.T) {
 	assert.Equal(t, db.DataLoadCount{Batches: 1, Keys: 1}, loads.TripAddresses)
 }
 
-func TestRecordIsValidRejectsInvalidEventBeforeReadingPayload(t *testing.T) {
-	valid, err := (&recordResolver{Resolver: &Resolver{}}).IsValid(context.Background(), &model.Record{ID: uuid.NewString(), Category: model.RecordCategoryNormal, EventValid: false})
+func TestRecordIsValidRejectsInvalidPayload(t *testing.T) {
+	record, err := utils.ToModelRecordChecked(domain.Record{RecordInfo: domain.RecordInfo{ID: uuid.New(), Category: domain.CategoryNormal}}, false)
 	require.NoError(t, err)
-	assert.False(t, valid)
+	assert.False(t, record.IsValid)
 }
 
 type trackingRecordQueue struct {
@@ -151,7 +157,7 @@ func (f *resolverTripFactory) Create(_ context.Context, name string) (tripservic
 	f.createdName = name
 	return f.trip, nil
 }
-func (f *resolverTripFactory) ForTrip(id uuid.UUID) tripservice.Trip {
+func (f *resolverTripFactory) ForTrip(id uuid.UUID, _ ...tripservice.ReadOptions) tripservice.Trip {
 	f.selectedID = id
 	f.trip.id = id
 	return f.trip
@@ -282,18 +288,10 @@ func TestRecordMutationsKeepMQIdentityAndSkipNoOpPublish(t *testing.T) {
 	assert.True(t, latest.IsActive)
 	require.Len(t, queues.queues[mq.ActionUpdate].messages, 1)
 
-	recordLoadsBeforePayload := db.DataLoaderDebug.Snapshot().Records
-	fields := &recordResolver{Resolver: resolver.Resolver}
-	shouldPay, err := fields.ShouldPayAddress(ctx, updated)
-	require.NoError(t, err)
-	require.Len(t, shouldPay, 1)
-	assert.Equal(t, member.ID.String(), shouldPay[0].ID)
-	extendPay, err := fields.ExtendPayMsg(ctx, updated)
-	require.NoError(t, err)
-	assert.Equal(t, []float64{0}, extendPay)
-	recordLoadsAfterPayload := db.DataLoaderDebug.Snapshot().Records
-	assert.Equal(t, recordLoadsBeforePayload, recordLoadsAfterPayload)
-	t.Logf("record backing loads before payload fields=%+v after=%+v", recordLoadsBeforePayload, recordLoadsAfterPayload)
+	require.Len(t, updated.ShouldPayAddress, 1)
+	assert.Equal(t, member.ID.String(), updated.ShouldPayAddress[0].ID)
+	assert.Equal(t, []float64{0}, updated.ExtendPayMsg)
+	assert.True(t, updated.IsValid)
 }
 
 func TestUpdateRecordAllowsInvalidOldInputToRepairActiveRecord(t *testing.T) {

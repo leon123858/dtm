@@ -117,7 +117,7 @@ func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, inpu
 		fmt.Println("Warning: fail to notice event: " + err.Error())
 	}
 
-	return utils.ToModelRecord(record.RecordInfo, true), nil
+	return utils.ToModelRecord(*record, true), nil
 }
 
 // UpdateRecord is the resolver for the updateRecord field.
@@ -154,7 +154,7 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, in
 		return nil, fmt.Errorf("failed to update record: %w", err)
 	}
 	if !result.Appended {
-		return utils.ToModelRecord(result.Record.Info(), result.Record.IsActive()), nil
+		return utils.ToModelRecord(result.Record.DomainRecord(), result.Record.IsActive()), nil
 	}
 	resultRecord := result.Record.DomainRecord()
 
@@ -174,7 +174,7 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, in
 		fmt.Println("Warning: fail to notice event: " + err.Error())
 	}
 
-	return utils.ToModelRecord(resultRecord.RecordInfo, true), nil
+	return utils.ToModelRecord(resultRecord, true), nil
 }
 
 // CreateAddress is the resolver for the createAddress field.
@@ -265,7 +265,7 @@ func (r *mutationResolver) DeleteAddress(ctx context.Context, tripID string, add
 }
 
 // Trip is the resolver for the trip field.
-func (r *queryResolver) Trip(ctx context.Context, tripID string) (*model.Trip, error) {
+func (r *queryResolver) Trip(ctx context.Context, tripID string, haveHistory bool) (*model.Trip, error) {
 	id, err := uuid.Parse(tripID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
@@ -287,71 +287,10 @@ func (r *queryResolver) Trip(ctx context.Context, tripID string) (*model.Trip, e
 	}
 
 	return &model.Trip{
-		ID:   tripInfo.ID.String(),
-		Name: tripInfo.Name,
+		HaveHistory: haveHistory,
+		ID:          tripInfo.ID.String(),
+		Name:        tripInfo.Name,
 	}, nil
-}
-
-// ShouldPayAddress is the resolver for the shouldPayAddress field.
-func (r *recordResolver) ShouldPayAddress(ctx context.Context, obj *model.Record) ([]*model.Address, error) {
-	factory, err := r.recordFactory(ctx)
-	if err != nil {
-		return nil, err
-	}
-	info, err := utils.ModelRecordInfo(obj)
-	if err != nil {
-		return nil, err
-	}
-	record := factory.FromInfo(info, obj.EventValid)
-	addresses, err := record.GetShouldPay(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get should pay addresses: %w", err)
-	}
-
-	addressList := make([]*model.Address, len(addresses))
-	for i, addr := range addresses {
-		addressList[i] = utils.ToModelAddress(addr.Address)
-	}
-	return addressList, nil
-}
-
-// ExtendPayMsg is the resolver for the extendPayMsg field.
-func (r *recordResolver) ExtendPayMsg(ctx context.Context, obj *model.Record) ([]float64, error) {
-	factory, err := r.recordFactory(ctx)
-	if err != nil {
-		return nil, err
-	}
-	info, err := utils.ModelRecordInfo(obj)
-	if err != nil {
-		return nil, err
-	}
-	record := factory.FromInfo(info, obj.EventValid)
-	addresses, err := record.GetShouldPay(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get should pay addresses: %w", err)
-	}
-
-	msgList := make([]float64, len(addresses))
-	for i, addr := range addresses {
-		msgList[i] = float64(addr.ExtendMsg)
-	}
-	return msgList, nil
-}
-
-// IsValid is the resolver for the isValid field.
-func (r *recordResolver) IsValid(ctx context.Context, obj *model.Record) (bool, error) {
-	if !obj.EventValid {
-		return false, nil
-	}
-	record, err := utils.ModelRecordInfo(obj)
-	if err != nil {
-		return false, err
-	}
-	factory, err := r.recordFactory(ctx)
-	if err != nil {
-		return false, err
-	}
-	return factory.FromInfo(record, obj.EventValid).Validate(ctx)
 }
 
 // SubRecordCreate is the resolver for the subRecordCreate field.
@@ -467,7 +406,7 @@ func (r *tripResolver) Records(ctx context.Context, obj *model.Trip) ([]*model.R
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
 	}
 
-	trip, err := r.tripForID(tripID)
+	trip, err := r.tripForID(tripID, tripservice.ReadOptions{HaveHistory: obj.HaveHistory})
 	if err != nil {
 		return nil, err
 	}
@@ -477,7 +416,7 @@ func (r *tripResolver) Records(ctx context.Context, obj *model.Trip) ([]*model.R
 	}
 	recordModels := make([]*model.Record, len(records))
 	for i, record := range records {
-		recordModels[i], err = utils.ToModelRecordChecked(record.Info(), record.IsActive(), record.EventValid())
+		recordModels[i], err = utils.ToModelRecordChecked(record.DomainRecord(), record.IsActive())
 		if err != nil {
 			return nil, err
 		}
@@ -491,7 +430,7 @@ func (r *tripResolver) MoneyShare(ctx context.Context, obj *model.Trip) ([]*mode
 	if err != nil {
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
 	}
-	trip, err := r.tripForID(tripID)
+	trip, err := r.tripForID(tripID, tripservice.ReadOptions{HaveHistory: obj.HaveHistory})
 	if err != nil {
 		return nil, err
 	}
@@ -516,7 +455,7 @@ func (r *tripResolver) Addresses(ctx context.Context, obj *model.Trip) ([]*model
 	if err != nil {
 		return nil, fmt.Errorf("invalid trip ID: %w", err)
 	}
-	trip, err := r.tripForID(tripID)
+	trip, err := r.tripForID(tripID, tripservice.ReadOptions{HaveHistory: obj.HaveHistory})
 	if err != nil {
 		return nil, err
 	}
@@ -537,7 +476,7 @@ func (r *tripResolver) IsValid(ctx context.Context, obj *model.Trip) (bool, erro
 	if err != nil {
 		return false, fmt.Errorf("invalid trip ID: %w", err)
 	}
-	trip, err := r.tripForID(tripID)
+	trip, err := r.tripForID(tripID, tripservice.ReadOptions{HaveHistory: obj.HaveHistory})
 	if err != nil {
 		return false, err
 	}
@@ -558,9 +497,6 @@ func (r *Resolver) Mutation() MutationResolver { return &mutationResolver{r} }
 // Query returns QueryResolver implementation.
 func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
 
-// Record returns RecordResolver implementation.
-func (r *Resolver) Record() RecordResolver { return &recordResolver{r} }
-
 // Subscription returns SubscriptionResolver implementation.
 func (r *Resolver) Subscription() SubscriptionResolver { return &subscriptionResolver{r} }
 
@@ -569,6 +505,5 @@ func (r *Resolver) Trip() TripResolver { return &tripResolver{r} }
 
 type mutationResolver struct{ *Resolver }
 type queryResolver struct{ *Resolver }
-type recordResolver struct{ *Resolver }
 type subscriptionResolver struct{ *Resolver }
 type tripResolver struct{ *Resolver }
