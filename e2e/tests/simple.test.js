@@ -32,7 +32,7 @@ describe('GraphQL API End-to-End Tests', () => {
 		it('should fetch the created trip correctly', async () => {
 			const { data, error } = await client.query({
 				query: GET_TRIP,
-				variables: { tripId },
+				variables: { tripId, haveHistory: true },
 			});
 
 			expect(error).toBeUndefined();
@@ -99,7 +99,7 @@ describe('GraphQL API End-to-End Tests', () => {
 
 			const { data: queryData } = await client.query({
 				query: GET_TRIP,
-				variables: { tripId },
+				variables: { tripId, haveHistory: true },
 			});
 			expect(queryData.trip.addresses).toContainEqual(addressAlice);
 			expect(queryData.trip.addresses).not.toContainEqual(addressBob);
@@ -126,7 +126,7 @@ describe('GraphQL API End-to-End Tests', () => {
 
 			const { data: tripData } = await client.query({
 				query: GET_TRIP,
-				variables: { tripId },
+				variables: { tripId, haveHistory: true },
 			});
 			expect(tripData.trip.records).toHaveLength(1);
 			expect(tripData.trip.records[0].name).toBe(newRecord.name);
@@ -185,7 +185,7 @@ describe('GraphQL API End-to-End Tests', () => {
 
 			const { data: tripData } = await client.query({
 				query: GET_TRIP,
-				variables: { tripId },
+				variables: { tripId, haveHistory: true },
 			});
 			expect(tripData.trip.records).toHaveLength(3);
 			const original = tripData.trip.records.find((record) => record.id === recordId);
@@ -211,7 +211,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			expect(undoData.updateRecord.id).not.toBe(deleteRecordId);
 			const { data: restoredTrip } = await client.query({
 				query: GET_TRIP,
-				variables: { tripId },
+				variables: { tripId, haveHistory: true },
 				fetchPolicy: 'network-only',
 			});
 			expect(restoredTrip.trip.records).toHaveLength(4);

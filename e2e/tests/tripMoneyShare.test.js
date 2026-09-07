@@ -47,7 +47,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 		// verify addresses are added to trip
 		const { data: fetchedTripData } = await client.query({
 			query: GET_TRIP,
-			variables: { tripId },
+			variables: { tripId, haveHistory: true },
 		});
 		expect(fetchedTripData.trip.addresses).toEqual(
 			expect.arrayContaining([addressAlice, addressBob, addressCharlie])
@@ -105,7 +105,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			// Fetch the trip with all details, including moneyShare
 			const { data, error } = await client.query({
 				query: GET_TRIP,
-				variables: { tripId },
+				variables: { tripId, haveHistory: true },
 			});
 
 			expect(error).toBeUndefined();
@@ -147,8 +147,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			localTripId = data.createTrip.id;
 		});
 
-		it.skip('should fail when remove addr have dependency', async () => {
-			// only on DB with dependency
+		it('rejects deletion of a referenced address without changing trip state', async () => {
 			const tempAddress = (await client.mutate({
 				mutation: CREATE_ADDRESS,
 				variables: { tripId: localTripId, input: { name: 'TempPayer' } },
@@ -181,15 +180,14 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			});
 			expect(tripData.trip.records[0].isValid).toBe(true);
 
-			try {
-				await client.mutate({
-					mutation: DELETE_ADDRESS,
-					variables: { tripId: localTripId, addressId: tempAddress.id },
-				});
-				throw new Error('Should not get this Error');
-			} catch (err) {
-				expect(err.message).not.toBe('Should not get this Error');
-			}
+			await expect(client.mutate({
+				mutation: DELETE_ADDRESS,
+				variables: { tripId: localTripId, addressId: tempAddress.id },
+			})).rejects.toMatchObject({ graphQLErrors: expect.arrayContaining([
+				expect.objectContaining({ message: expect.stringMatching(/referenced/) }),
+			]) });
+			const after = await client.query({ query: GET_TRIP, variables: { tripId: localTripId } });
+			expect(after.data.trip).toEqual(tripData.trip);
 		});
 
 		it('should reject a FIX record if amounts do not sum up', async () => {

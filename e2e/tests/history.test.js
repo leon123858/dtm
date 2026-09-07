@@ -20,7 +20,7 @@ it('defaults to live tails and isolates a history alias through deletion and res
     isValid moneyShare { input { amount address { id } } output { amount address { id } } }
    }
    history: trip(tripId: $tripId, haveHistory: true) {
-    records { id isActive isDeleted }
+    records { id parentRecordId isActive isDeleted }
     isValid moneyShare { input { amount address { id } } output { amount address { id } } }
    }
   }
@@ -30,6 +30,9 @@ it('defaults to live tails and isolates a history alias through deletion and res
  const deletion = await client.mutate({ mutation: UPDATE_RECORD, variables: { recordId, input: { old: original, new: deleted } } });
  let state = await read();
  expect(state.latest.records).toEqual([]);
+ expect(state.latest.moneyShare).toEqual([]);
+ expect(state.latest.isValid).toBe(true);
+ expect(state.history.records.find(r => r.id === recordId)).toMatchObject({ isActive: false, isDeleted: false, parentRecordId: null });
  expect(state.history.records).toHaveLength(2);
  expect(state.history.records.find(r => r.id === deletion.data.updateRecord.id)).toMatchObject({ isActive: true, isDeleted: true });
  expect(state.latest.moneyShare).toEqual(state.history.moneyShare);
@@ -40,6 +43,13 @@ it('defaults to live tails and isolates a history alias through deletion and res
  expect(state.latest.records[0].shouldPayAddress.map(a => a.id)).toEqual([members[1]]);
  expect(state.latest.records[0].extendPayMsg).toEqual([0]);
  expect(state.history.records).toHaveLength(3);
+ expect(restored.data.updateRecord.parentRecordId).toBe(deletion.data.updateRecord.id);
+ expect(state.history.records.filter(r => r.isActive).map(r => r.id)).toEqual([restored.data.updateRecord.id]);
+ expect(state.latest.moneyShare).toHaveLength(1);
+ expect(state.latest.moneyShare[0]).toMatchObject({
+  input: [{ amount: 20, address: { id: members[1] } }],
+  output: { amount: 20, address: { id: members[0] } },
+ });
  expect(state.latest.moneyShare).toEqual(state.history.moneyShare);
  expect(state.latest.isValid).toBe(true);
  expect(state.history.isValid).toBe(true);

@@ -5,8 +5,8 @@ import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { createClient } from 'graphql-ws';
 
 const { GRAPHQL_ENDPOINT_HTTP, GRAPHQL_ENDPOINT_WS } = {
-	GRAPHQL_ENDPOINT_HTTP: 'http://127.0.0.1:8080/query',
-	GRAPHQL_ENDPOINT_WS: 'ws://127.0.0.1:8080/subscription',
+	GRAPHQL_ENDPOINT_HTTP: process.env.GRAPHQL_ENDPOINT_HTTP || 'http://127.0.0.1:8080/query',
+	GRAPHQL_ENDPOINT_WS: process.env.GRAPHQL_ENDPOINT_WS || 'ws://127.0.0.1:8080/subscription',
 };
 
 let WebSocketImpl;

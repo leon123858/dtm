@@ -89,8 +89,8 @@ export const UPDATE_RECORD = gql`
 
 // --- Queries ---
 export const GET_TRIP = gql`
-	query GetTrip($tripId: ID!) {
-		trip(tripId: $tripId, haveHistory: true) {
+	query GetTrip($tripId: ID!, $haveHistory: Boolean! = false) {
+		trip(tripId: $tripId, haveHistory: $haveHistory) {
 			id
 			name
 			addresses { id name }

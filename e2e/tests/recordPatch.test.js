@@ -43,7 +43,7 @@ describe('Record changelog patches', () => {
 		expect(third.extendPayMsg).toEqual([1, 2]);
 		expect(third.name).toBe('dinner');
 		expect(third.amount).toBe(30);
-		const tripState = await client.query({ query: GET_TRIP, variables: { tripId } });
+		const tripState = await client.query({ query: GET_TRIP, variables: { tripId, haveHistory: true } });
 		expect(tripState.data.trip.records).toHaveLength(4);
 		expect(tripState.data.trip.records.filter(r => r.isActive).map(r => r.id)).toEqual([third.id]);
 	});
