@@ -34,7 +34,18 @@ func upAppendOnlyDeleteRecords(ctx context.Context, tx *sql.Tx) error {
 }
 
 func downAppendOnlyDeleteRecords(ctx context.Context, tx *sql.Tx) error {
+	// Drop deferred constraints first. Deleting records while these exist creates pending
+	// trigger events, preventing further ALTER TABLE commands in the same transaction.
 	_, err := tx.ExecContext(ctx, `
+		ALTER TABLE records
+			DROP CONSTRAINT fk_records_parent,
+			DROP CONSTRAINT fk_records_child;
+	`)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.ExecContext(ctx, `
 		CREATE TEMP TABLE append_only_active_record_tails (
 			trip_id UUID NOT NULL,
 			id UUID NOT NULL,
@@ -53,9 +64,6 @@ func downAppendOnlyDeleteRecords(ctx context.Context, tx *sql.Tx) error {
 			WHERE tail.trip_id = rsp.trip_id AND tail.id = rsp.record_id
 		);
 
-		UPDATE records
-		SET parent_record_id = NULL, child_record_id = NULL;
-
 		DELETE FROM records r
 		WHERE NOT EXISTS (
 			SELECT 1
@@ -66,8 +74,6 @@ func downAppendOnlyDeleteRecords(ctx context.Context, tx *sql.Tx) error {
 		DROP INDEX uq_records_parent_record_id;
 		DROP INDEX uq_records_child_record_id;
 		ALTER TABLE records
-			DROP CONSTRAINT fk_records_parent,
-			DROP CONSTRAINT fk_records_child,
 			DROP CONSTRAINT chk_records_not_self_linked,
 			DROP CONSTRAINT chk_records_child_not_self_linked,
 			DROP COLUMN parent_record_id,
