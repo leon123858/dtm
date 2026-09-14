@@ -4,7 +4,7 @@ package recordpatch
 
 import (
 	"fmt"
-	"reflect"
+	"slices"
 	"strconv"
 	"time"
 
@@ -15,12 +15,9 @@ import (
 	odiff "github.com/r3labs/diff/v3"
 )
 
-func recordDiffer() *odiff.Differ {
-	return diff.GetCustomDiffer(&diff.AtomicComparer[domain.RecordShares]{})
-}
-
 // Diff generates the patch from the client's baseline, never from
 // the current database tail. The latter is only read while applying the patch.
+// Callers validate the new snapshot, including member uniqueness, before Diff.
 func Diff(old, next domain.RecordFields) (domain.RecordPatch, error) {
 	// Empty and nil collections have the same record meaning.
 	if len(old.ShouldPayAddress) == 0 {
@@ -29,36 +26,28 @@ func Diff(old, next domain.RecordFields) (domain.RecordPatch, error) {
 	if len(next.ShouldPayAddress) == 0 {
 		next.ShouldPayAddress = nil
 	}
-	changes, err := recordDiffer().Diff(old, next)
+	changes, err := diff.GetCustomDiffer().Diff(old, next)
 	if err != nil {
 		return domain.RecordPatch{}, fmt.Errorf("diff record: %w", err)
 	}
 	return (domain.RecordPatch{Changes: changes}).Clone(), nil
 }
 
-// Apply applies every change to a detached editable snapshot. The caller must
-// validate the materialized record before persisting it inside the append lock.
+// Apply accepts a patch produced by Diff and applies it to a detached snapshot.
+// The caller enforces record policy before persisting inside the append lock.
 func Apply(tail domain.Record, p domain.RecordPatch) (domain.Record, error) {
 	fields := tail.EditableFields()
-	// Validate the whole path and exact value type before entering r3labs' best
-	// effort patcher. In particular, no chain links or slice indices are allowed.
-	targetType := reflect.TypeFor[domain.RecordFields]()
-	for _, change := range p.Changes {
-		if len(change.Path) != 1 || change.Type != odiff.UPDATE {
-			return domain.Record{}, fmt.Errorf("invalid record patch operation %s at %v", change.Type, change.Path)
+	differ := diff.GetCustomDiffer()
+	for _, change := range p.Clone().Changes {
+		// r3labs v3.0.2 clears the entire slice when deleting a missing member.
+		if share, ok := change.From.(domain.RecordShare); ok && change.Type == odiff.DELETE &&
+			!slices.ContainsFunc(fields.ShouldPayAddress, func(s domain.RecordShare) bool { return s.AddressID == share.AddressID }) {
+			continue
 		}
-		field, ok := targetType.FieldByName(change.Path[0])
-		if !ok || reflect.TypeOf(change.To) != field.Type || reflect.TypeOf(change.From) != field.Type {
-			return domain.Record{}, fmt.Errorf("invalid record patch field or value at %v", change.Path)
-		}
-	}
-	patchLog := recordDiffer().Patch(p.Clone().Changes, &fields)
-	for _, entry := range patchLog {
-		if entry.Errors != nil {
-			return domain.Record{}, fmt.Errorf("apply record patch at %v: %w", entry.Path, entry.Errors)
-		}
-		if !entry.HasFlag(odiff.FlagApplied) || entry.HasFlag(odiff.FlagFailed|odiff.FlagIgnored|odiff.FlagInvalidTarget|odiff.FlagParentSetFailed) {
-			return domain.Record{}, fmt.Errorf("record patch was not fully applied at %v (flags %d)", entry.Path, entry.Flags)
+		for _, entry := range differ.Patch(odiff.Changelog{change}, &fields) {
+			if entry.Errors != nil {
+				return domain.Record{}, fmt.Errorf("apply record patch at %v: %w", entry.Path, entry.Errors)
+			}
 		}
 	}
 	return materialize(fields, tail)

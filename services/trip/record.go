@@ -1,9 +1,11 @@
 package trip
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"dtm/adapters/db/db"
 	"dtm/domain"
@@ -31,11 +33,15 @@ type record struct {
 
 var _ Record = (*record)(nil)
 
-func (r *record) ID() uuid.UUID               { return r.data.ID }
-func (r *record) TripID() uuid.UUID           { return r.tripID }
-func (r *record) Info() domain.RecordInfo     { return cloneRecordInfo(r.data.RecordInfo) }
-func (r *record) DomainRecord() domain.Record { return cloneDomainRecord(r.data) }
-func (r *record) IsActive() bool              { return r.active }
+func (r *record) ID() uuid.UUID           { return r.data.ID }
+func (r *record) TripID() uuid.UUID       { return r.tripID }
+func (r *record) Info() domain.RecordInfo { return cloneRecordInfo(r.data.RecordInfo) }
+func (r *record) DomainRecord() domain.Record {
+	value := cloneDomainRecord(r.data)
+	slices.SortFunc(value.ShouldPayAddress, func(a, b domain.ExtendAddress) int { return bytes.Compare(a.Address.ID[:], b.Address.ID[:]) })
+	return value
+}
+func (r *record) IsActive() bool { return r.active }
 
 func (r *record) GetShouldPay() []domain.ExtendAddress {
 	return cloneAddresses(r.data.ShouldPayAddress)

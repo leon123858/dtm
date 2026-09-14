@@ -43,8 +43,8 @@ func changedFields(t *testing.T, old, next model.NewRecord) map[string]any {
 	require.NoError(t, err)
 	fields := map[string]any{}
 	for _, change := range patch.Changes {
-		require.Len(t, change.Path, 1)
-		fields[change.Path[0]] = change.To
+		require.NotEmpty(t, change.Path)
+		fields[strings.Join(change.Path, "/")] = change.To
 	}
 	return fields
 }
@@ -88,7 +88,8 @@ func TestBuildRecordPatchIncludesOnlyChangedFields(t *testing.T) {
 	assert.Equal(t, map[string]any{
 		"Amount": float64(30), "PrePayAddressID": next.PrePayAddressID,
 		"Category": "1", "Time": "1234",
-		"ShouldPayAddress": domain.RecordShares{{AddressID: next.ShouldPayAddressIds[0], ExtendMsg: 30}},
+		"ShouldPayAddress/" + old.ShouldPayAddressIds[0]:  nil,
+		"ShouldPayAddress/" + next.ShouldPayAddressIds[0]: domain.RecordShare{AddressID: next.ShouldPayAddressIds[0], ExtendMsg: 30},
 	}, changedFields(t, old, next))
 }
 
@@ -128,7 +129,7 @@ func TestBuildRecordPatchRepairsMalformedBaseline(t *testing.T) {
 	old.Time = ptr("broken")
 	old.Category = ptr(model.RecordCategory("BROKEN"))
 	old.Amount = 0
-	assert.Len(t, changedFields(t, old, next), 5)
+	assert.Len(t, changedFields(t, old, next), 6)
 }
 
 func TestBuildRecordPatchRejectsMalformedNew(t *testing.T) {
@@ -188,4 +189,14 @@ func TestToModelRecordCheckedMaterializesShares(t *testing.T) {
 	assert.False(t, record.IsValid)
 	assert.Equal(t, []*model.Address{}, record.ShouldPayAddress)
 	assert.Equal(t, []float64{}, record.ExtendPayMsg)
+}
+
+func TestBuildRecordPatchRejectsDuplicateNewMembers(t *testing.T) {
+	old := validPatchInput()
+	for _, duplicate := range []string{old.ShouldPayAddressIds[0], strings.ToUpper(old.ShouldPayAddressIds[0])} {
+		next := old
+		next.ShouldPayAddressIds = []string{old.ShouldPayAddressIds[0], duplicate}
+		_, err := BuildRecordPatch(old, next)
+		require.ErrorContains(t, err, "duplicate should-pay address")
+	}
 }

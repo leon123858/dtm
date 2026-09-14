@@ -254,6 +254,15 @@ func TestAppendPatchWaitsAndFollowsNewTail(t *testing.T) {
 
 type waitingWriterKey struct{}
 
+// Inject invalid materialized rows to exercise database rollback independently
+// of the identifier-based differ, which cannot emit duplicate members.
+type duplicateSharePolicy struct{ testutil.Materializer }
+
+func (duplicateSharePolicy) ApplyPatch(tail domain.Record, _ domain.RecordPatch, _ []domain.Address) (domain.Record, bool, error) {
+	tail.ShouldPayAddress = []domain.ExtendAddress{tail.ShouldPayAddress[0], tail.ShouldPayAddress[0]}
+	return tail, true, nil
+}
+
 func TestAppendPatchBatchFailureRollsBack(t *testing.T) {
 	store, cleanup, tripID, payer, member := setupTrip(t)
 	defer cleanup()
@@ -262,11 +271,8 @@ func TestAppendPatchBatchFailureRollsBack(t *testing.T) {
 	require.NoError(t, err)
 	// Duplicate share rows violate the primary key during the batch INSERT,
 	// after the old tail link and the new record have already been written.
-	patch := testutil.Patch(t, domain.RecordFields{}, domain.RecordFields{ShouldPayAddress: domain.RecordShares{
-		{AddressID: member.ID.String(), ExtendMsg: 1},
-		{AddressID: member.ID.String(), ExtendMsg: 2},
-	}})
-	_, _, appended, err := store.AppendPatch(ctx, tripID, root.ID, patch, testutil.Materializer{})
+	patch := domain.RecordPatch{}
+	_, _, appended, err := store.AppendPatch(ctx, tripID, root.ID, patch, duplicateSharePolicy{})
 	require.Error(t, err)
 	assert.False(t, appended)
 	records, err := store.DataLoaderGetTripRecords(ctx, []uuid.UUID{tripID}, db.RecordReadOptions{HaveHistory: true})
@@ -369,4 +375,10 @@ func TestCompleteRecordReadsUseOneSelect(t *testing.T) {
 	_, err = wrapper.DataLoaderGetRecordList(ctx, nil)
 	require.NoError(t, err)
 	assert.Empty(t, recorder.statements)
+}
+
+func TestSharePatchContract(t *testing.T) {
+	wrapper, cleanup := setupTestDB(t)
+	defer cleanup()
+	testutil.CheckSharePatchContract(t, wrapper)
 }

@@ -226,11 +226,16 @@ func MapNewRecordToDomainRecord(input model.NewRecord) (*domain.Record, error) {
 		},
 	}
 
+	seen := make(map[uuid.UUID]struct{}, len(input.ShouldPayAddressIds))
 	for i, rawID := range input.ShouldPayAddressIds {
 		addressID, err := uuid.Parse(rawID)
 		if err != nil {
 			return nil, fmt.Errorf("invalid should-pay address ID at index %d: %w", i, err)
 		}
+		if _, duplicate := seen[addressID]; duplicate {
+			return nil, fmt.Errorf("duplicate should-pay address %s", addressID)
+		}
+		seen[addressID] = struct{}{}
 		if i < len(input.ExtendPayMsg) {
 			record.ShouldPayAddress[i] = domain.ExtendAddress{
 				Address:   domain.Address{ID: addressID},

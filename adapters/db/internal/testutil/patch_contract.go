@@ -11,7 +11,6 @@ import (
 	"dtm/domain"
 
 	"github.com/google/uuid"
-	odiff "github.com/r3labs/diff/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,6 +18,7 @@ import (
 // CheckPatchContract runs the same changelog/tail contract against both stores.
 func CheckPatchContract(t *testing.T, store db.TripDBWrapper) {
 	t.Helper()
+	t.Run("address constraints", func(t *testing.T) { checkPatchAddressConstraints(t, store) })
 	ctx := context.Background()
 	tripID := uuid.New()
 	require.NoError(t, store.CreateTrip(&domain.TripInfo{ID: tripID, Name: "patch contract"}))
@@ -56,14 +56,14 @@ func CheckPatchContract(t *testing.T, store db.TripDBWrapper) {
 	assert.False(t, appended)
 	assert.Equal(t, second.ID, same.ID)
 
-	// A real list change replaces the tail list rather than editing old indices.
+	// A stale member update restores a deleted member; CREATE updates the existing payer.
 	listEdit := old
 	listEdit.ShouldPayAddress = domain.RecordShares{{AddressID: member.ID.String(), ExtendMsg: 7}, {AddressID: payer.ID.String(), ExtendMsg: 8}}
 	_, third, appended, err := store.AppendPatch(ctx, tripID, base.ID, Patch(t, old, listEdit), Materializer{})
 	require.NoError(t, err)
 	require.True(t, appended)
 	assert.Equal(t, second.ID, *third.ParentRecordID)
-	assert.Equal(t, listEdit.ShouldPayAddress, third.EditableFields().ShouldPayAddress)
+	assert.ElementsMatch(t, listEdit.ShouldPayAddress, third.EditableFields().ShouldPayAddress)
 	assert.Equal(t, "dinner", third.Name)
 	assert.Equal(t, float64(30), third.Amount)
 
@@ -74,14 +74,7 @@ func CheckPatchContract(t *testing.T, store db.TripDBWrapper) {
 		patch  domain.RecordPatch
 		policy Materializer
 	}{
-		{"invalid path", domain.RecordPatch{Changes: odiff.Changelog{
-			{Type: odiff.UPDATE, Path: []string{"Name"}, From: "dinner", To: "partial"},
-			{Type: odiff.UPDATE, Path: []string{"ChildRecordID"}, From: "", To: "bad"},
-		}}, Materializer{}},
-		{"invalid patched value", domain.RecordPatch{Changes: odiff.Changelog{
-			{Type: odiff.UPDATE, Path: []string{"Name"}, From: "dinner", To: "partial"},
-			{Type: odiff.UPDATE, Path: []string{"Time"}, From: "4567", To: "invalid"},
-		}}, Materializer{}},
+		{"materialization failure", Patch(t, domain.RecordFields{Name: "dinner", Time: "4567"}, domain.RecordFields{Name: "partial", Time: "invalid"}), Materializer{}},
 		{"rejected snapshot", namePatch, Materializer{Err: errors.New("snapshot rejected")}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -123,4 +116,121 @@ func CheckPatchContract(t *testing.T, store db.TripDBWrapper) {
 		}
 	}
 	assert.Equal(t, 1, tails)
+}
+
+func checkPatchAddressConstraints(t *testing.T, store db.TripDBWrapper) {
+	ctx := context.Background()
+	tripID, otherTripID := uuid.New(), uuid.New()
+	require.NoError(t, store.CreateTrip(&domain.TripInfo{ID: tripID, Name: "constraints"}))
+	require.NoError(t, store.CreateTrip(&domain.TripInfo{ID: otherTripID, Name: "other"}))
+	member, err := store.CreateAddress(tripID, "member")
+	require.NoError(t, err)
+	foreign, err := store.CreateAddress(otherTripID, "foreign")
+	require.NoError(t, err)
+	base := domain.Record{
+		RecordInfo: domain.RecordInfo{ID: uuid.New(), Name: "meal", Amount: 20, Time: time.UnixMilli(1234), PrePayAddress: *member},
+		RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{{Address: *member}}},
+	}
+	_, err = store.AppendNew(ctx, tripID, base, Materializer{})
+	require.NoError(t, err)
+	for _, address := range []domain.Address{{ID: uuid.New()}, *foreign} {
+		for _, payer := range []bool{false, true} {
+			invalid := base
+			invalid.ID = uuid.New()
+			if payer {
+				invalid.PrePayAddress = address
+			} else {
+				invalid.ShouldPayAddress = []domain.ExtendAddress{{Address: address, ExtendMsg: 7}}
+			}
+			_, err := store.AppendNew(ctx, tripID, invalid, Materializer{})
+			require.Error(t, err, "storage must reject addresses outside the trip even without business validation")
+			// The absent share is an UPDATE, exercising the library's reconstruction.
+			old := invalid.EditableFields()
+			if payer {
+				old.PrePayAddressID = member.ID.String()
+			} else {
+				old.ShouldPayAddress[0].ExtendMsg = 1
+			}
+			_, _, appended, err := store.AppendPatch(ctx, tripID, base.ID, Patch(t, old, invalid.EditableFields()), Materializer{})
+			require.Error(t, err)
+			assert.False(t, appended)
+			history, err := store.DataLoaderGetTripRecords(ctx, []uuid.UUID{tripID}, db.RecordReadOptions{HaveHistory: true})
+			require.NoError(t, err)
+			require.Len(t, history[tripID], 1)
+			assert.Equal(t, base.ID, history[tripID][0].ID)
+			assert.Nil(t, history[tripID][0].ParentRecordID)
+			assert.Nil(t, history[tripID][0].ChildRecordID)
+			assert.Equal(t, base.EditableFields(), history[tripID][0].Record.EditableFields())
+		}
+	}
+}
+
+// CheckSharePatchContract isolates member merging from business validation.
+func CheckSharePatchContract(t *testing.T, store db.TripDBWrapper) {
+	t.Helper()
+	for _, scenario := range []string{"stale member edit", "reorder no-op", "deleted update restores member", "repeated deletion no-op"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx := context.Background()
+			tripID := uuid.New()
+			require.NoError(t, store.CreateTrip(&domain.TripInfo{ID: tripID, Name: "share contract"}))
+			a, err := store.CreateAddress(tripID, "A")
+			require.NoError(t, err)
+			b, err := store.CreateAddress(tripID, "B")
+			require.NoError(t, err)
+			c, err := store.CreateAddress(tripID, "C")
+			require.NoError(t, err)
+			base := domain.Record{RecordInfo: domain.RecordInfo{ID: uuid.New(), Name: "meal", Amount: 20, Time: time.UnixMilli(1234), PrePayAddress: *a}, RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{{Address: *a, ExtendMsg: 1}, {Address: *b, ExtendMsg: 2}}}}
+			_, err = store.AppendNew(ctx, tripID, base, Materializer{})
+			require.NoError(t, err)
+			before := base.EditableFields()
+			first, second := base.EditableFields(), base.EditableFields()
+			first.ShouldPayAddress = append(first.ShouldPayAddress, domain.RecordShare{AddressID: c.ID.String(), ExtendMsg: 3})
+			want := append(domain.RecordShares(nil), first.ShouldPayAddress...)
+			wantAppend := false
+			switch scenario {
+			case "stale member edit":
+				second.ShouldPayAddress[1].ExtendMsg = 20
+				want[1].ExtendMsg = 20
+				wantAppend = true
+			case "reorder no-op":
+				second.ShouldPayAddress[0], second.ShouldPayAddress[1] = second.ShouldPayAddress[1], second.ShouldPayAddress[0]
+			case "deleted update restores member":
+				first.ShouldPayAddress = first.ShouldPayAddress[1:]
+				second.ShouldPayAddress[0].ExtendMsg = 10
+				want[0].ExtendMsg = 10
+				wantAppend = true
+			case "repeated deletion no-op":
+				first.ShouldPayAddress = first.ShouldPayAddress[1:]
+				second.ShouldPayAddress = second.ShouldPayAddress[1:]
+				want = want[1:]
+			}
+			_, tail, appended, err := store.AppendPatch(ctx, tripID, base.ID, Patch(t, before, first), Materializer{})
+			require.NoError(t, err)
+			require.True(t, appended)
+			_, merged, appended, err := store.AppendPatch(ctx, tripID, base.ID, Patch(t, before, second), Materializer{})
+			require.NoError(t, err)
+			assert.Equal(t, wantAppend, appended)
+			assert.ElementsMatch(t, want, merged.EditableFields().ShouldPayAddress)
+			expectedCount := 2
+			if wantAppend {
+				expectedCount = 3
+				require.NotNil(t, merged.ParentRecordID)
+				assert.Equal(t, tail.ID, *merged.ParentRecordID)
+			} else {
+				assert.Equal(t, tail.ID, merged.ID)
+			}
+			history, err := store.DataLoaderGetTripRecords(ctx, []uuid.UUID{tripID}, db.RecordReadOptions{HaveHistory: true})
+			require.NoError(t, err)
+			assert.Len(t, history[tripID], expectedCount)
+			tails := 0
+			for _, record := range history[tripID] {
+				if record.ChildRecordID == nil {
+					tails++
+					assert.Equal(t, merged.ID, record.ID)
+					assert.ElementsMatch(t, want, record.Record.EditableFields().ShouldPayAddress)
+				}
+			}
+			assert.Equal(t, 1, tails)
+		})
+	}
 }

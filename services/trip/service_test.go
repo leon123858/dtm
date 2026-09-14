@@ -184,14 +184,14 @@ func policyTestPatch(t *testing.T, old domain.Record, edit func(*domain.Record))
 func TestUpdateIntentOwnsPatch(t *testing.T) {
 	target, tripID := uuid.New(), uuid.New()
 	old := domain.RecordFields{ShouldPayAddress: domain.RecordShares{{AddressID: uuid.NewString()}}}
-	next := domain.RecordFields{ShouldPayAddress: domain.RecordShares{{AddressID: uuid.NewString(), ExtendMsg: 20}}}
+	next := domain.RecordFields{ShouldPayAddress: domain.RecordShares{{AddressID: old.ShouldPayAddress[0].AddressID, ExtendMsg: 20}}}
 	patch, err := recordpatch.Diff(old, next)
 	require.NoError(t, err)
 	intent, err := NewRecordFactory(staticReader(factoryReader{node: db.RecordSnapshot{TripID: tripID, Record: domain.Record{RecordInfo: domain.RecordInfo{ID: target}}}})).Update(context.Background(), target, patch)
 	require.NoError(t, err)
 	patch.Changes[0].Path[0] = "bad"
-	patch.Changes[0].To.(domain.RecordShares)[0].ExtendMsg = 99
+	patch.Changes[0].To = float64(99)
 	stored := intent.(*record).patch
-	assert.Equal(t, []string{"ShouldPayAddress"}, stored.Changes[0].Path)
-	assert.Equal(t, float64(20), stored.Changes[0].To.(domain.RecordShares)[0].ExtendMsg)
+	assert.Equal(t, []string{"ShouldPayAddress", old.ShouldPayAddress[0].AddressID}, stored.Changes[0].Path)
+	assert.Equal(t, next.ShouldPayAddress[0], stored.Changes[0].To)
 }

@@ -17,20 +17,21 @@ type RecordFields struct {
 	Time             string
 	PrePayAddressID  string
 	Category         string
-	ShouldPayAddress RecordShares
+	ShouldPayAddress RecordShares `diff:"ShouldPayAddress,omitunequal"`
 	IsDeleted        bool
 }
 
 type RecordShare struct {
-	AddressID string
+	AddressID string `diff:"AddressID,identifier"`
 	ExtendMsg float64
 }
 
-// RecordShares is ordered and replaced atomically by a patch.
+// RecordShares identifies members by AddressID; order is not an edit.
 type RecordShares []RecordShare
 
 // RecordPatch contains an in-process r3labs changelog, not a serialized patch.
-// Only complete editable fields may be changed.
+// Obtain patches from recordpatch.Diff; consumers trust its paths and value types.
+// Changes target editable scalar fields or identified share members.
 type RecordPatch struct {
 	Changes odiff.Changelog
 }
@@ -50,14 +51,8 @@ func (r Record) EditableFields() RecordFields {
 func (p RecordPatch) Clone() RecordPatch {
 	copy := RecordPatch{Changes: make(odiff.Changelog, len(p.Changes))}
 	for i, change := range p.Changes {
-		copy.Changes[i] = odiff.Change{Type: change.Type, Path: slices.Clone(change.Path), From: clonePatchValue(change.From), To: clonePatchValue(change.To)}
+		// Scalar and RecordShare values contain no references.
+		copy.Changes[i] = odiff.Change{Type: change.Type, Path: slices.Clone(change.Path), From: change.From, To: change.To}
 	}
 	return copy
-}
-
-func clonePatchValue(value any) any {
-	if shares, ok := value.(RecordShares); ok {
-		return slices.Clone(shares)
-	}
-	return value // All other valid patch values are scalars.
 }

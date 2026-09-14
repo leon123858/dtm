@@ -3,13 +3,15 @@ package diff
 import (
 	"reflect"
 
+	"dtm/domain"
+
 	"github.com/google/uuid"
 	odiff "github.com/r3labs/diff/v3"
 )
 
 // GetCustomDiffer returns an independent differ; Differ keeps mutable state.
 func GetCustomDiffer(extra ...odiff.ValueDiffer) *odiff.Differ {
-	comparers := append([]odiff.ValueDiffer{&UUIDComparer{}}, extra...)
+	comparers := append([]odiff.ValueDiffer{&UUIDComparer{}, &ShouldPayAddressComparer{}}, extra...)
 	ret, err := odiff.NewDiffer(odiff.SliceOrdering(true), odiff.CustomValueDiffers(comparers...))
 	if err != nil {
 		panic(err)
@@ -45,3 +47,8 @@ func (AtomicComparer[T]) InsertParentDiffer(_ func([]string, reflect.Value, refl
 
 // UUIDs are atomic values, including when a collection adds or removes one.
 type UUIDComparer struct{ AtomicComparer[uuid.UUID] }
+
+// ShouldPayAddressComparer keeps the identity and split value together when patching a member.
+type ShouldPayAddressComparer struct {
+	AtomicComparer[domain.RecordShare]
+}

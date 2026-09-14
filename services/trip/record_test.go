@@ -33,3 +33,18 @@ func TestRecordValidateUsesPayload(t *testing.T) {
 		})
 	}
 }
+
+func TestDomainRecordSortsDetachedShares(t *testing.T) {
+	a := domain.Address{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), Name: "A"}
+	b := domain.Address{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), Name: "B"}
+	value := testPayment(uuid.New(), a, b)
+	value.ShouldPayAddress = []domain.ExtendAddress{{Address: b, ExtendMsg: 20}, {Address: a, ExtendMsg: 10}}
+	loaded := NewRecordFactory(nil).FromRecord(value)
+	got := loaded.DomainRecord()
+	assert.Equal(t, []domain.ExtendAddress{{Address: a, ExtendMsg: 10}, {Address: b, ExtendMsg: 20}}, got.ShouldPayAddress)
+	assert.Equal(t, value.ShouldPayAddress, loaded.GetShouldPay(), "sorting the output must not reorder the internal record")
+	got.ShouldPayAddress[0].Address.Name = "caller mutation"
+	got.ShouldPayAddress[0].ExtendMsg = 99
+	assert.Equal(t, value.ShouldPayAddress, loaded.GetShouldPay(), "output must remain detached")
+	assert.Equal(t, b, value.ShouldPayAddress[0].Address)
+}

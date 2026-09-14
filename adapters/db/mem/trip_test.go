@@ -147,3 +147,7 @@ func TestChangelogAppendContract(t *testing.T) {
 func TestCompleteRecordReadContract(t *testing.T) {
 	testutil.CheckReadContract(t, NewInMemoryTripDBWrapper())
 }
+
+func TestSharePatchContract(t *testing.T) {
+	testutil.CheckSharePatchContract(t, NewInMemoryTripDBWrapper())
+}

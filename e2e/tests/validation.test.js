@@ -15,7 +15,6 @@ describe('Rejected record writes are atomic', () => {
  it.each([
   ['zero amount', () => ({ amount: 0 }), /amount/],
   ['negative amount', () => ({ amount: -1 }), /amount/],
-  ['empty recipients', () => ({ shouldPayAddressIds: [] }), /should-pay/],
   ['duplicate recipients', () => ({ shouldPayAddressIds: [input.prePayAddressId, input.prePayAddressId] }), /duplicate/],
   ['foreign payer', () => ({ prePayAddressId: foreignId }), /belong/],
   ['foreign recipient', () => ({ shouldPayAddressIds: [foreignId] }), /belong/],
@@ -32,6 +31,11 @@ describe('Rejected record writes are atomic', () => {
    await expect(client.mutate(operation)).rejects.toMatchObject({ graphQLErrors: expect.arrayContaining([expect.objectContaining({ message: expect.stringMatching(message) })]) });
    expect(await read()).toEqual(before);
   }
+ });
+ it('rejects empty recipients on create without changing history', async () => {
+  const before = await read();
+  await expect(client.mutate({ mutation: CREATE_RECORD, variables: { tripId, input: { ...input, shouldPayAddressIds: [] } } })).rejects.toThrow();
+  expect(await read()).toEqual(before);
  });
  it.each([{}, { old: null, new: null }])('requires both update snapshots: %j', async edit => {
   const before = await read();

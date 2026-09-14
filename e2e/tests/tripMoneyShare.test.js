@@ -187,7 +187,9 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 				expect.any(Object),
 			]) });
 			const after = await client.query({ query: GET_TRIP, variables: { tripId: localTripId } });
-			expect(after.data.trip).toEqual(tripData.trip);
+			// Trip address order is unspecified; a rejected write must preserve its contents.
+			const normalize = trip => ({ ...trip, addresses: [...trip.addresses].sort((a, b) => a.id.localeCompare(b.id)) });
+			expect(normalize(after.data.trip)).toEqual(normalize(tripData.trip));
 		});
 
 		it('should reject a FIX record if amounts do not sum up', async () => {

@@ -2,6 +2,7 @@ package trip
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"slices"
 	"unicode"
@@ -43,20 +44,20 @@ func (recordPolicy) ApplyPatch(tail domain.Record, patch domain.RecordPatch, add
 	if err := canonicalizeRecordAddresses(addresses, &result); err != nil {
 		return domain.Record{}, false, err
 	}
-	if err := (recordPolicy{}).Validate(result); err != nil {
+	if err := validateRecordFields(result); err != nil {
 		return domain.Record{}, false, err
 	}
 	return result, !reflect.DeepEqual(result, tail), nil
 }
 
-func (recordPolicy) Validate(value domain.Record) error {
+func validateRecordFields(value domain.Record) error {
 	if value.ID == uuid.Nil {
 		return invalidSnapshot("record ID is required")
 	}
 	if !validRecordName(value.Name) {
 		return invalidSnapshot("record name is invalid")
 	}
-	if value.Amount <= 0 {
+	if value.Amount <= 0 || math.IsNaN(value.Amount) || math.IsInf(value.Amount, 0) {
 		return invalidSnapshot("record amount must be positive")
 	}
 	if value.Category < domain.CategoryNormal || value.Category > domain.CategoryTransfer {
@@ -65,8 +66,8 @@ func (recordPolicy) Validate(value domain.Record) error {
 	if value.PrePayAddress.ID == uuid.Nil {
 		return invalidSnapshot("pre-pay address is required")
 	}
-	if len(value.ShouldPayAddress) == 0 || len(value.ShouldPayAddress) > 100 {
-		return invalidSnapshot("record must contain between 1 and 100 should-pay addresses")
+	if len(value.ShouldPayAddress) > 100 {
+		return invalidSnapshot("record must contain at most 100 should-pay addresses")
 	}
 	seen := make(map[uuid.UUID]struct{}, len(value.ShouldPayAddress))
 	for i, address := range value.ShouldPayAddress {
@@ -77,6 +78,16 @@ func (recordPolicy) Validate(value domain.Record) error {
 			return fmt.Errorf("%w: %w: duplicate should-pay address %s", ErrInvalidRecordSnapshot, ErrInvalidRecordAddresses, address.Address.ID)
 		}
 		seen[address.Address.ID] = struct{}{}
+	}
+	return nil
+}
+
+func (recordPolicy) Validate(value domain.Record) error {
+	if err := validateRecordFields(value); err != nil {
+		return err
+	}
+	if len(value.ShouldPayAddress) == 0 {
+		return invalidSnapshot("record must contain at least one should-pay address")
 	}
 	payment := paymentFromRecord(value.RecordInfo, value.ShouldPayAddress)
 	transaction, err := payment.ToTx(tx.ShareMoneyStrategyFactory(payment.PaymentType))

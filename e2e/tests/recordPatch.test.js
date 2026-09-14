@@ -36,11 +36,12 @@ describe('Record changelog patches', () => {
 		expect(second.prePayAddress.id).toBe(bob.id);
 		expect(second.shouldPayAddress.map(a => a.id)).toEqual([alice.id]);
 
-		// A genuine list edit atomically replaces the tail's different list.
+		// A stale update restores Bob; creating Alice uses the new value.
 		const third = await update(old, { ...old, shouldPayAddressIds: [bob.id, alice.id], extendPayMsg: [1, 2] });
 		expect(third.parentRecordId).toBe(second.id);
-		expect(third.shouldPayAddress.map(a => a.id)).toEqual([bob.id, alice.id]);
-		expect(third.extendPayMsg).toEqual([1, 2]);
+		const ids = [alice.id, bob.id].sort();
+		expect(third.shouldPayAddress.map(a => a.id)).toEqual(ids);
+		expect(third.extendPayMsg).toEqual(ids.map(id => id === alice.id ? 2 : 1));
 		expect(third.name).toBe('dinner');
 		expect(third.amount).toBe(30);
 		const tripState = await client.query({ query: GET_TRIP, variables: { tripId, haveHistory: true } });

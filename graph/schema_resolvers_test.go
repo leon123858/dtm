@@ -326,7 +326,7 @@ func TestUpdateRecordAllowsInvalidOldInputToRepairActiveRecord(t *testing.T) {
 	require.Len(t, queues.queues[mq.ActionUpdate].messages, 1)
 }
 
-func TestStaleBaselineCannotAppendInvalidMaterializedTail(t *testing.T) {
+func TestStaleBaselineCanAppendRepairableMaterializedTail(t *testing.T) {
 	database := mem.NewInMemoryTripDBWrapper()
 	tripID := uuid.New()
 	require.NoError(t, database.CreateTrip(&domain.TripInfo{ID: tripID, Name: "trip"}))
@@ -348,9 +348,10 @@ func TestStaleBaselineCannotAppendInvalidMaterializedTail(t *testing.T) {
 	queues := &trackingMQ{}
 	base := resolverWithChain(database)
 	base.TripMessageQueueWrapper = queues
-	_, err = (&mutationResolver{Resolver: base}).UpdateRecord(resolverContext(database), recordID.String(), model.EditRecord{Old: &oldInput, New: &newInput})
-	require.ErrorIs(t, err, tripservice.ErrInvalidRecordSnapshot)
-	assert.Empty(t, queues.queues[mq.ActionUpdate].messages)
+	updated, err := (&mutationResolver{Resolver: base}).UpdateRecord(resolverContext(database), recordID.String(), model.EditRecord{Old: &oldInput, New: &newInput})
+	require.NoError(t, err)
+	assert.False(t, updated.IsValid)
+	assert.Len(t, queues.queues[mq.ActionUpdate].messages, 1)
 }
 
 type seedRecordPolicy struct{}

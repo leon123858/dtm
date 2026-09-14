@@ -75,6 +75,9 @@ func (db *inMemoryTripDBWrapper) AppendNew(ctx context.Context, tripID uuid.UUID
 	if err != nil {
 		return domain.Record{}, err
 	}
+	if err := canonicalizeRecordAddresses(tripData, &record); err != nil {
+		return domain.Record{}, err
+	}
 	tripData.Records = append(tripData.Records, record)
 	return cloneRecord(record), nil
 }
@@ -123,6 +126,9 @@ func (db *inMemoryTripDBWrapper) AppendPatch(ctx context.Context, tripID, target
 	}
 	if !changed {
 		return tripID, cloneRecord(tail), false, nil
+	}
+	if err := canonicalizeRecordAddresses(tripData, &materialized); err != nil {
+		return uuid.Nil, domain.Record{}, false, err
 	}
 	parentID := tail.ID
 	materialized.ID = uuid.New()
