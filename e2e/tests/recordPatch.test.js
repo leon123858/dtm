@@ -3,16 +3,16 @@ import { CREATE_TRIP, CREATE_ADDRESS, CREATE_RECORD, UPDATE_RECORD, GET_TRIP } f
 
 describe('Record changelog patches', () => {
 	it('applies changes to the latest tail and ignores equivalent stale input', async () => {
-		const trip = await client.mutate({ mutation: CREATE_TRIP, variables: { input: { name: 'Patch regression' } } });
+		const trip = await client.mutate({ mutation: CREATE_TRIP, variables: { input: { name: '合併測試 🧩 [patch]' } } });
 		const tripId = trip.data.createTrip.id;
 		const addresses = [];
-		for (const name of ['Alice', 'Bob']) {
+		for (const name of ['Alice 👩🏽‍💻', 'Bob 🍜']) {
 			const response = await client.mutate({ mutation: CREATE_ADDRESS, variables: { tripId, input: { name } } });
 			addresses.push(response.data.createAddress);
 		}
 		const [alice, bob] = addresses;
 		const old = {
-			name: 'meal', amount: 20, time: '1234',
+			name: '<meal> 🍱', amount: 20, time: '1234',
 			prePayAddressId: alice.id, shouldPayAddressIds: [bob.id],
 		};
 		const created = await client.mutate({ mutation: CREATE_RECORD, variables: { tripId, input: old } });
@@ -28,9 +28,9 @@ describe('Record changelog patches', () => {
 			shouldPayAddressIds: [bob.id.toUpperCase()], extendPayMsg: [0], category: 'NORMAL',
 		};
 		expect((await update(old, equivalent)).id).toBe(first.id);
-		const second = await update(old, { ...equivalent, name: 'dinner' });
+		const second = await update(old, { ...equivalent, name: '晚餐 🍽️ (更新)' });
 		expect(second.parentRecordId).toBe(first.id);
-		expect(second.name).toBe('dinner');
+		expect(second.name).toBe('晚餐 🍽️ (更新)');
 		expect(second.amount).toBe(30);
 		expect(second.time).toBe('4567');
 		expect(second.prePayAddress.id).toBe(bob.id);
@@ -42,7 +42,7 @@ describe('Record changelog patches', () => {
 		const ids = [alice.id, bob.id].sort();
 		expect(third.shouldPayAddress.map(a => a.id)).toEqual(ids);
 		expect(third.extendPayMsg).toEqual(ids.map(id => id === alice.id ? 2 : 1));
-		expect(third.name).toBe('dinner');
+		expect(third.name).toBe('晚餐 🍽️ (更新)');
 		expect(third.amount).toBe(30);
 		const tripState = await client.query({ query: GET_TRIP, variables: { tripId, haveHistory: true } });
 		expect(tripState.data.trip.records).toHaveLength(4);

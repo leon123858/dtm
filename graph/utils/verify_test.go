@@ -4,24 +4,8 @@ import (
 	"dtm/graph/model"
 	"fmt"
 	"github.com/stretchr/testify/require"
-	"strings"
 	"testing"
 )
-
-func TestVerifyStringBoundaries(t *testing.T) {
-	for _, tt := range []struct {
-		value string
-		valid bool
-	}{
-		{"", false}, {strings.Repeat("a", 100), true}, {strings.Repeat("a", 101), false},
-		{"旅費 123_-.@#", true}, {"a\nb", false}, {"<script>", false}, {"meal🍜", false},
-	} {
-		t.Run(tt.value, func(t *testing.T) { require.Equal(t, tt.valid, VerifyStringRequest(tt.value)) })
-	}
-	require.True(t, VerifyStringListRequest([]string{"Alice", "Bob"}))
-	require.False(t, VerifyStringListRequest([]string{"Alice", ""}))
-	require.False(t, VerifyStringListRequest(make([]string, 101)))
-}
 
 func TestTimestampParsingBoundaries(t *testing.T) {
 	for _, value := range []int64{0, -1, 1234, 1700000000123} {

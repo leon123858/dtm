@@ -304,15 +304,16 @@ func TestUpdateRecordAllowsInvalidOldInputToRepairActiveRecord(t *testing.T) {
 	require.NoError(t, err)
 	recordID := uuid.New()
 	_, err = database.AppendNew(context.Background(), tripID, domain.Record{
-		RecordInfo: domain.RecordInfo{ID: recordID, Name: "broken", Amount: 0, PrePayAddress: *payer, Category: domain.CategoryNormal},
+		RecordInfo: domain.RecordInfo{ID: recordID, Name: "broken\n", Amount: 0, PrePayAddress: *payer, Category: domain.CategoryNormal},
 		RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{{Address: *member}}},
 	}, seedRecordPolicy{})
 	require.NoError(t, err)
 
 	category := model.RecordCategoryNormal
-	oldInput := model.NewRecord{Name: "broken", Amount: 0, PrePayAddressID: payer.ID.String(), ShouldPayAddressIds: []string{member.ID.String()}, Category: &category}
+	oldInput := model.NewRecord{Name: "broken\n", Amount: 0, PrePayAddressID: payer.ID.String(), ShouldPayAddressIds: []string{member.ID.String()}, Category: &category}
 	newInput := oldInput
 	newInput.Amount = 20
+	newInput.Name = " <repaired> 👩🏽‍💻 "
 	queues := &trackingMQ{}
 	base := resolverWithChain(database)
 	base.TripMessageQueueWrapper = queues
@@ -321,6 +322,8 @@ func TestUpdateRecordAllowsInvalidOldInputToRepairActiveRecord(t *testing.T) {
 	updated, err := resolver.UpdateRecord(resolverContext(database), recordID.String(), model.EditRecord{Old: &oldInput, New: &newInput})
 	require.NoError(t, err)
 	assert.NotEqual(t, recordID.String(), updated.ID)
+	require.NotNil(t, updated.Name)
+	assert.Equal(t, newInput.Name, *updated.Name)
 	require.NotNil(t, updated.Amount)
 	assert.Equal(t, float64(20), *updated.Amount)
 	require.Len(t, queues.queues[mq.ActionUpdate].messages, 1)

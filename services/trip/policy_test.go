@@ -35,7 +35,7 @@ func TestRecordPolicyReturnsStableValidationErrors(t *testing.T) {
 		want   error
 	}{
 		{name: "missing ID", change: func(v *domain.Record) { v.ID = uuid.Nil }, want: ErrInvalidRecordSnapshot},
-		{name: "unsafe name", change: func(v *domain.Record) { v.Name = "<meal>" }, want: ErrInvalidRecordSnapshot},
+		{name: "unsafe name", change: func(v *domain.Record) { v.Name = "meal\n" }, want: ErrInvalidRecordSnapshot},
 		{name: "non-positive amount", change: func(v *domain.Record) { v.Amount = 0 }, want: ErrInvalidRecordSnapshot},
 		{name: "unknown category", change: func(v *domain.Record) { v.Category = domain.RecordCategory(99) }, want: ErrInvalidRecordSnapshot},
 		{name: "no recipients", change: func(v *domain.Record) { v.ShouldPayAddress = nil }, want: ErrInvalidRecordSnapshot},
@@ -127,7 +127,7 @@ func TestRecordPolicyPatchKeepsFieldValidation(t *testing.T) {
 		name string
 		edit func(*domain.Record)
 	}{
-		{"name", func(r *domain.Record) { r.Name = "<bad>" }},
+		{"name", func(r *domain.Record) { r.Name = "bad\n" }},
 		{"amount", func(r *domain.Record) { r.Amount = 0 }},
 		{"nonfinite amount", func(r *domain.Record) { r.Amount = math.NaN() }},
 		{"category", func(r *domain.Record) { r.Category = domain.RecordCategory(99) }},
@@ -166,4 +166,15 @@ func TestRecordPolicyPatchKeepsFieldValidation(t *testing.T) {
 			require.ErrorIs(t, err, ErrInvalidRecordSnapshot)
 		})
 	}
+}
+
+func TestRecordPolicyRepairsHistoricalName(t *testing.T) {
+	a := domain.Address{ID: uuid.New(), Name: "A"}
+	base := testPayment(uuid.New(), a, a)
+	base.Name = "legacy\n"
+	patch := policyTestPatch(t, base, func(r *domain.Record) { r.Name = " <meal> 👩🏽‍💻 " })
+	got, changed, err := (recordPolicy{}).ApplyPatch(base, patch, []domain.Address{a})
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, " <meal> 👩🏽‍💻 ", got.Name)
 }

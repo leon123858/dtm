@@ -5,11 +5,11 @@ import (
 	"math"
 	"reflect"
 	"slices"
-	"unicode"
 
 	"dtm/adapters/db/db"
 	"dtm/domain"
 	"dtm/libs/recordpatch"
+	"dtm/libs/textvalidate"
 	"dtm/services/tx"
 
 	"github.com/google/uuid"
@@ -54,8 +54,8 @@ func validateRecordFields(value domain.Record) error {
 	if value.ID == uuid.Nil {
 		return invalidSnapshot("record ID is required")
 	}
-	if !validRecordName(value.Name) {
-		return invalidSnapshot("record name is invalid")
+	if err := textvalidate.ValidateName(value.Name); err != nil {
+		return fmt.Errorf("%w: record name %w", ErrInvalidRecordSnapshot, err)
 	}
 	if value.Amount <= 0 || math.IsNaN(value.Amount) || math.IsInf(value.Amount, 0) {
 		return invalidSnapshot("record amount must be positive")
@@ -102,23 +102,6 @@ func (recordPolicy) Validate(value domain.Record) error {
 
 func invalidSnapshot(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalidRecordSnapshot, fmt.Sprintf(format, args...))
-}
-
-func validRecordName(value string) bool {
-	if len(value) == 0 || len(value) > 100 {
-		return false
-	}
-	for _, r := range value {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			continue
-		}
-		switch r {
-		case '_', '-', '.', '@', '#', ' ':
-		default:
-			return false
-		}
-	}
-	return true
 }
 
 func canonicalizeRecordAddresses(addresses []domain.Address, value *domain.Record) error {

@@ -225,7 +225,7 @@ func (p *pgDBWrapper) DeleteTrip(id uuid.UUID) error {
 }
 
 // joinedRecords materializes complete records in one SQL statement.
-func (p *pgDBWrapper) joinedRecords(ctx context.Context, column string, ids []uuid.UUID, options db.RecordReadOptions) ([]db.RecordSnapshot, error) {
+func (p *pgDBWrapper) joinedRecords(ctx context.Context, column clause.Column, ids []uuid.UUID, options db.RecordReadOptions) ([]db.RecordSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -239,12 +239,16 @@ func (p *pgDBWrapper) joinedRecords(ctx context.Context, column string, ids []uu
 		ShareName      string
 		ExtendedMsg    float64
 	}
+	values := make([]any, len(ids))
+	for i, id := range ids {
+		values[i] = id
+	}
 	query := p.db.WithContext(ctx).Table("records AS r").
 		Select("r.*, payer.name AS payer_name, share.address_id AS share_address_id, recipient.name AS share_name, share.extended_msg").
 		Joins("LEFT JOIN addresses AS payer ON payer.id = r.pre_pay_address_id AND payer.trip_id = r.trip_id").
 		Joins("LEFT JOIN record_should_pay_address_lists AS share ON share.record_id = r.id AND share.trip_id = r.trip_id").
 		Joins("LEFT JOIN addresses AS recipient ON recipient.id = share.address_id AND recipient.trip_id = share.trip_id").
-		Where(column+" IN ?", ids)
+		Where(clause.IN{Column: column, Values: values})
 	if !options.HaveHistory {
 		query = query.Where("r.child_record_id IS NULL AND r.is_deleted = false")
 	}
@@ -270,7 +274,7 @@ func (p *pgDBWrapper) joinedRecords(ctx context.Context, column string, ids []uu
 }
 
 func (p *pgDBWrapper) DataLoaderGetTripRecords(ctx context.Context, tripIds []uuid.UUID, options db.RecordReadOptions) (map[uuid.UUID][]db.RecordSnapshot, error) {
-	records, err := p.joinedRecords(ctx, "r.trip_id", tripIds, options)
+	records, err := p.joinedRecords(ctx, clause.Column{Table: "r", Name: "trip_id"}, tripIds, options)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +289,7 @@ func (p *pgDBWrapper) DataLoaderGetTripRecords(ctx context.Context, tripIds []uu
 }
 
 func (p *pgDBWrapper) DataLoaderGetRecordList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID]db.RecordSnapshot, error) {
-	records, err := p.joinedRecords(ctx, "r.id", recordIds, db.RecordReadOptions{HaveHistory: true})
+	records, err := p.joinedRecords(ctx, clause.Column{Table: "r", Name: "id"}, recordIds, db.RecordReadOptions{HaveHistory: true})
 	if err != nil {
 		return nil, err
 	}

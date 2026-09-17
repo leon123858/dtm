@@ -16,7 +16,7 @@ describe('GraphQL API End-to-End Tests', () => {
 	let addressAlice;
 	let addressBob;
 	let newRecord;
-	const testTripName = `Test Trip - ${Date.now()}`;
+	const testTripName = `旅行 ✈️「週末」- ${Date.now()}`;
 
 	beforeAll(async () => {
 		const { data } = await client.mutate({
@@ -65,19 +65,19 @@ describe('GraphQL API End-to-End Tests', () => {
 		it('should create new addresses for the trip', async () => {
 			const resAlice = await client.mutate({
 				mutation: CREATE_ADDRESS,
-				variables: { tripId, input: { name: 'Alice' } },
+				variables: { tripId, input: { name: 'Alice 👩🏽‍💻 (主辦)' } },
 			});
 			addressAlice = resAlice.data.createAddress;
-			expect(addressAlice.name).toBe('Alice');
+			expect(addressAlice.name).toBe('Alice 👩🏽‍💻 (主辦)');
 
 			const resBob = await client.mutate({
 				mutation: CREATE_ADDRESS,
-				variables: { tripId, input: { name: 'Bob' } },
+				variables: { tripId, input: { name: "Bob 🍜 / O'Brien" } },
 			});
 			addressBob = resBob.data.createAddress;
-			expect(addressBob.name).toBe('Bob');
+			expect(addressBob.name).toBe("Bob 🍜 / O'Brien");
 			newRecord = {
-				name: 'Lunch', amount: 150.75, time: '1672531199',
+				name: '<Lunch> 🍱 & 茶', amount: 150.75, time: '1672531199',
 				prePayAddressId: addressAlice.id,
 				shouldPayAddressIds: [addressAlice.id],
 				category: 'NORMAL', extendPayMsg: [],
@@ -138,7 +138,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			expect(recordId).toBeDefined();
 
 			updatedRecord = {
-				name: 'Expensive Dinner',
+				name: '晚餐 🍽️ [豪華套餐]',
 				amount: 500,
 				prePayAddressId: addressAlice.id,
 				shouldPayAddressIds: [addressAlice.id],

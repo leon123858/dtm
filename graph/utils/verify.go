@@ -5,57 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"time"
-	"unicode"
 )
-
-func IsSecureString(s string) bool {
-	allowedSafeSymbols := map[rune]bool{
-		'_': true,
-		'-': true,
-		'.': true,
-		'@': true,
-		'#': true,
-		' ': true,
-	}
-
-	for _, r := range s {
-
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
-
-			if _, ok := allowedSafeSymbols[r]; !ok {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func VerifyStringRequest(s string) bool {
-	if len(s) == 0 {
-		return false
-	}
-	if len(s) > 100 {
-		return false
-	}
-	for _, char := range s {
-		if !IsSecureString(string(char)) {
-			return false
-		}
-	}
-	return true
-}
-
-func VerifyStringListRequest(s []string) bool {
-	if len(s) > 100 {
-		return false
-	}
-	for _, str := range s {
-		if !VerifyStringRequest(str) {
-			return false
-		}
-	}
-	return true
-}
 
 // NormalizeRecordRequest handles only transport-shape concerns that cannot be
 // represented by domain.Record. Domain validation belongs to the trip service.

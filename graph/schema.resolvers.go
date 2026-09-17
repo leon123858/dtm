@@ -10,6 +10,7 @@ import (
 	"dtm/domain"
 	"dtm/graph/model"
 	"dtm/graph/utils"
+	"dtm/libs/textvalidate"
 	tripservice "dtm/services/trip"
 	"errors"
 	"fmt"
@@ -20,8 +21,8 @@ import (
 
 // CreateTrip is the resolver for the createTrip field.
 func (r *mutationResolver) CreateTrip(ctx context.Context, input model.NewTrip) (*model.Trip, error) {
-	if !utils.VerifyStringRequest(input.Name) {
-		return nil, fmt.Errorf("invalid trip name")
+	if err := textvalidate.ValidateName(input.Name); err != nil {
+		return nil, fmt.Errorf("trip name %w", err)
 	}
 
 	if r.TripFactory == nil {
@@ -40,8 +41,8 @@ func (r *mutationResolver) CreateTrip(ctx context.Context, input model.NewTrip) 
 
 // UpdateTrip is the resolver for the updateTrip field.
 func (r *mutationResolver) UpdateTrip(ctx context.Context, tripID string, input model.NewTrip) (*model.Trip, error) {
-	if !utils.VerifyStringRequest(input.Name) {
-		return nil, fmt.Errorf("invalid trip name")
+	if err := textvalidate.ValidateName(input.Name); err != nil {
+		return nil, fmt.Errorf("trip name %w", err)
 	}
 
 	id, err := uuid.Parse(tripID)
@@ -179,8 +180,8 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, in
 
 // CreateAddress is the resolver for the createAddress field.
 func (r *mutationResolver) CreateAddress(ctx context.Context, tripID string, input model.NewAddress) (*model.Address, error) {
-	if !utils.VerifyStringRequest(input.Name) {
-		return nil, fmt.Errorf("invalid address name")
+	if err := textvalidate.ValidateName(input.Name); err != nil {
+		return nil, fmt.Errorf("address name %w", err)
 	}
 
 	tripUUID, err := uuid.Parse(tripID)
@@ -209,8 +210,8 @@ func (r *mutationResolver) CreateAddress(ctx context.Context, tripID string, inp
 
 // UpdateAddress is the resolver for the updateAddress field.
 func (r *mutationResolver) UpdateAddress(ctx context.Context, tripID string, addressID string, input model.NewAddress) (*model.Address, error) {
-	if !utils.VerifyStringRequest(input.Name) {
-		return nil, fmt.Errorf("invalid address name")
+	if err := textvalidate.ValidateName(input.Name); err != nil {
+		return nil, fmt.Errorf("address name %w", err)
 	}
 	tripUUID, err := uuid.Parse(tripID)
 	if err != nil {

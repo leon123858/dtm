@@ -92,7 +92,7 @@ const waitForMultiSubscription = (observable, count, timeout = 7000) => {
 
 describe('GraphQL API End-to-End Tests', () => {
 	let tripId;
-	const testTripName = `Test Trip - ${Date.now()}`;
+	const testTripName = `訂閱 📡 [旅程] - ${Date.now()}`;
 	let nenExistTripId = '0b4d17a1-7db3-4686-aae2-2120f7919d50';
 
 	beforeAll(async () => {
@@ -106,7 +106,7 @@ describe('GraphQL API End-to-End Tests', () => {
 
 	// --- Subscription ---
 	describe('Subscription Tests', () => {
-		const commonAddressForSubRecords = `SubRecAddr-${Date.now()}`;
+		const commonAddressForSubRecords = `成員 👩🏽‍💻 (訂閱)-${Date.now()}`;
 		let commonAddress;
 	let recordIdForSubTests;
 	let latestRecordPayload;
@@ -121,7 +121,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			commonAddress = data.createAddress;
 			expect(commonAddress.name).toBe(commonAddressForSubRecords);
 			newRecordPayload = {
-				name: 'Sub Test Record Create', amount: 77.88, time: '1672531399',
+				name: '<meal> 🍱 & 飲料', amount: 77.88, time: '1672531399',
 				prePayAddressId: commonAddress.id,
 				shouldPayAddressIds: [commonAddress.id],
 				category: 'NORMAL', extendPayMsg: [],
@@ -129,7 +129,7 @@ describe('GraphQL API End-to-End Tests', () => {
 		});
 
 		it('should receive a notification when a new address is created (subAddressCreate)', async () => {
-			const newAddressName = `SubAddr-${Date.now()}`;
+			const newAddressName = `新成員 🍜 <address>-${Date.now()}`;
 
 			const subObservable = client.subscribe({
 				query: SUB_ADDRESS_CREATE,
@@ -164,8 +164,8 @@ describe('GraphQL API End-to-End Tests', () => {
 
 		it('should receive multiple notifications when multiple addresses are created (subAddressCreate)', async () => {
 			const newAddressNames = [
-				`SubAddr1-${Date.now()}`,
-				`SubAddr2-${Date.now()}`,
+				`成員一 🧑‍🚀-${Date.now()}`,
+				`成員二 🧑🏽‍🍳-${Date.now()}`,
 			];
 			const subObservable = client.subscribe({
 				query: SUB_ADDRESS_CREATE,
@@ -209,7 +209,7 @@ describe('GraphQL API End-to-End Tests', () => {
 		it('should receive the same address ID when an address is renamed', async () => {
 			const address = (await client.mutate({
 				mutation: CREATE_ADDRESS,
-				variables: { tripId, input: { name: `BeforeRename-${Date.now()}` } },
+				variables: { tripId, input: { name: `改名前 🍀-${Date.now()}` } },
 			})).data.createAddress;
 			const subscriptionPromise = waitForSubscription(client.subscribe({
 				query: SUB_ADDRESS_UPDATE,
@@ -218,7 +218,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			await sleep(1000);
 			const renamed = (await client.mutate({
 				mutation: UPDATE_ADDRESS,
-				variables: { tripId, addressId: address.id, input: { name: `AfterRename-${Date.now()}` } },
+				variables: { tripId, addressId: address.id, input: { name: `改名後 🌻 [更新]-${Date.now()}` } },
 			})).data.updateAddress;
 			const { data } = await subscriptionPromise;
 			expect(renamed.id).toBe(address.id);
@@ -227,7 +227,7 @@ describe('GraphQL API End-to-End Tests', () => {
 		});
 
 		it('should not receive a notification when a new address is created (because not tripId)', async () => {
-			const newAddressName = `SubAddr-${Date.now()}`;
+			const newAddressName = `新成員 🍜 <address>-${Date.now()}`;
 
 			const subObservable = client.subscribe({
 				query: SUB_ADDRESS_CREATE,
@@ -298,7 +298,7 @@ describe('GraphQL API End-to-End Tests', () => {
 			expect(recordIdForSubTests).toBeDefined();
 
 			const updatedRecordPayload = {
-				name: 'Sub Test Record Updated',
+				name: '晚餐 🍽️ [更新]',
 				amount: 99.55,
 				time: '1672531499',
 				prePayAddressId: commonAddress.id,
@@ -378,7 +378,7 @@ describe('GraphQL API End-to-End Tests', () => {
 		});
 
 		it('should receive a notification when an address is deleted (subAddressDelete)', async () => {
-			const addressNameToDelete = `SubAddrDelete-${Date.now()}`;
+			const addressNameToDelete = `刪除成員 🗑️-${Date.now()}`;
 
 			const addressToDelete = (await client.mutate({
 				mutation: CREATE_ADDRESS,
