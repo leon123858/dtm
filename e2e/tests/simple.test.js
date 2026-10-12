@@ -87,7 +87,7 @@ describe('GraphQL API End-to-End Tests', () => {
 				query: GET_TRIP,
 				variables: { tripId: tripId },
 			});
-			expect(data.trip.addresses).toEqual(expect.arrayContaining([addressAlice, addressBob]));
+			expect(data.trip.addresses).toEqual(expect.arrayContaining([addressAlice, addressBob].map(address => ({ ...address, __typename: "Address" }))));
 		});
 
 		it('should delete an address from the trip', async () => {
@@ -101,8 +101,8 @@ describe('GraphQL API End-to-End Tests', () => {
 				query: GET_TRIP,
 				variables: { tripId, haveHistory: true },
 			});
-			expect(queryData.trip.addresses).toContainEqual(addressAlice);
-			expect(queryData.trip.addresses).not.toContainEqual(addressBob);
+			expect(queryData.trip.addresses).toContainEqual({ ...addressAlice, __typename: "Address" });
+			expect(queryData.trip.addresses).not.toContainEqual({ ...addressBob, __typename: "Address" });
 		});
 	});
 

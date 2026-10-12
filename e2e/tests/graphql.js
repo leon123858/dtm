@@ -8,11 +8,6 @@ export const CREATE_TRIP = gql`
 		createTrip(input: $input) {
 			id
 			name
-			addresses { id name }
-			isValid
-			records {
-				id
-			}
 		}
 	}
 `;
@@ -22,11 +17,6 @@ export const UPDATE_TRIP = gql`
 		updateTrip(tripId: $tripId, input: $input) {
 			id
 			name
-			addresses { id name }
-			isValid
-			records {
-				id
-			}
 		}
 	}
 `;

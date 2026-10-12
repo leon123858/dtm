@@ -50,7 +50,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			variables: { tripId, haveHistory: true },
 		});
 		expect(fetchedTripData.trip.addresses).toEqual(
-			expect.arrayContaining([addressAlice, addressBob, addressCharlie])
+			expect.arrayContaining([addressAlice, addressBob, addressCharlie].map(address => ({ ...address, __typename: "Address" })))
 		);
 	});
 
@@ -130,7 +130,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			expect(alicePayment.amount).toBeCloseTo(10);
 			expect(bobPayment.amount).toBeCloseTo(20);
 
-			expect(transaction.output.address).toEqual(addressCharlie);
+			expect(transaction.output.address).toEqual({ ...addressCharlie, __typename: "Address" });
 			expect(transaction.output.amount).toBeCloseTo(30);
 		});
 	});
@@ -444,7 +444,7 @@ describe('Trip with Money Share Logic End-to-End Tests', () => {
 			expect(paymentToAlice).toHaveLength(1);
 
 			// console.log(JSON.stringify(data.trip.moneyShare, null, 2));
-			expect(data.trip.moneyShare[0].output.address).toEqual(mixAlice);
+			expect(data.trip.moneyShare[0].output.address).toEqual({ ...mixAlice, __typename: "Address" });
 			expect(data.trip.moneyShare[0].output.amount).toBeCloseTo(130);
 
 			expect(data.trip.moneyShare[0].input).toHaveLength(2);

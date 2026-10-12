@@ -49,6 +49,7 @@ type Trip interface {
 	Append(context.Context, Record) (AppendResult, error)
 	List(context.Context) ([]Record, error)
 	CalculateMoneyShare(context.Context) (MoneyShareResult, error)
+	CalculateAddressStatistics(context.Context) (map[uuid.UUID]AddressStatistics, error)
 }
 
 // ReadOptions selects complete history or the live tails used by default.
@@ -69,6 +70,14 @@ type MoneyShareResult struct {
 	Package        tx.Package
 	TotalRemaining float64
 	Valid          bool
+}
+
+// AddressStatistics aggregates valid live records before settlement, including transfers.
+// Addresses absent from the result have zero totals.
+type AddressStatistics struct {
+	TotalExpense      float64
+	TotalPrepaid      float64
+	ActiveRecordCount int32
 }
 
 func NewRecordFactory(readers db.ReaderProvider) RecordFactory {

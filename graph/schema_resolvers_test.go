@@ -2,8 +2,12 @@ package graph
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"dtm/adapters/db/db"
 	"dtm/adapters/db/mem"
@@ -13,9 +17,12 @@ import (
 	"dtm/graph/utils"
 	tripservice "dtm/services/trip"
 
+	"github.com/99designs/gqlgen/client"
+	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2"
 )
 
 type recordQueryDB struct {
@@ -79,7 +86,8 @@ func TestTripResolversShareRequestScopedLoaderCache(t *testing.T) {
 	for range 2 {
 		trip, queryErr := query.Trip(ctx, tripID.String(), false)
 		require.NoError(t, queryErr)
-		assert.Equal(t, &model.Trip{ID: tripID.String(), Name: "trip"}, trip)
+		assert.Equal(t, tripID.String(), trip.ID)
+		assert.Equal(t, "trip", trip.Name)
 	}
 
 	fields := &tripResolver{Resolver: base}
@@ -198,6 +206,10 @@ func (t *resolverTrip) Append(context.Context, tripservice.Record) (tripservice.
 func (t *resolverTrip) List(context.Context) ([]tripservice.Record, error) { return nil, nil }
 func (t *resolverTrip) CalculateMoneyShare(context.Context) (tripservice.MoneyShareResult, error) {
 	return tripservice.MoneyShareResult{}, nil
+}
+
+func (t *resolverTrip) CalculateAddressStatistics(context.Context) (map[uuid.UUID]tripservice.AddressStatistics, error) {
+	return nil, nil
 }
 
 func TestTripAndAddressMutationsUseTripAbstractions(t *testing.T) {
@@ -416,4 +428,311 @@ func TestEquivalentStaleInputPreservesTailAndSkipsPublish(t *testing.T) {
 	require.Len(t, message.ShouldPayAddress, 1)
 	assert.Equal(t, *payer, message.ShouldPayAddress[0].Address)
 	assert.Equal(t, uuid.MustParse(first.ID), *message.ParentRecordID)
+}
+
+type addressStatisticsResult struct {
+	ID         string
+	Name       string
+	Statistics *model.AddressStatistics
+}
+
+type statisticsCountingFactory struct {
+	tripservice.TripFactory
+	calls atomic.Int32
+}
+
+func (f *statisticsCountingFactory) ForTrip(id uuid.UUID, options ...tripservice.ReadOptions) tripservice.Trip {
+	return &statisticsCountingTrip{Trip: f.TripFactory.ForTrip(id, options...), calls: &f.calls}
+}
+
+type statisticsCountingTrip struct {
+	tripservice.Trip
+	calls *atomic.Int32
+}
+
+func (t *statisticsCountingTrip) CalculateAddressStatistics(ctx context.Context) (map[uuid.UUID]tripservice.AddressStatistics, error) {
+	t.calls.Add(1)
+	return t.Trip.CalculateAddressStatistics(ctx)
+}
+
+func TestTripAddressStatisticsSelectionAndHistory(t *testing.T) {
+	store := mem.NewInMemoryTripDBWrapper()
+	tripID := uuid.New()
+	require.NoError(t, store.CreateTrip(&domain.TripInfo{ID: tripID, Name: "statistics"}))
+	members := make([]domain.Address, 4)
+	for i, name := range []string{"A", "B", "C", "Unused"} {
+		address, err := store.CreateAddress(tripID, name)
+		require.NoError(t, err)
+		members[i] = *address
+	}
+	base := resolverWithChain(store)
+	ctx := resolverContext(store)
+	trip := base.TripFactory.ForTrip(tripID)
+	expense := domain.Record{RecordInfo: domain.RecordInfo{Name: "meal", Amount: 900, PrePayAddress: members[0]}, RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{{Address: members[0]}, {Address: members[1]}, {Address: members[2]}}}}
+	intent, err := base.RecordFactory.New(ctx, tripID, expense)
+	require.NoError(t, err)
+	_, err = trip.Append(ctx, intent)
+	require.NoError(t, err)
+	transfer := domain.Record{RecordInfo: domain.RecordInfo{ID: uuid.New(), Name: "transfer", Amount: 100, PrePayAddress: members[1], Category: domain.CategoryTransfer}, RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{{Address: members[0], ExtendMsg: 100}}}}
+	_, err = store.AppendNew(ctx, tripID, transfer, seedRecordPolicy{})
+	require.NoError(t, err)
+	deleted := expense
+	deleted.ID = uuid.New()
+	deleted.IsDeleted = true
+	_, err = store.AppendNew(ctx, tripID, deleted, seedRecordPolicy{})
+	require.NoError(t, err)
+	invalid := expense
+	invalid.ID = uuid.New()
+	invalid.Category = domain.CategoryFix // Fixed shares are all zero and do not balance.
+	_, err = store.AppendNew(ctx, tripID, invalid, seedRecordPolicy{})
+	require.NoError(t, err)
+	factory := &statisticsCountingFactory{TripFactory: base.TripFactory}
+	base.TripFactory = factory
+	srv := handler.NewDefaultServer(NewExecutableSchema(Config{Resolvers: base}))
+	c := client.New(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv.ServeHTTP(w, r.WithContext(db.WithTripDataLoader(r.Context(), db.NewTripDataLoader(store))))
+	}))
+	for _, selection := range []string{
+		"id name",
+		"id statistics @skip(if: true) { totalExpense }",
+		"id ... on Address @include(if: false) { statistics { totalExpense } }",
+	} {
+		db.DataLoaderDebug.Reset()
+		var response any
+		require.NoError(t, c.Post(fmt.Sprintf(`{ trip(tripId:%q) { addresses { %s } } }`, tripID, selection), &response))
+		require.Zero(t, factory.calls.Load())
+		require.Zero(t, db.DataLoaderDebug.Snapshot().TripRecords.Batches)
+	}
+	type addressResult struct {
+		ID    string
+		Stats model.AddressStatistics
+		Again model.AddressStatistics
+	}
+	var live []addressResult
+	for _, history := range []bool{false, true} {
+		factory.calls.Store(0)
+		db.DataLoaderDebug.Reset()
+		var response struct {
+			Trip struct {
+				Addresses  []addressResult
+				IsValid    bool
+				MoneyShare []model.Tx
+				Records    []struct {
+					PrePayAddress    addressStatisticsResult
+					ShouldPayAddress []addressStatisticsResult
+				}
+			}
+		}
+		query := fmt.Sprintf(`{
+   trip(tripId:%q,haveHistory:%t) {
+    addresses { id ...Stats ... on Address { again:statistics { totalExpense totalPrepaid activeRecordCount } } }
+    isValid moneyShare { output { amount } }
+    records { prePayAddress { id statistics { totalExpense totalPrepaid activeRecordCount } } shouldPayAddress { id statistics { totalExpense totalPrepaid activeRecordCount } } }
+   }
+  }
+  fragment Stats on Address { stats:statistics { totalExpense totalPrepaid activeRecordCount } }`, tripID, history)
+		require.NoError(t, c.Post(query, &response))
+		calls := len(response.Trip.Addresses) * 2
+		for _, record := range response.Trip.Records {
+			calls += 1 + len(record.ShouldPayAddress)
+		}
+		require.Equal(t, int32(calls), factory.calls.Load(), "each selected statistics field calculates through the shared DB loader")
+		require.Equal(t, int64(1), db.DataLoaderDebug.Snapshot().TripRecords.Batches)
+		require.False(t, response.Trip.IsValid)
+		require.Empty(t, response.Trip.MoneyShare)
+		expected := map[string]model.AddressStatistics{
+			members[0].ID.String(): {TotalExpense: 400, TotalPrepaid: 900, ActiveRecordCount: 2},
+			members[1].ID.String(): {TotalExpense: 300, TotalPrepaid: 100, ActiveRecordCount: 2},
+			members[2].ID.String(): {TotalExpense: 300, ActiveRecordCount: 1},
+			members[3].ID.String(): {},
+		}
+		require.Len(t, response.Trip.Addresses, 4)
+		for _, address := range response.Trip.Addresses {
+			require.Equal(t, expected[address.ID], address.Stats)
+			require.Equal(t, address.Stats, address.Again)
+		}
+		for _, record := range response.Trip.Records {
+			require.Equal(t, expected[record.PrePayAddress.ID], *record.PrePayAddress.Statistics)
+			for _, member := range record.ShouldPayAddress {
+				require.Equal(t, expected[member.ID], *member.Statistics)
+			}
+		}
+		if !history {
+			live = response.Trip.Addresses
+		} else {
+			require.ElementsMatch(t, live, response.Trip.Addresses)
+		}
+	}
+}
+
+type statisticsReadFailure struct{ db.TripDBWrapper }
+
+func (s statisticsReadFailure) DataLoaderGetTripRecords(context.Context, []uuid.UUID, db.RecordReadOptions) (map[uuid.UUID][]db.RecordSnapshot, error) {
+	return nil, fmt.Errorf("statistics storage unavailable")
+}
+
+func TestAddressStatisticsReadFailurePreservesAddress(t *testing.T) {
+	store := mem.NewInMemoryTripDBWrapper()
+	id := uuid.New()
+	require.NoError(t, store.CreateTrip(&domain.TripInfo{ID: id, Name: "errors"}))
+	address, err := store.CreateAddress(id, "member")
+	require.NoError(t, err)
+	failing := statisticsReadFailure{TripDBWrapper: store}
+	srv := handler.NewDefaultServer(NewExecutableSchema(Config{Resolvers: resolverWithChain(failing)}))
+	c := client.New(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv.ServeHTTP(w, r.WithContext(db.WithTripDataLoader(r.Context(), db.NewTripDataLoader(failing))))
+	}))
+	var response struct {
+		Trip struct{ Addresses []addressStatisticsResult }
+	}
+	err = c.Post(fmt.Sprintf(`{ trip(tripId:%q) { addresses { id name statistics { totalExpense } } } }`, id), &response)
+	require.ErrorContains(t, err, "failed to calculate address statistics")
+	require.Len(t, response.Trip.Addresses, 1)
+	require.Equal(t, address.ID.String(), response.Trip.Addresses[0].ID)
+	require.Nil(t, response.Trip.Addresses[0].Statistics)
+}
+
+func TestSnapshotsRejectQueryFields(t *testing.T) {
+	schema := NewExecutableSchema(Config{Resolvers: &Resolver{}}).Schema()
+	for _, operation := range []string{
+		`mutation { createAddress(tripId:"x", input:{name:"A"}) { statistics { totalExpense } } }`,
+		`mutation { updateAddress(tripId:"x", addressId:"x", input:{name:"A"}) { statistics { totalExpense } } }`,
+		`mutation { deleteAddress(tripId:"x", addressId:"x") { statistics { totalExpense } } }`,
+		`mutation { createRecord(tripId:"x", input:{name:"R", amount:1, prePayAddressId:"x", shouldPayAddressIds:[]}) { prePayAddress { statistics { totalExpense } } } }`,
+		`mutation { updateRecord(recordId:"x", input:{}) { shouldPayAddress { statistics { totalExpense } } } }`,
+		`subscription { subAddressCreate(tripId:"x") { statistics { totalExpense } } }`,
+		`subscription { subAddressUpdate(tripId:"x") { statistics { totalExpense } } }`,
+		`subscription { subAddressDelete(tripId:"x") { statistics { totalExpense } } }`,
+		`subscription { subRecordCreate(tripId:"x") { prePayAddress { statistics { totalExpense } } } }`,
+		`subscription { subRecordUpdate(tripId:"x") { shouldPayAddress { statistics { totalExpense } } } }`,
+		`mutation { createTrip(input:{name:"T"}) { addresses { id } } }`,
+		`mutation { updateTrip(tripId:"x", input:{name:"T"}) { records { id } } }`,
+	} {
+		t.Run(operation, func(t *testing.T) {
+			_, errs := gqlparser.LoadQuery(schema, operation)
+			require.NotEmpty(t, errs)
+			require.Contains(t, errs.Error(), "Cannot query field")
+		})
+	}
+}
+
+func TestMutationSnapshotsDoNotCalculateStatistics(t *testing.T) {
+	store := mem.NewInMemoryTripDBWrapper()
+	base := resolverWithChain(store)
+	factory := &statisticsCountingFactory{TripFactory: base.TripFactory}
+	base.TripFactory = factory
+	base.TripMessageQueueWrapper = &trackingMQ{}
+	srv := handler.NewDefaultServer(NewExecutableSchema(Config{Resolvers: base}))
+	c := client.New(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv.ServeHTTP(w, r.WithContext(db.WithTripDataLoader(r.Context(), db.NewTripDataLoader(store))))
+	}))
+	var trip struct {
+		CreateTrip struct{ ID, Name, Typename string }
+	}
+	require.NoError(t, c.Post(`mutation { createTrip(input:{name:"T"}) { id name typename:__typename } }`, &trip))
+	require.Equal(t, "TripSnapshot", trip.CreateTrip.Typename)
+	id := trip.CreateTrip.ID
+	var address struct{ CreateAddress struct{ ID, Typename string } }
+	require.NoError(t, c.Post(fmt.Sprintf(`mutation { createAddress(tripId:%q,input:{name:"A"}) { id typename:__typename } }`, id), &address))
+	require.Equal(t, "AddressSnapshot", address.CreateAddress.Typename)
+	input := fmt.Sprintf(`{name:"R",amount:10,prePayAddressId:%q,shouldPayAddressIds:[%q]}`, address.CreateAddress.ID, address.CreateAddress.ID)
+	var record struct {
+		CreateRecord struct {
+			ID, Typename  string
+			PrePayAddress struct{ Typename string }
+		}
+	}
+	require.NoError(t, c.Post(fmt.Sprintf(`mutation { createRecord(tripId:%q,input:%s) { id typename:__typename prePayAddress { typename:__typename } } }`, id, input), &record))
+	require.Equal(t, "RecordSnapshot", record.CreateRecord.Typename)
+	require.Equal(t, "AddressSnapshot", record.CreateRecord.PrePayAddress.Typename)
+	unused, err := store.CreateAddress(uuid.MustParse(id), "Unused")
+	require.NoError(t, err)
+	for _, operation := range []string{
+		fmt.Sprintf(`mutation { updateTrip(tripId:%q,input:{name:"Renamed"}) { id name } }`, id),
+		fmt.Sprintf(`mutation { updateAddress(tripId:%q,addressId:%q,input:{name:"B"}) { id name } }`, id, address.CreateAddress.ID),
+		fmt.Sprintf(`mutation { updateRecord(recordId:%q,input:{old:%s,new:%s}) { id isActive prePayAddress { id name } shouldPayAddress { id name } } }`, record.CreateRecord.ID, input, input),
+		fmt.Sprintf(`mutation { deleteAddress(tripId:%q,addressId:%q) { id name } }`, id, unused.ID.String()),
+	} {
+		var response any
+		require.NoError(t, c.Post(operation, &response))
+	}
+	require.Zero(t, factory.calls.Load())
+}
+
+type snapshotRecordQueue struct {
+	trackingRecordQueue
+	message mq.TripRecordMessage
+}
+
+func (q *snapshotRecordQueue) Subscribe(uuid.UUID) (uuid.UUID, <-chan mq.TripRecordMessage, error) {
+	ch := make(chan mq.TripRecordMessage, 1)
+	ch <- q.message
+	close(ch)
+	return uuid.New(), ch, nil
+}
+
+type snapshotAddressQueue struct {
+	trackingAddressQueue
+	message mq.TripAddressMessage
+}
+
+func (q *snapshotAddressQueue) Subscribe(uuid.UUID) (uuid.UUID, <-chan mq.TripAddressMessage, error) {
+	ch := make(chan mq.TripAddressMessage, 1)
+	ch <- q.message
+	close(ch)
+	return uuid.New(), ch, nil
+}
+
+type snapshotQueues struct {
+	record  snapshotRecordQueue
+	address snapshotAddressQueue
+}
+
+func (q *snapshotQueues) GetTripRecordMessageQueue(mq.Action) mq.TripRecordMessageQueue {
+	return &q.record
+}
+func (q *snapshotQueues) GetTripAddressMessageQueue(mq.Action) mq.TripAddressMessageQueue {
+	return &q.address
+}
+
+func TestSubscriptionSnapshotsDoNotCalculateStatistics(t *testing.T) {
+	factory := &statisticsCountingFactory{}
+	member := domain.Address{ID: uuid.New(), Name: "A"}
+	queues := &snapshotQueues{
+		record: snapshotRecordQueue{message: mq.TripRecordMessage{
+			ID: uuid.New(), Name: "R", Amount: 10, PrePayAddress: member,
+			ShouldPayAddress: []domain.ExtendAddress{{Address: member, ExtendMsg: 10}},
+		}},
+		address: snapshotAddressQueue{message: mq.TripAddressMessage{Address: member}},
+	}
+	resolver := &subscriptionResolver{Resolver: &Resolver{TripFactory: factory, TripMessageQueueWrapper: queues}}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	for _, subscribe := range []func(context.Context, string) (<-chan *model.RecordSnapshot, error){
+		resolver.SubRecordCreate, resolver.SubRecordUpdate,
+	} {
+		stream, err := subscribe(ctx, uuid.NewString())
+		require.NoError(t, err)
+		select {
+		case record := <-stream:
+			require.NotNil(t, record)
+			require.Equal(t, member.ID.String(), record.PrePayAddress.ID)
+			require.Equal(t, member.Name, record.ShouldPayAddress[0].Name)
+		case <-ctx.Done():
+			t.Fatal("record snapshot was not delivered")
+		}
+	}
+	for _, subscribe := range []func(context.Context, string) (<-chan *model.AddressSnapshot, error){
+		resolver.SubAddressCreate, resolver.SubAddressUpdate, resolver.SubAddressDelete,
+	} {
+		stream, err := subscribe(ctx, uuid.NewString())
+		require.NoError(t, err)
+		select {
+		case address := <-stream:
+			require.Equal(t, &model.AddressSnapshot{ID: member.ID.String(), Name: member.Name}, address)
+		case <-ctx.Done():
+			t.Fatal("address snapshot was not delivered")
+		}
+	}
+	require.Zero(t, factory.calls.Load())
 }

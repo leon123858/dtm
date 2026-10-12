@@ -9,6 +9,21 @@ import (
 	"strconv"
 )
 
+type AddressSnapshot struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type AddressStatistics struct {
+	// Total assigned shares before settlement, including TRANSFER records.
+	TotalExpense float64 `json:"totalExpense"`
+	// Total prepaid amounts, including own shares and TRANSFER records.
+	TotalPrepaid float64 `json:"totalPrepaid"`
+	// Number of qualifying records paid or shared by this member, counted once per record.
+	// Includes TRANSFER records and participation with a zero share.
+	ActiveRecordCount int32 `json:"activeRecordCount"`
+}
+
 type EditRecord struct {
 	Old *NewRecord `json:"old,omitempty"`
 	New *NewRecord `json:"new,omitempty"`
@@ -45,7 +60,28 @@ type Payment struct {
 type Query struct {
 }
 
+type RecordSnapshot struct {
+	ID            string           `json:"id"`
+	Name          *string          `json:"name,omitempty"`
+	Amount        *float64         `json:"amount,omitempty"`
+	PrePayAddress *AddressSnapshot `json:"prePayAddress,omitempty"`
+	// time: by JS Date().getTime().toString()
+	Time             string             `json:"time"`
+	ShouldPayAddress []*AddressSnapshot `json:"shouldPayAddress,omitempty"`
+	ExtendPayMsg     []float64          `json:"extendPayMsg,omitempty"`
+	Category         RecordCategory     `json:"category"`
+	ParentRecordID   *string            `json:"parentRecordId,omitempty"`
+	IsDeleted        bool               `json:"isDeleted"`
+	IsValid          bool               `json:"isValid"`
+	IsActive         bool               `json:"isActive"`
+}
+
 type Subscription struct {
+}
+
+type TripSnapshot struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type Tx struct {

@@ -40,6 +40,7 @@ type Config struct {
 }
 
 type ResolverRoot interface {
+	Address() AddressResolver
 	Mutation() MutationResolver
 	Query() QueryResolver
 	Subscription() SubscriptionResolver
@@ -51,8 +52,20 @@ type DirectiveRoot struct {
 
 type ComplexityRoot struct {
 	Address struct {
+		ID         func(childComplexity int) int
+		Name       func(childComplexity int) int
+		Statistics func(childComplexity int) int
+	}
+
+	AddressSnapshot struct {
 		ID   func(childComplexity int) int
 		Name func(childComplexity int) int
+	}
+
+	AddressStatistics struct {
+		ActiveRecordCount func(childComplexity int) int
+		TotalExpense      func(childComplexity int) int
+		TotalPrepaid      func(childComplexity int) int
 	}
 
 	Mutation struct {
@@ -89,6 +102,21 @@ type ComplexityRoot struct {
 		Time             func(childComplexity int) int
 	}
 
+	RecordSnapshot struct {
+		Amount           func(childComplexity int) int
+		Category         func(childComplexity int) int
+		ExtendPayMsg     func(childComplexity int) int
+		ID               func(childComplexity int) int
+		IsActive         func(childComplexity int) int
+		IsDeleted        func(childComplexity int) int
+		IsValid          func(childComplexity int) int
+		Name             func(childComplexity int) int
+		ParentRecordID   func(childComplexity int) int
+		PrePayAddress    func(childComplexity int) int
+		ShouldPayAddress func(childComplexity int) int
+		Time             func(childComplexity int) int
+	}
+
 	Subscription struct {
 		SubAddressCreate func(childComplexity int, tripID string) int
 		SubAddressDelete func(childComplexity int, tripID string) int
@@ -106,30 +134,38 @@ type ComplexityRoot struct {
 		Records    func(childComplexity int) int
 	}
 
+	TripSnapshot struct {
+		ID   func(childComplexity int) int
+		Name func(childComplexity int) int
+	}
+
 	Tx struct {
 		Input  func(childComplexity int) int
 		Output func(childComplexity int) int
 	}
 }
 
+type AddressResolver interface {
+	Statistics(ctx context.Context, obj *model.Address) (*model.AddressStatistics, error)
+}
 type MutationResolver interface {
-	CreateTrip(ctx context.Context, input model.NewTrip) (*model.Trip, error)
-	UpdateTrip(ctx context.Context, tripID string, input model.NewTrip) (*model.Trip, error)
-	CreateRecord(ctx context.Context, tripID string, input model.NewRecord) (*model.Record, error)
-	UpdateRecord(ctx context.Context, recordID string, input model.EditRecord) (*model.Record, error)
-	CreateAddress(ctx context.Context, tripID string, input model.NewAddress) (*model.Address, error)
-	UpdateAddress(ctx context.Context, tripID string, addressID string, input model.NewAddress) (*model.Address, error)
-	DeleteAddress(ctx context.Context, tripID string, addressID string) (*model.Address, error)
+	CreateTrip(ctx context.Context, input model.NewTrip) (*model.TripSnapshot, error)
+	UpdateTrip(ctx context.Context, tripID string, input model.NewTrip) (*model.TripSnapshot, error)
+	CreateRecord(ctx context.Context, tripID string, input model.NewRecord) (*model.RecordSnapshot, error)
+	UpdateRecord(ctx context.Context, recordID string, input model.EditRecord) (*model.RecordSnapshot, error)
+	CreateAddress(ctx context.Context, tripID string, input model.NewAddress) (*model.AddressSnapshot, error)
+	UpdateAddress(ctx context.Context, tripID string, addressID string, input model.NewAddress) (*model.AddressSnapshot, error)
+	DeleteAddress(ctx context.Context, tripID string, addressID string) (*model.AddressSnapshot, error)
 }
 type QueryResolver interface {
 	Trip(ctx context.Context, tripID string, haveHistory bool) (*model.Trip, error)
 }
 type SubscriptionResolver interface {
-	SubRecordCreate(ctx context.Context, tripID string) (<-chan *model.Record, error)
-	SubRecordUpdate(ctx context.Context, tripID string) (<-chan *model.Record, error)
-	SubAddressCreate(ctx context.Context, tripID string) (<-chan *model.Address, error)
-	SubAddressUpdate(ctx context.Context, tripID string) (<-chan *model.Address, error)
-	SubAddressDelete(ctx context.Context, tripID string) (<-chan *model.Address, error)
+	SubRecordCreate(ctx context.Context, tripID string) (<-chan *model.RecordSnapshot, error)
+	SubRecordUpdate(ctx context.Context, tripID string) (<-chan *model.RecordSnapshot, error)
+	SubAddressCreate(ctx context.Context, tripID string) (<-chan *model.AddressSnapshot, error)
+	SubAddressUpdate(ctx context.Context, tripID string) (<-chan *model.AddressSnapshot, error)
+	SubAddressDelete(ctx context.Context, tripID string) (<-chan *model.AddressSnapshot, error)
 }
 type TripResolver interface {
 	Records(ctx context.Context, obj *model.Trip) ([]*model.Record, error)
@@ -170,6 +206,48 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Address.Name(childComplexity), true
+
+	case "Address.statistics":
+		if e.complexity.Address.Statistics == nil {
+			break
+		}
+
+		return e.complexity.Address.Statistics(childComplexity), true
+
+	case "AddressSnapshot.id":
+		if e.complexity.AddressSnapshot.ID == nil {
+			break
+		}
+
+		return e.complexity.AddressSnapshot.ID(childComplexity), true
+
+	case "AddressSnapshot.name":
+		if e.complexity.AddressSnapshot.Name == nil {
+			break
+		}
+
+		return e.complexity.AddressSnapshot.Name(childComplexity), true
+
+	case "AddressStatistics.activeRecordCount":
+		if e.complexity.AddressStatistics.ActiveRecordCount == nil {
+			break
+		}
+
+		return e.complexity.AddressStatistics.ActiveRecordCount(childComplexity), true
+
+	case "AddressStatistics.totalExpense":
+		if e.complexity.AddressStatistics.TotalExpense == nil {
+			break
+		}
+
+		return e.complexity.AddressStatistics.TotalExpense(childComplexity), true
+
+	case "AddressStatistics.totalPrepaid":
+		if e.complexity.AddressStatistics.TotalPrepaid == nil {
+			break
+		}
+
+		return e.complexity.AddressStatistics.TotalPrepaid(childComplexity), true
 
 	case "Mutation.createAddress":
 		if e.complexity.Mutation.CreateAddress == nil {
@@ -365,6 +443,90 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Record.Time(childComplexity), true
 
+	case "RecordSnapshot.amount":
+		if e.complexity.RecordSnapshot.Amount == nil {
+			break
+		}
+
+		return e.complexity.RecordSnapshot.Amount(childComplexity), true
+
+	case "RecordSnapshot.category":
+		if e.complexity.RecordSnapshot.Category == nil {
+			break
+		}
+
+		return e.complexity.RecordSnapshot.Category(childComplexity), true
+
+	case "RecordSnapshot.extendPayMsg":
+		if e.complexity.RecordSnapshot.ExtendPayMsg == nil {
+			break
+		}
+
+		return e.complexity.RecordSnapshot.ExtendPayMsg(childComplexity), true
+
+	case "RecordSnapshot.id":
+		if e.complexity.RecordSnapshot.ID == nil {
+			break
+		}
+
+		return e.complexity.RecordSnapshot.ID(childComplexity), true
+
+	case "RecordSnapshot.isActive":
+		if e.complexity.RecordSnapshot.IsActive == nil {
+			break
+		}
+
+		return e.complexity.RecordSnapshot.IsActive(childComplexity), true
+
+	case "RecordSnapshot.isDeleted":
+		if e.complexity.RecordSnapshot.IsDeleted == nil {
+			break
+		}
+
+		return e.complexity.RecordSnapshot.IsDeleted(childComplexity), true
+
+	case "RecordSnapshot.isValid":
+		if e.complexity.RecordSnapshot.IsValid == nil {
+			break
+		}
+
+		return e.complexity.RecordSnapshot.IsValid(childComplexity), true
+
+	case "RecordSnapshot.name":
+		if e.complexity.RecordSnapshot.Name == nil {
+			break
+		}
+
+		return e.complexity.RecordSnapshot.Name(childComplexity), true
+
+	case "RecordSnapshot.parentRecordId":
+		if e.complexity.RecordSnapshot.ParentRecordID == nil {
+			break
+		}
+
+		return e.complexity.RecordSnapshot.ParentRecordID(childComplexity), true
+
+	case "RecordSnapshot.prePayAddress":
+		if e.complexity.RecordSnapshot.PrePayAddress == nil {
+			break
+		}
+
+		return e.complexity.RecordSnapshot.PrePayAddress(childComplexity), true
+
+	case "RecordSnapshot.shouldPayAddress":
+		if e.complexity.RecordSnapshot.ShouldPayAddress == nil {
+			break
+		}
+
+		return e.complexity.RecordSnapshot.ShouldPayAddress(childComplexity), true
+
+	case "RecordSnapshot.time":
+		if e.complexity.RecordSnapshot.Time == nil {
+			break
+		}
+
+		return e.complexity.RecordSnapshot.Time(childComplexity), true
+
 	case "Subscription.subAddressCreate":
 		if e.complexity.Subscription.SubAddressCreate == nil {
 			break
@@ -466,6 +628,20 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Trip.Records(childComplexity), true
+
+	case "TripSnapshot.id":
+		if e.complexity.TripSnapshot.ID == nil {
+			break
+		}
+
+		return e.complexity.TripSnapshot.ID(childComplexity), true
+
+	case "TripSnapshot.name":
+		if e.complexity.TripSnapshot.Name == nil {
+			break
+		}
+
+		return e.complexity.TripSnapshot.Name(childComplexity), true
 
 	case "Tx.input":
 		if e.complexity.Tx.Input == nil {
@@ -1280,6 +1456,275 @@ func (ec *executionContext) fieldContext_Address_name(_ context.Context, field g
 	return fc, nil
 }
 
+func (ec *executionContext) _Address_statistics(ctx context.Context, field graphql.CollectedField, obj *model.Address) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Address_statistics(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Address().Statistics(rctx, obj)
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.AddressStatistics)
+	fc.Result = res
+	return ec.marshalOAddressStatistics2ᚖdtmᚋgraphᚋmodelᚐAddressStatistics(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Address_statistics(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Address",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "totalExpense":
+				return ec.fieldContext_AddressStatistics_totalExpense(ctx, field)
+			case "totalPrepaid":
+				return ec.fieldContext_AddressStatistics_totalPrepaid(ctx, field)
+			case "activeRecordCount":
+				return ec.fieldContext_AddressStatistics_activeRecordCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AddressStatistics", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AddressSnapshot_id(ctx context.Context, field graphql.CollectedField, obj *model.AddressSnapshot) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AddressSnapshot_id(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AddressSnapshot_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AddressSnapshot",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AddressSnapshot_name(ctx context.Context, field graphql.CollectedField, obj *model.AddressSnapshot) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AddressSnapshot_name(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Name, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AddressSnapshot_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AddressSnapshot",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AddressStatistics_totalExpense(ctx context.Context, field graphql.CollectedField, obj *model.AddressStatistics) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AddressStatistics_totalExpense(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TotalExpense, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(float64)
+	fc.Result = res
+	return ec.marshalNFloat2float64(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AddressStatistics_totalExpense(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AddressStatistics",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AddressStatistics_totalPrepaid(ctx context.Context, field graphql.CollectedField, obj *model.AddressStatistics) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AddressStatistics_totalPrepaid(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TotalPrepaid, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(float64)
+	fc.Result = res
+	return ec.marshalNFloat2float64(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AddressStatistics_totalPrepaid(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AddressStatistics",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AddressStatistics_activeRecordCount(ctx context.Context, field graphql.CollectedField, obj *model.AddressStatistics) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AddressStatistics_activeRecordCount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ActiveRecordCount, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int32)
+	fc.Result = res
+	return ec.marshalNInt2int32(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AddressStatistics_activeRecordCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AddressStatistics",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_createTrip(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Mutation_createTrip(ctx, field)
 	if err != nil {
@@ -1306,9 +1751,9 @@ func (ec *executionContext) _Mutation_createTrip(ctx context.Context, field grap
 		}
 		return graphql.Null
 	}
-	res := resTmp.(*model.Trip)
+	res := resTmp.(*model.TripSnapshot)
 	fc.Result = res
-	return ec.marshalNTrip2ᚖdtmᚋgraphᚋmodelᚐTrip(ctx, field.Selections, res)
+	return ec.marshalNTripSnapshot2ᚖdtmᚋgraphᚋmodelᚐTripSnapshot(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) fieldContext_Mutation_createTrip(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -1320,19 +1765,11 @@ func (ec *executionContext) fieldContext_Mutation_createTrip(ctx context.Context
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
 			case "id":
-				return ec.fieldContext_Trip_id(ctx, field)
+				return ec.fieldContext_TripSnapshot_id(ctx, field)
 			case "name":
-				return ec.fieldContext_Trip_name(ctx, field)
-			case "records":
-				return ec.fieldContext_Trip_records(ctx, field)
-			case "moneyShare":
-				return ec.fieldContext_Trip_moneyShare(ctx, field)
-			case "addresses":
-				return ec.fieldContext_Trip_addresses(ctx, field)
-			case "isValid":
-				return ec.fieldContext_Trip_isValid(ctx, field)
+				return ec.fieldContext_TripSnapshot_name(ctx, field)
 			}
-			return nil, fmt.Errorf("no field named %q was found under type Trip", field.Name)
+			return nil, fmt.Errorf("no field named %q was found under type TripSnapshot", field.Name)
 		},
 	}
 	defer func() {
@@ -1375,9 +1812,9 @@ func (ec *executionContext) _Mutation_updateTrip(ctx context.Context, field grap
 		}
 		return graphql.Null
 	}
-	res := resTmp.(*model.Trip)
+	res := resTmp.(*model.TripSnapshot)
 	fc.Result = res
-	return ec.marshalNTrip2ᚖdtmᚋgraphᚋmodelᚐTrip(ctx, field.Selections, res)
+	return ec.marshalNTripSnapshot2ᚖdtmᚋgraphᚋmodelᚐTripSnapshot(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) fieldContext_Mutation_updateTrip(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -1389,19 +1826,11 @@ func (ec *executionContext) fieldContext_Mutation_updateTrip(ctx context.Context
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
 			case "id":
-				return ec.fieldContext_Trip_id(ctx, field)
+				return ec.fieldContext_TripSnapshot_id(ctx, field)
 			case "name":
-				return ec.fieldContext_Trip_name(ctx, field)
-			case "records":
-				return ec.fieldContext_Trip_records(ctx, field)
-			case "moneyShare":
-				return ec.fieldContext_Trip_moneyShare(ctx, field)
-			case "addresses":
-				return ec.fieldContext_Trip_addresses(ctx, field)
-			case "isValid":
-				return ec.fieldContext_Trip_isValid(ctx, field)
+				return ec.fieldContext_TripSnapshot_name(ctx, field)
 			}
-			return nil, fmt.Errorf("no field named %q was found under type Trip", field.Name)
+			return nil, fmt.Errorf("no field named %q was found under type TripSnapshot", field.Name)
 		},
 	}
 	defer func() {
@@ -1444,9 +1873,9 @@ func (ec *executionContext) _Mutation_createRecord(ctx context.Context, field gr
 		}
 		return graphql.Null
 	}
-	res := resTmp.(*model.Record)
+	res := resTmp.(*model.RecordSnapshot)
 	fc.Result = res
-	return ec.marshalNRecord2ᚖdtmᚋgraphᚋmodelᚐRecord(ctx, field.Selections, res)
+	return ec.marshalNRecordSnapshot2ᚖdtmᚋgraphᚋmodelᚐRecordSnapshot(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) fieldContext_Mutation_createRecord(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -1458,31 +1887,31 @@ func (ec *executionContext) fieldContext_Mutation_createRecord(ctx context.Conte
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
 			case "id":
-				return ec.fieldContext_Record_id(ctx, field)
+				return ec.fieldContext_RecordSnapshot_id(ctx, field)
 			case "name":
-				return ec.fieldContext_Record_name(ctx, field)
+				return ec.fieldContext_RecordSnapshot_name(ctx, field)
 			case "amount":
-				return ec.fieldContext_Record_amount(ctx, field)
+				return ec.fieldContext_RecordSnapshot_amount(ctx, field)
 			case "prePayAddress":
-				return ec.fieldContext_Record_prePayAddress(ctx, field)
+				return ec.fieldContext_RecordSnapshot_prePayAddress(ctx, field)
 			case "time":
-				return ec.fieldContext_Record_time(ctx, field)
+				return ec.fieldContext_RecordSnapshot_time(ctx, field)
 			case "shouldPayAddress":
-				return ec.fieldContext_Record_shouldPayAddress(ctx, field)
+				return ec.fieldContext_RecordSnapshot_shouldPayAddress(ctx, field)
 			case "extendPayMsg":
-				return ec.fieldContext_Record_extendPayMsg(ctx, field)
+				return ec.fieldContext_RecordSnapshot_extendPayMsg(ctx, field)
 			case "category":
-				return ec.fieldContext_Record_category(ctx, field)
+				return ec.fieldContext_RecordSnapshot_category(ctx, field)
 			case "parentRecordId":
-				return ec.fieldContext_Record_parentRecordId(ctx, field)
+				return ec.fieldContext_RecordSnapshot_parentRecordId(ctx, field)
 			case "isDeleted":
-				return ec.fieldContext_Record_isDeleted(ctx, field)
+				return ec.fieldContext_RecordSnapshot_isDeleted(ctx, field)
 			case "isValid":
-				return ec.fieldContext_Record_isValid(ctx, field)
+				return ec.fieldContext_RecordSnapshot_isValid(ctx, field)
 			case "isActive":
-				return ec.fieldContext_Record_isActive(ctx, field)
+				return ec.fieldContext_RecordSnapshot_isActive(ctx, field)
 			}
-			return nil, fmt.Errorf("no field named %q was found under type Record", field.Name)
+			return nil, fmt.Errorf("no field named %q was found under type RecordSnapshot", field.Name)
 		},
 	}
 	defer func() {
@@ -1525,9 +1954,9 @@ func (ec *executionContext) _Mutation_updateRecord(ctx context.Context, field gr
 		}
 		return graphql.Null
 	}
-	res := resTmp.(*model.Record)
+	res := resTmp.(*model.RecordSnapshot)
 	fc.Result = res
-	return ec.marshalNRecord2ᚖdtmᚋgraphᚋmodelᚐRecord(ctx, field.Selections, res)
+	return ec.marshalNRecordSnapshot2ᚖdtmᚋgraphᚋmodelᚐRecordSnapshot(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) fieldContext_Mutation_updateRecord(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -1539,31 +1968,31 @@ func (ec *executionContext) fieldContext_Mutation_updateRecord(ctx context.Conte
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
 			case "id":
-				return ec.fieldContext_Record_id(ctx, field)
+				return ec.fieldContext_RecordSnapshot_id(ctx, field)
 			case "name":
-				return ec.fieldContext_Record_name(ctx, field)
+				return ec.fieldContext_RecordSnapshot_name(ctx, field)
 			case "amount":
-				return ec.fieldContext_Record_amount(ctx, field)
+				return ec.fieldContext_RecordSnapshot_amount(ctx, field)
 			case "prePayAddress":
-				return ec.fieldContext_Record_prePayAddress(ctx, field)
+				return ec.fieldContext_RecordSnapshot_prePayAddress(ctx, field)
 			case "time":
-				return ec.fieldContext_Record_time(ctx, field)
+				return ec.fieldContext_RecordSnapshot_time(ctx, field)
 			case "shouldPayAddress":
-				return ec.fieldContext_Record_shouldPayAddress(ctx, field)
+				return ec.fieldContext_RecordSnapshot_shouldPayAddress(ctx, field)
 			case "extendPayMsg":
-				return ec.fieldContext_Record_extendPayMsg(ctx, field)
+				return ec.fieldContext_RecordSnapshot_extendPayMsg(ctx, field)
 			case "category":
-				return ec.fieldContext_Record_category(ctx, field)
+				return ec.fieldContext_RecordSnapshot_category(ctx, field)
 			case "parentRecordId":
-				return ec.fieldContext_Record_parentRecordId(ctx, field)
+				return ec.fieldContext_RecordSnapshot_parentRecordId(ctx, field)
 			case "isDeleted":
-				return ec.fieldContext_Record_isDeleted(ctx, field)
+				return ec.fieldContext_RecordSnapshot_isDeleted(ctx, field)
 			case "isValid":
-				return ec.fieldContext_Record_isValid(ctx, field)
+				return ec.fieldContext_RecordSnapshot_isValid(ctx, field)
 			case "isActive":
-				return ec.fieldContext_Record_isActive(ctx, field)
+				return ec.fieldContext_RecordSnapshot_isActive(ctx, field)
 			}
-			return nil, fmt.Errorf("no field named %q was found under type Record", field.Name)
+			return nil, fmt.Errorf("no field named %q was found under type RecordSnapshot", field.Name)
 		},
 	}
 	defer func() {
@@ -1606,9 +2035,9 @@ func (ec *executionContext) _Mutation_createAddress(ctx context.Context, field g
 		}
 		return graphql.Null
 	}
-	res := resTmp.(*model.Address)
+	res := resTmp.(*model.AddressSnapshot)
 	fc.Result = res
-	return ec.marshalNAddress2ᚖdtmᚋgraphᚋmodelᚐAddress(ctx, field.Selections, res)
+	return ec.marshalNAddressSnapshot2ᚖdtmᚋgraphᚋmodelᚐAddressSnapshot(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) fieldContext_Mutation_createAddress(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -1620,11 +2049,11 @@ func (ec *executionContext) fieldContext_Mutation_createAddress(ctx context.Cont
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
 			case "id":
-				return ec.fieldContext_Address_id(ctx, field)
+				return ec.fieldContext_AddressSnapshot_id(ctx, field)
 			case "name":
-				return ec.fieldContext_Address_name(ctx, field)
+				return ec.fieldContext_AddressSnapshot_name(ctx, field)
 			}
-			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
+			return nil, fmt.Errorf("no field named %q was found under type AddressSnapshot", field.Name)
 		},
 	}
 	defer func() {
@@ -1667,9 +2096,9 @@ func (ec *executionContext) _Mutation_updateAddress(ctx context.Context, field g
 		}
 		return graphql.Null
 	}
-	res := resTmp.(*model.Address)
+	res := resTmp.(*model.AddressSnapshot)
 	fc.Result = res
-	return ec.marshalNAddress2ᚖdtmᚋgraphᚋmodelᚐAddress(ctx, field.Selections, res)
+	return ec.marshalNAddressSnapshot2ᚖdtmᚋgraphᚋmodelᚐAddressSnapshot(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) fieldContext_Mutation_updateAddress(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -1681,11 +2110,11 @@ func (ec *executionContext) fieldContext_Mutation_updateAddress(ctx context.Cont
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
 			case "id":
-				return ec.fieldContext_Address_id(ctx, field)
+				return ec.fieldContext_AddressSnapshot_id(ctx, field)
 			case "name":
-				return ec.fieldContext_Address_name(ctx, field)
+				return ec.fieldContext_AddressSnapshot_name(ctx, field)
 			}
-			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
+			return nil, fmt.Errorf("no field named %q was found under type AddressSnapshot", field.Name)
 		},
 	}
 	defer func() {
@@ -1728,9 +2157,9 @@ func (ec *executionContext) _Mutation_deleteAddress(ctx context.Context, field g
 		}
 		return graphql.Null
 	}
-	res := resTmp.(*model.Address)
+	res := resTmp.(*model.AddressSnapshot)
 	fc.Result = res
-	return ec.marshalNAddress2ᚖdtmᚋgraphᚋmodelᚐAddress(ctx, field.Selections, res)
+	return ec.marshalNAddressSnapshot2ᚖdtmᚋgraphᚋmodelᚐAddressSnapshot(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) fieldContext_Mutation_deleteAddress(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -1742,11 +2171,11 @@ func (ec *executionContext) fieldContext_Mutation_deleteAddress(ctx context.Cont
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
 			case "id":
-				return ec.fieldContext_Address_id(ctx, field)
+				return ec.fieldContext_AddressSnapshot_id(ctx, field)
 			case "name":
-				return ec.fieldContext_Address_name(ctx, field)
+				return ec.fieldContext_AddressSnapshot_name(ctx, field)
 			}
-			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
+			return nil, fmt.Errorf("no field named %q was found under type AddressSnapshot", field.Name)
 		},
 	}
 	defer func() {
@@ -1850,6 +2279,8 @@ func (ec *executionContext) fieldContext_Payment_address(_ context.Context, fiel
 				return ec.fieldContext_Address_id(ctx, field)
 			case "name":
 				return ec.fieldContext_Address_name(ctx, field)
+			case "statistics":
+				return ec.fieldContext_Address_statistics(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
 		},
@@ -2220,6 +2651,8 @@ func (ec *executionContext) fieldContext_Record_prePayAddress(_ context.Context,
 				return ec.fieldContext_Address_id(ctx, field)
 			case "name":
 				return ec.fieldContext_Address_name(ctx, field)
+			case "statistics":
+				return ec.fieldContext_Address_statistics(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
 		},
@@ -2311,6 +2744,8 @@ func (ec *executionContext) fieldContext_Record_shouldPayAddress(_ context.Conte
 				return ec.fieldContext_Address_id(ctx, field)
 			case "name":
 				return ec.fieldContext_Address_name(ctx, field)
+			case "statistics":
+				return ec.fieldContext_Address_statistics(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
 		},
@@ -2576,6 +3011,528 @@ func (ec *executionContext) fieldContext_Record_isActive(_ context.Context, fiel
 	return fc, nil
 }
 
+func (ec *executionContext) _RecordSnapshot_id(ctx context.Context, field graphql.CollectedField, obj *model.RecordSnapshot) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_RecordSnapshot_id(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_RecordSnapshot_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RecordSnapshot",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RecordSnapshot_name(ctx context.Context, field graphql.CollectedField, obj *model.RecordSnapshot) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_RecordSnapshot_name(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Name, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_RecordSnapshot_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RecordSnapshot",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RecordSnapshot_amount(ctx context.Context, field graphql.CollectedField, obj *model.RecordSnapshot) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_RecordSnapshot_amount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Amount, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*float64)
+	fc.Result = res
+	return ec.marshalOFloat2ᚖfloat64(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_RecordSnapshot_amount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RecordSnapshot",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RecordSnapshot_prePayAddress(ctx context.Context, field graphql.CollectedField, obj *model.RecordSnapshot) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_RecordSnapshot_prePayAddress(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PrePayAddress, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.AddressSnapshot)
+	fc.Result = res
+	return ec.marshalOAddressSnapshot2ᚖdtmᚋgraphᚋmodelᚐAddressSnapshot(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_RecordSnapshot_prePayAddress(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RecordSnapshot",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_AddressSnapshot_id(ctx, field)
+			case "name":
+				return ec.fieldContext_AddressSnapshot_name(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AddressSnapshot", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RecordSnapshot_time(ctx context.Context, field graphql.CollectedField, obj *model.RecordSnapshot) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_RecordSnapshot_time(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Time, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_RecordSnapshot_time(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RecordSnapshot",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RecordSnapshot_shouldPayAddress(ctx context.Context, field graphql.CollectedField, obj *model.RecordSnapshot) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_RecordSnapshot_shouldPayAddress(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ShouldPayAddress, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.([]*model.AddressSnapshot)
+	fc.Result = res
+	return ec.marshalOAddressSnapshot2ᚕᚖdtmᚋgraphᚋmodelᚐAddressSnapshotᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_RecordSnapshot_shouldPayAddress(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RecordSnapshot",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_AddressSnapshot_id(ctx, field)
+			case "name":
+				return ec.fieldContext_AddressSnapshot_name(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AddressSnapshot", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RecordSnapshot_extendPayMsg(ctx context.Context, field graphql.CollectedField, obj *model.RecordSnapshot) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_RecordSnapshot_extendPayMsg(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ExtendPayMsg, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.([]float64)
+	fc.Result = res
+	return ec.marshalOFloat2ᚕfloat64ᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_RecordSnapshot_extendPayMsg(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RecordSnapshot",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RecordSnapshot_category(ctx context.Context, field graphql.CollectedField, obj *model.RecordSnapshot) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_RecordSnapshot_category(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Category, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.RecordCategory)
+	fc.Result = res
+	return ec.marshalNRecordCategory2dtmᚋgraphᚋmodelᚐRecordCategory(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_RecordSnapshot_category(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RecordSnapshot",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type RecordCategory does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RecordSnapshot_parentRecordId(ctx context.Context, field graphql.CollectedField, obj *model.RecordSnapshot) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_RecordSnapshot_parentRecordId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ParentRecordID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOID2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_RecordSnapshot_parentRecordId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RecordSnapshot",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RecordSnapshot_isDeleted(ctx context.Context, field graphql.CollectedField, obj *model.RecordSnapshot) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_RecordSnapshot_isDeleted(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.IsDeleted, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_RecordSnapshot_isDeleted(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RecordSnapshot",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RecordSnapshot_isValid(ctx context.Context, field graphql.CollectedField, obj *model.RecordSnapshot) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_RecordSnapshot_isValid(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.IsValid, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_RecordSnapshot_isValid(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RecordSnapshot",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RecordSnapshot_isActive(ctx context.Context, field graphql.CollectedField, obj *model.RecordSnapshot) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_RecordSnapshot_isActive(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.IsActive, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_RecordSnapshot_isActive(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RecordSnapshot",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Subscription_subRecordCreate(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
 	fc, err := ec.fieldContext_Subscription_subRecordCreate(ctx, field)
 	if err != nil {
@@ -2604,7 +3561,7 @@ func (ec *executionContext) _Subscription_subRecordCreate(ctx context.Context, f
 	}
 	return func(ctx context.Context) graphql.Marshaler {
 		select {
-		case res, ok := <-resTmp.(<-chan *model.Record):
+		case res, ok := <-resTmp.(<-chan *model.RecordSnapshot):
 			if !ok {
 				return nil
 			}
@@ -2612,7 +3569,7 @@ func (ec *executionContext) _Subscription_subRecordCreate(ctx context.Context, f
 				w.Write([]byte{'{'})
 				graphql.MarshalString(field.Alias).MarshalGQL(w)
 				w.Write([]byte{':'})
-				ec.marshalNRecord2ᚖdtmᚋgraphᚋmodelᚐRecord(ctx, field.Selections, res).MarshalGQL(w)
+				ec.marshalNRecordSnapshot2ᚖdtmᚋgraphᚋmodelᚐRecordSnapshot(ctx, field.Selections, res).MarshalGQL(w)
 				w.Write([]byte{'}'})
 			})
 		case <-ctx.Done():
@@ -2630,31 +3587,31 @@ func (ec *executionContext) fieldContext_Subscription_subRecordCreate(ctx contex
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
 			case "id":
-				return ec.fieldContext_Record_id(ctx, field)
+				return ec.fieldContext_RecordSnapshot_id(ctx, field)
 			case "name":
-				return ec.fieldContext_Record_name(ctx, field)
+				return ec.fieldContext_RecordSnapshot_name(ctx, field)
 			case "amount":
-				return ec.fieldContext_Record_amount(ctx, field)
+				return ec.fieldContext_RecordSnapshot_amount(ctx, field)
 			case "prePayAddress":
-				return ec.fieldContext_Record_prePayAddress(ctx, field)
+				return ec.fieldContext_RecordSnapshot_prePayAddress(ctx, field)
 			case "time":
-				return ec.fieldContext_Record_time(ctx, field)
+				return ec.fieldContext_RecordSnapshot_time(ctx, field)
 			case "shouldPayAddress":
-				return ec.fieldContext_Record_shouldPayAddress(ctx, field)
+				return ec.fieldContext_RecordSnapshot_shouldPayAddress(ctx, field)
 			case "extendPayMsg":
-				return ec.fieldContext_Record_extendPayMsg(ctx, field)
+				return ec.fieldContext_RecordSnapshot_extendPayMsg(ctx, field)
 			case "category":
-				return ec.fieldContext_Record_category(ctx, field)
+				return ec.fieldContext_RecordSnapshot_category(ctx, field)
 			case "parentRecordId":
-				return ec.fieldContext_Record_parentRecordId(ctx, field)
+				return ec.fieldContext_RecordSnapshot_parentRecordId(ctx, field)
 			case "isDeleted":
-				return ec.fieldContext_Record_isDeleted(ctx, field)
+				return ec.fieldContext_RecordSnapshot_isDeleted(ctx, field)
 			case "isValid":
-				return ec.fieldContext_Record_isValid(ctx, field)
+				return ec.fieldContext_RecordSnapshot_isValid(ctx, field)
 			case "isActive":
-				return ec.fieldContext_Record_isActive(ctx, field)
+				return ec.fieldContext_RecordSnapshot_isActive(ctx, field)
 			}
-			return nil, fmt.Errorf("no field named %q was found under type Record", field.Name)
+			return nil, fmt.Errorf("no field named %q was found under type RecordSnapshot", field.Name)
 		},
 	}
 	defer func() {
@@ -2699,7 +3656,7 @@ func (ec *executionContext) _Subscription_subRecordUpdate(ctx context.Context, f
 	}
 	return func(ctx context.Context) graphql.Marshaler {
 		select {
-		case res, ok := <-resTmp.(<-chan *model.Record):
+		case res, ok := <-resTmp.(<-chan *model.RecordSnapshot):
 			if !ok {
 				return nil
 			}
@@ -2707,7 +3664,7 @@ func (ec *executionContext) _Subscription_subRecordUpdate(ctx context.Context, f
 				w.Write([]byte{'{'})
 				graphql.MarshalString(field.Alias).MarshalGQL(w)
 				w.Write([]byte{':'})
-				ec.marshalNRecord2ᚖdtmᚋgraphᚋmodelᚐRecord(ctx, field.Selections, res).MarshalGQL(w)
+				ec.marshalNRecordSnapshot2ᚖdtmᚋgraphᚋmodelᚐRecordSnapshot(ctx, field.Selections, res).MarshalGQL(w)
 				w.Write([]byte{'}'})
 			})
 		case <-ctx.Done():
@@ -2725,31 +3682,31 @@ func (ec *executionContext) fieldContext_Subscription_subRecordUpdate(ctx contex
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
 			case "id":
-				return ec.fieldContext_Record_id(ctx, field)
+				return ec.fieldContext_RecordSnapshot_id(ctx, field)
 			case "name":
-				return ec.fieldContext_Record_name(ctx, field)
+				return ec.fieldContext_RecordSnapshot_name(ctx, field)
 			case "amount":
-				return ec.fieldContext_Record_amount(ctx, field)
+				return ec.fieldContext_RecordSnapshot_amount(ctx, field)
 			case "prePayAddress":
-				return ec.fieldContext_Record_prePayAddress(ctx, field)
+				return ec.fieldContext_RecordSnapshot_prePayAddress(ctx, field)
 			case "time":
-				return ec.fieldContext_Record_time(ctx, field)
+				return ec.fieldContext_RecordSnapshot_time(ctx, field)
 			case "shouldPayAddress":
-				return ec.fieldContext_Record_shouldPayAddress(ctx, field)
+				return ec.fieldContext_RecordSnapshot_shouldPayAddress(ctx, field)
 			case "extendPayMsg":
-				return ec.fieldContext_Record_extendPayMsg(ctx, field)
+				return ec.fieldContext_RecordSnapshot_extendPayMsg(ctx, field)
 			case "category":
-				return ec.fieldContext_Record_category(ctx, field)
+				return ec.fieldContext_RecordSnapshot_category(ctx, field)
 			case "parentRecordId":
-				return ec.fieldContext_Record_parentRecordId(ctx, field)
+				return ec.fieldContext_RecordSnapshot_parentRecordId(ctx, field)
 			case "isDeleted":
-				return ec.fieldContext_Record_isDeleted(ctx, field)
+				return ec.fieldContext_RecordSnapshot_isDeleted(ctx, field)
 			case "isValid":
-				return ec.fieldContext_Record_isValid(ctx, field)
+				return ec.fieldContext_RecordSnapshot_isValid(ctx, field)
 			case "isActive":
-				return ec.fieldContext_Record_isActive(ctx, field)
+				return ec.fieldContext_RecordSnapshot_isActive(ctx, field)
 			}
-			return nil, fmt.Errorf("no field named %q was found under type Record", field.Name)
+			return nil, fmt.Errorf("no field named %q was found under type RecordSnapshot", field.Name)
 		},
 	}
 	defer func() {
@@ -2794,7 +3751,7 @@ func (ec *executionContext) _Subscription_subAddressCreate(ctx context.Context, 
 	}
 	return func(ctx context.Context) graphql.Marshaler {
 		select {
-		case res, ok := <-resTmp.(<-chan *model.Address):
+		case res, ok := <-resTmp.(<-chan *model.AddressSnapshot):
 			if !ok {
 				return nil
 			}
@@ -2802,7 +3759,7 @@ func (ec *executionContext) _Subscription_subAddressCreate(ctx context.Context, 
 				w.Write([]byte{'{'})
 				graphql.MarshalString(field.Alias).MarshalGQL(w)
 				w.Write([]byte{':'})
-				ec.marshalNAddress2ᚖdtmᚋgraphᚋmodelᚐAddress(ctx, field.Selections, res).MarshalGQL(w)
+				ec.marshalNAddressSnapshot2ᚖdtmᚋgraphᚋmodelᚐAddressSnapshot(ctx, field.Selections, res).MarshalGQL(w)
 				w.Write([]byte{'}'})
 			})
 		case <-ctx.Done():
@@ -2820,11 +3777,11 @@ func (ec *executionContext) fieldContext_Subscription_subAddressCreate(ctx conte
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
 			case "id":
-				return ec.fieldContext_Address_id(ctx, field)
+				return ec.fieldContext_AddressSnapshot_id(ctx, field)
 			case "name":
-				return ec.fieldContext_Address_name(ctx, field)
+				return ec.fieldContext_AddressSnapshot_name(ctx, field)
 			}
-			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
+			return nil, fmt.Errorf("no field named %q was found under type AddressSnapshot", field.Name)
 		},
 	}
 	defer func() {
@@ -2869,7 +3826,7 @@ func (ec *executionContext) _Subscription_subAddressUpdate(ctx context.Context, 
 	}
 	return func(ctx context.Context) graphql.Marshaler {
 		select {
-		case res, ok := <-resTmp.(<-chan *model.Address):
+		case res, ok := <-resTmp.(<-chan *model.AddressSnapshot):
 			if !ok {
 				return nil
 			}
@@ -2877,7 +3834,7 @@ func (ec *executionContext) _Subscription_subAddressUpdate(ctx context.Context, 
 				w.Write([]byte{'{'})
 				graphql.MarshalString(field.Alias).MarshalGQL(w)
 				w.Write([]byte{':'})
-				ec.marshalNAddress2ᚖdtmᚋgraphᚋmodelᚐAddress(ctx, field.Selections, res).MarshalGQL(w)
+				ec.marshalNAddressSnapshot2ᚖdtmᚋgraphᚋmodelᚐAddressSnapshot(ctx, field.Selections, res).MarshalGQL(w)
 				w.Write([]byte{'}'})
 			})
 		case <-ctx.Done():
@@ -2895,11 +3852,11 @@ func (ec *executionContext) fieldContext_Subscription_subAddressUpdate(ctx conte
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
 			case "id":
-				return ec.fieldContext_Address_id(ctx, field)
+				return ec.fieldContext_AddressSnapshot_id(ctx, field)
 			case "name":
-				return ec.fieldContext_Address_name(ctx, field)
+				return ec.fieldContext_AddressSnapshot_name(ctx, field)
 			}
-			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
+			return nil, fmt.Errorf("no field named %q was found under type AddressSnapshot", field.Name)
 		},
 	}
 	defer func() {
@@ -2944,7 +3901,7 @@ func (ec *executionContext) _Subscription_subAddressDelete(ctx context.Context, 
 	}
 	return func(ctx context.Context) graphql.Marshaler {
 		select {
-		case res, ok := <-resTmp.(<-chan *model.Address):
+		case res, ok := <-resTmp.(<-chan *model.AddressSnapshot):
 			if !ok {
 				return nil
 			}
@@ -2952,7 +3909,7 @@ func (ec *executionContext) _Subscription_subAddressDelete(ctx context.Context, 
 				w.Write([]byte{'{'})
 				graphql.MarshalString(field.Alias).MarshalGQL(w)
 				w.Write([]byte{':'})
-				ec.marshalNAddress2ᚖdtmᚋgraphᚋmodelᚐAddress(ctx, field.Selections, res).MarshalGQL(w)
+				ec.marshalNAddressSnapshot2ᚖdtmᚋgraphᚋmodelᚐAddressSnapshot(ctx, field.Selections, res).MarshalGQL(w)
 				w.Write([]byte{'}'})
 			})
 		case <-ctx.Done():
@@ -2970,11 +3927,11 @@ func (ec *executionContext) fieldContext_Subscription_subAddressDelete(ctx conte
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
 			case "id":
-				return ec.fieldContext_Address_id(ctx, field)
+				return ec.fieldContext_AddressSnapshot_id(ctx, field)
 			case "name":
-				return ec.fieldContext_Address_name(ctx, field)
+				return ec.fieldContext_AddressSnapshot_name(ctx, field)
 			}
-			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
+			return nil, fmt.Errorf("no field named %q was found under type AddressSnapshot", field.Name)
 		},
 	}
 	defer func() {
@@ -3242,6 +4199,8 @@ func (ec *executionContext) fieldContext_Trip_addresses(_ context.Context, field
 				return ec.fieldContext_Address_id(ctx, field)
 			case "name":
 				return ec.fieldContext_Address_name(ctx, field)
+			case "statistics":
+				return ec.fieldContext_Address_statistics(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
 		},
@@ -3288,6 +4247,94 @@ func (ec *executionContext) fieldContext_Trip_isValid(_ context.Context, field g
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _TripSnapshot_id(ctx context.Context, field graphql.CollectedField, obj *model.TripSnapshot) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_TripSnapshot_id(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_TripSnapshot_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "TripSnapshot",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _TripSnapshot_name(ctx context.Context, field graphql.CollectedField, obj *model.TripSnapshot) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_TripSnapshot_name(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Name, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_TripSnapshot_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "TripSnapshot",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
 		},
 	}
 	return fc, nil
@@ -5530,10 +6577,136 @@ func (ec *executionContext) _Address(ctx context.Context, sel ast.SelectionSet, 
 		case "id":
 			out.Values[i] = ec._Address_id(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "name":
 			out.Values[i] = ec._Address_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "statistics":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Address_statistics(ctx, field, obj)
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var addressSnapshotImplementors = []string{"AddressSnapshot"}
+
+func (ec *executionContext) _AddressSnapshot(ctx context.Context, sel ast.SelectionSet, obj *model.AddressSnapshot) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, addressSnapshotImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AddressSnapshot")
+		case "id":
+			out.Values[i] = ec._AddressSnapshot_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "name":
+			out.Values[i] = ec._AddressSnapshot_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var addressStatisticsImplementors = []string{"AddressStatistics"}
+
+func (ec *executionContext) _AddressStatistics(ctx context.Context, sel ast.SelectionSet, obj *model.AddressStatistics) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, addressStatisticsImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AddressStatistics")
+		case "totalExpense":
+			out.Values[i] = ec._AddressStatistics_totalExpense(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totalPrepaid":
+			out.Values[i] = ec._AddressStatistics_totalPrepaid(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "activeRecordCount":
+			out.Values[i] = ec._AddressStatistics_activeRecordCount(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -5840,6 +7013,82 @@ func (ec *executionContext) _Record(ctx context.Context, sel ast.SelectionSet, o
 	return out
 }
 
+var recordSnapshotImplementors = []string{"RecordSnapshot"}
+
+func (ec *executionContext) _RecordSnapshot(ctx context.Context, sel ast.SelectionSet, obj *model.RecordSnapshot) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, recordSnapshotImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("RecordSnapshot")
+		case "id":
+			out.Values[i] = ec._RecordSnapshot_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "name":
+			out.Values[i] = ec._RecordSnapshot_name(ctx, field, obj)
+		case "amount":
+			out.Values[i] = ec._RecordSnapshot_amount(ctx, field, obj)
+		case "prePayAddress":
+			out.Values[i] = ec._RecordSnapshot_prePayAddress(ctx, field, obj)
+		case "time":
+			out.Values[i] = ec._RecordSnapshot_time(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "shouldPayAddress":
+			out.Values[i] = ec._RecordSnapshot_shouldPayAddress(ctx, field, obj)
+		case "extendPayMsg":
+			out.Values[i] = ec._RecordSnapshot_extendPayMsg(ctx, field, obj)
+		case "category":
+			out.Values[i] = ec._RecordSnapshot_category(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "parentRecordId":
+			out.Values[i] = ec._RecordSnapshot_parentRecordId(ctx, field, obj)
+		case "isDeleted":
+			out.Values[i] = ec._RecordSnapshot_isDeleted(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "isValid":
+			out.Values[i] = ec._RecordSnapshot_isValid(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "isActive":
+			out.Values[i] = ec._RecordSnapshot_isActive(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var subscriptionImplementors = []string{"Subscription"}
 
 func (ec *executionContext) _Subscription(ctx context.Context, sel ast.SelectionSet) func(ctx context.Context) graphql.Marshaler {
@@ -6033,6 +7282,50 @@ func (ec *executionContext) _Trip(ctx context.Context, sel ast.SelectionSet, obj
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var tripSnapshotImplementors = []string{"TripSnapshot"}
+
+func (ec *executionContext) _TripSnapshot(ctx context.Context, sel ast.SelectionSet, obj *model.TripSnapshot) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, tripSnapshotImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("TripSnapshot")
+		case "id":
+			out.Values[i] = ec._TripSnapshot_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "name":
+			out.Values[i] = ec._TripSnapshot_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -6435,10 +7728,6 @@ func (ec *executionContext) ___Type(ctx context.Context, sel ast.SelectionSet, o
 
 // region    ***************************** type.gotpl *****************************
 
-func (ec *executionContext) marshalNAddress2dtmᚋgraphᚋmodelᚐAddress(ctx context.Context, sel ast.SelectionSet, v model.Address) graphql.Marshaler {
-	return ec._Address(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNAddress2ᚕᚖdtmᚋgraphᚋmodelᚐAddressᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Address) graphql.Marshaler {
 	ret := make(graphql.Array, len(v))
 	var wg sync.WaitGroup
@@ -6491,6 +7780,20 @@ func (ec *executionContext) marshalNAddress2ᚖdtmᚋgraphᚋmodelᚐAddress(ctx
 		return graphql.Null
 	}
 	return ec._Address(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNAddressSnapshot2dtmᚋgraphᚋmodelᚐAddressSnapshot(ctx context.Context, sel ast.SelectionSet, v model.AddressSnapshot) graphql.Marshaler {
+	return ec._AddressSnapshot(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNAddressSnapshot2ᚖdtmᚋgraphᚋmodelᚐAddressSnapshot(ctx context.Context, sel ast.SelectionSet, v *model.AddressSnapshot) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AddressSnapshot(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNBoolean2bool(ctx context.Context, v any) (bool, error) {
@@ -6576,6 +7879,22 @@ func (ec *executionContext) marshalNID2ᚕstringᚄ(ctx context.Context, sel ast
 	return ret
 }
 
+func (ec *executionContext) unmarshalNInt2int32(ctx context.Context, v any) (int32, error) {
+	res, err := graphql.UnmarshalInt32(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNInt2int32(ctx context.Context, sel ast.SelectionSet, v int32) graphql.Marshaler {
+	_ = sel
+	res := graphql.MarshalInt32(v)
+	if res == graphql.Null {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+	}
+	return res
+}
+
 func (ec *executionContext) unmarshalNNewAddress2dtmᚋgraphᚋmodelᚐNewAddress(ctx context.Context, v any) (model.NewAddress, error) {
 	res, err := ec.unmarshalInputNewAddress(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -6645,10 +7964,6 @@ func (ec *executionContext) marshalNPayment2ᚖdtmᚋgraphᚋmodelᚐPayment(ctx
 	return ec._Payment(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalNRecord2dtmᚋgraphᚋmodelᚐRecord(ctx context.Context, sel ast.SelectionSet, v model.Record) graphql.Marshaler {
-	return ec._Record(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNRecord2ᚕᚖdtmᚋgraphᚋmodelᚐRecordᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Record) graphql.Marshaler {
 	ret := make(graphql.Array, len(v))
 	var wg sync.WaitGroup
@@ -6713,6 +8028,20 @@ func (ec *executionContext) marshalNRecordCategory2dtmᚋgraphᚋmodelᚐRecordC
 	return v
 }
 
+func (ec *executionContext) marshalNRecordSnapshot2dtmᚋgraphᚋmodelᚐRecordSnapshot(ctx context.Context, sel ast.SelectionSet, v model.RecordSnapshot) graphql.Marshaler {
+	return ec._RecordSnapshot(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNRecordSnapshot2ᚖdtmᚋgraphᚋmodelᚐRecordSnapshot(ctx context.Context, sel ast.SelectionSet, v *model.RecordSnapshot) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._RecordSnapshot(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v any) (string, error) {
 	res, err := graphql.UnmarshalString(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -6729,18 +8058,18 @@ func (ec *executionContext) marshalNString2string(ctx context.Context, sel ast.S
 	return res
 }
 
-func (ec *executionContext) marshalNTrip2dtmᚋgraphᚋmodelᚐTrip(ctx context.Context, sel ast.SelectionSet, v model.Trip) graphql.Marshaler {
-	return ec._Trip(ctx, sel, &v)
+func (ec *executionContext) marshalNTripSnapshot2dtmᚋgraphᚋmodelᚐTripSnapshot(ctx context.Context, sel ast.SelectionSet, v model.TripSnapshot) graphql.Marshaler {
+	return ec._TripSnapshot(ctx, sel, &v)
 }
 
-func (ec *executionContext) marshalNTrip2ᚖdtmᚋgraphᚋmodelᚐTrip(ctx context.Context, sel ast.SelectionSet, v *model.Trip) graphql.Marshaler {
+func (ec *executionContext) marshalNTripSnapshot2ᚖdtmᚋgraphᚋmodelᚐTripSnapshot(ctx context.Context, sel ast.SelectionSet, v *model.TripSnapshot) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
 		}
 		return graphql.Null
 	}
-	return ec._Trip(ctx, sel, v)
+	return ec._TripSnapshot(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNTx2ᚕᚖdtmᚋgraphᚋmodelᚐTxᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Tx) graphql.Marshaler {
@@ -7102,6 +8431,67 @@ func (ec *executionContext) marshalOAddress2ᚖdtmᚋgraphᚋmodelᚐAddress(ctx
 		return graphql.Null
 	}
 	return ec._Address(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalOAddressSnapshot2ᚕᚖdtmᚋgraphᚋmodelᚐAddressSnapshotᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.AddressSnapshot) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNAddressSnapshot2ᚖdtmᚋgraphᚋmodelᚐAddressSnapshot(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalOAddressSnapshot2ᚖdtmᚋgraphᚋmodelᚐAddressSnapshot(ctx context.Context, sel ast.SelectionSet, v *model.AddressSnapshot) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._AddressSnapshot(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalOAddressStatistics2ᚖdtmᚋgraphᚋmodelᚐAddressStatistics(ctx context.Context, sel ast.SelectionSet, v *model.AddressStatistics) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._AddressStatistics(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalOBoolean2bool(ctx context.Context, v any) (bool, error) {

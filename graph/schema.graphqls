@@ -43,6 +43,34 @@ type Record {
 	isActive: Boolean!
 }
 
+type RecordSnapshot {
+	id: ID!
+	name: String
+	amount: Float
+	prePayAddress: AddressSnapshot
+	"""
+	time: by JS Date().getTime().toString()
+	"""
+	time: String!
+	shouldPayAddress: [AddressSnapshot!]
+	extendPayMsg: [Float!]
+	category: RecordCategory!
+	parentRecordId: ID
+	isDeleted: Boolean!
+	isValid: Boolean!
+	isActive: Boolean!
+}
+
+type AddressSnapshot {
+	id: ID!
+	name: String!
+}
+
+type TripSnapshot {
+	id: ID!
+	name: String!
+}
+
 type Payment {
 	amount: Float!
 	address: Address!
@@ -51,6 +79,25 @@ type Payment {
 type Address {
 	id: ID!
 	name: String!
+	"""
+	Current trip totals, available on all Address fields in queries.
+	Only valid, latest, non-deleted records are included, regardless of haveHistory.
+	Invalid records are skipped entirely, so totals may cover only part of the trip.
+	Members without qualifying records receive zero totals.
+	"""
+	statistics: AddressStatistics
+}
+
+type AddressStatistics {
+	"""Total assigned shares before settlement, including TRANSFER records."""
+	totalExpense: Float!
+	"""Total prepaid amounts, including own shares and TRANSFER records."""
+	totalPrepaid: Float!
+	"""
+	Number of qualifying records paid or shared by this member, counted once per record.
+	Includes TRANSFER records and participation with a zero share.
+	"""
+	activeRecordCount: Int!
 }
 
 type Tx {
@@ -68,11 +115,11 @@ type Trip {
 }
 
 type Subscription {
-	subRecordCreate(tripId: ID!): Record!
-	subRecordUpdate(tripId: ID!): Record!
-	subAddressCreate(tripId: ID!): Address!
-	subAddressUpdate(tripId: ID!): Address!
-	subAddressDelete(tripId: ID!): Address!
+	subRecordCreate(tripId: ID!): RecordSnapshot!
+	subRecordUpdate(tripId: ID!): RecordSnapshot!
+	subAddressCreate(tripId: ID!): AddressSnapshot!
+	subAddressUpdate(tripId: ID!): AddressSnapshot!
+	subAddressDelete(tripId: ID!): AddressSnapshot!
 }
 
 type Query {
@@ -107,11 +154,11 @@ input NewAddress {
 }
 
 type Mutation {
-	createTrip(input: NewTrip!): Trip!
-	updateTrip(tripId: ID!, input: NewTrip!): Trip!
-	createRecord(tripId: ID!, input: NewRecord!): Record!
-	updateRecord(recordId: ID!, input: EditRecord!): Record!
-	createAddress(tripId: ID!, input: NewAddress!): Address!
-	updateAddress(tripId: ID!, addressId: ID!, input: NewAddress!): Address!
-	deleteAddress(tripId: ID!, addressId: ID!): Address!
+	createTrip(input: NewTrip!): TripSnapshot!
+	updateTrip(tripId: ID!, input: NewTrip!): TripSnapshot!
+	createRecord(tripId: ID!, input: NewRecord!): RecordSnapshot!
+	updateRecord(recordId: ID!, input: EditRecord!): RecordSnapshot!
+	createAddress(tripId: ID!, input: NewAddress!): AddressSnapshot!
+	updateAddress(tripId: ID!, addressId: ID!, input: NewAddress!): AddressSnapshot!
+	deleteAddress(tripId: ID!, addressId: ID!): AddressSnapshot!
 }

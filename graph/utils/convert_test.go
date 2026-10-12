@@ -159,7 +159,7 @@ func TestSubscriptionCarriesCompleteRecord(t *testing.T) {
 	assert.False(t, skipped)
 	assert.True(t, record.IsDeleted)
 	assert.Equal(t, "1234", record.Time)
-	assert.Equal(t, []*model.Address{ToModelAddress(member)}, record.ShouldPayAddress)
+	assert.Equal(t, []*model.AddressSnapshot{ToAddressSnapshot(ToModelAddress(member))}, record.ShouldPayAddress)
 	assert.Equal(t, []float64{7}, record.ExtendPayMsg)
 	message.ShouldPayAddress[0].ExtendMsg = 999
 	assert.Equal(t, float64(7), record.ExtendPayMsg[0])

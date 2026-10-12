@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TripRecordMQ2GQL(msg mq.TripRecordMessage) (*model.Record, bool, error) {
+func TripRecordMQ2GQL(msg mq.TripRecordMessage) (*model.RecordSnapshot, bool, error) {
 	if msg.ID == uuid.Nil {
 		// do not have record
 		return nil, true, nil
@@ -37,12 +37,12 @@ func TripRecordMQ2GQL(msg mq.TripRecordMessage) (*model.Record, bool, error) {
 		return nil, false, err
 	}
 	record.Time = msg.Time
-	return record, false, nil
+	return ToRecordSnapshot(record), false, nil
 }
 
-func TripAddressMQ2GQL(msg mq.TripAddressMessage) (*model.Address, bool, error) {
+func TripAddressMQ2GQL(msg mq.TripAddressMessage) (*model.AddressSnapshot, bool, error) {
 	if msg.Address.ID == uuid.Nil {
 		return nil, true, nil
 	}
-	return ToModelAddress(msg.Address), false, nil
+	return ToAddressSnapshot(ToModelAddress(msg.Address)), false, nil
 }
