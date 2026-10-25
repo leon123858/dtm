@@ -21,10 +21,6 @@ const secureTokenKeysURL = "https://www.googleapis.com/robot/v1/metadata/x509/se
 var ErrToken = errors.New("invalid_id_token")
 var ErrKeysUnavailable = errors.New("signing_keys_unavailable")
 
-type TokenVerifier interface {
-	Verify(context.Context, string) (string, error)
-}
-
 // GCIPVerifier caches only unexpired Google Secure Token certificates.
 // The mutex coalesces refreshes, including failed requests via a short retry delay.
 type GCIPVerifier struct {

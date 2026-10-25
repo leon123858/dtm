@@ -22,7 +22,7 @@ import (
 // ex: put your database connection or HTTP client in here.
 
 type Resolver struct {
-	Auth                    *auth.Service
+	Auth                    auth.Service
 	RecordFactory           tripservice.RecordFactory
 	TripFactory             tripservice.TripFactory
 	TripMessageQueueWrapper mq.TripMessageQueueWrapper

@@ -12,7 +12,7 @@ describe('Authentication REST boundaries', () => {
   expect(response.headers.get('cache-control')).toBe('no-store');
  });
  test('unknown providers do not initiate login', async () => {
-  const response = await fetch(`${origin}/auth/github`, {redirect: 'manual'});
+  const response = await fetch(`${origin}/auth/unsupported`, {redirect: 'manual'});
   expect(response.status).toBe(404);
  });
  test('invalid callback never returns tokens', async () => {

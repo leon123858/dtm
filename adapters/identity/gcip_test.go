@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -17,12 +16,11 @@ func TestGCIPRequests(t *testing.T) {
 		if r.URL.Path == "/signin" {
 			var body map[string]any
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
-			form, err := url.ParseQuery(body["postBody"].(string))
-			require.NoError(t, err)
-			require.Equal(t, "google.com", form.Get("providerId"))
-			require.Equal(t, "a+b&c", form.Get("id_token"))
+			require.Equal(t, "https://example.com/callback?code=a%2Bb%26c&state=state", body["requestUri"])
+			require.Equal(t, "server-session", body["sessionId"])
+			require.NotContains(t, body, "postBody")
 			require.Equal(t, true, body["returnSecureToken"])
-			w.Write([]byte(`{"localId":"member","idToken":"jwt","refreshToken":"refresh","expiresIn":"3600"}`))
+			w.Write([]byte(`{"providerId":"google.com","localId":"member","idToken":"jwt","refreshToken":"refresh","expiresIn":"3600"}`))
 		} else {
 			require.NoError(t, r.ParseForm())
 			require.Equal(t, "refresh_token", r.Form.Get("grant_type"))
@@ -34,7 +32,7 @@ func TestGCIPRequests(t *testing.T) {
 	g := NewGCIP(server.Client(), "api-key", "http://localhost:8080/auth/callback")
 	g.SignInURL = server.URL + "/signin"
 	g.RefreshURL = server.URL + "/refresh"
-	tokens, err := g.SignIn(context.Background(), Credential{ProviderID: "google.com", IDToken: "a+b&c"})
+	tokens, err := g.SignIn(context.Background(), Credential[GCIPCredential]{Data: GCIPCredential{ProviderID: "google.com", RequestURI: "https://example.com/callback?code=a%2Bb%26c&state=state", SessionID: "server-session"}})
 	require.NoError(t, err)
 	require.Equal(t, "jwt", tokens.IDToken)
 	tokens, err = g.Refresh(context.Background(), "old+token")
@@ -54,13 +52,54 @@ func TestGCIPDoesNotExposeErrors(t *testing.T) {
 	require.NotContains(t, err.Error(), "sensitive")
 }
 
-func TestGCIPSignInRequiresLocalID(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"idToken":"jwt","refreshToken":"refresh","expiresIn":"3600"}`))
-	}))
-	defer server.Close()
-	g := NewGCIP(server.Client(), "key", "https://example.com/callback")
-	g.SignInURL = server.URL
-	_, err := g.SignIn(context.Background(), Credential{ProviderID: "google.com", IDToken: "provider"})
-	require.ErrorIs(t, err, ErrUpstream)
+func TestGCIPManagedSignInFailures(t *testing.T) {
+	for _, provider := range managedProviders {
+		t.Run(provider.name, func(t *testing.T) {
+			for _, tc := range []struct {
+				name, body string
+				status     int
+				want       error
+			}{
+				{"upstream", `{"error":"secret"}`, 503, ErrUpstream},
+				{"invalid session", `{"error":"secret"}`, 400, ErrUpstream},
+				{"malformed", `secret`, 200, ErrUpstream},
+				{"confirmation", `{"needConfirmation":true}`, 200, ErrCredential},
+				{"wrong provider", `{"providerId":"other.com","localId":"member","idToken":"id","refreshToken":"refresh","expiresIn":"3600"}`, 200, ErrCredential},
+				{"missing provider", `{"localId":"member","idToken":"id","refreshToken":"refresh","expiresIn":"3600"}`, 200, ErrCredential},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(tc.status); w.Write([]byte(tc.body)) }))
+					defer server.Close()
+					gcip := NewGCIP(server.Client(), "key", "https://frontend.example/callback")
+					gcip.SignInURL = server.URL
+					result, err := gcip.SignIn(context.Background(), Credential[GCIPCredential]{Data: GCIPCredential{ProviderID: provider.providerID, RequestURI: "https://frontend.example/callback?state=x&code=y", SessionID: "session"}})
+					require.ErrorIs(t, err, tc.want)
+					require.Zero(t, result)
+					require.NotContains(t, err.Error(), "secret")
+				})
+			}
+			for _, field := range []string{"localId", "idToken", "refreshToken", "expiresIn"} {
+				t.Run("missing "+field, func(t *testing.T) {
+					body := map[string]string{"providerId": provider.providerID, "localId": "member", "idToken": "id", "refreshToken": "refresh", "expiresIn": "3600"}
+					delete(body, field)
+					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(body) }))
+					defer server.Close()
+					gcip := NewGCIP(server.Client(), "key", "")
+					gcip.SignInURL = server.URL
+					result, err := gcip.SignIn(context.Background(), Credential[GCIPCredential]{Data: GCIPCredential{ProviderID: provider.providerID, RequestURI: "https://frontend.example/callback?state=x&code=y", SessionID: "session"}})
+					require.ErrorIs(t, err, ErrUpstream)
+					require.Zero(t, result)
+				})
+			}
+		})
+	}
+	gcip := NewGCIP(&http.Client{Transport: verifierRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		t.Fatal("invalid credentials must not reach upstream")
+		return nil, nil
+	})}, "key", "")
+	for _, credential := range []GCIPCredential{{}, {ProviderID: "google.com", RequestURI: "https://example.com/callback"}, {ProviderID: "google.com", SessionID: "session"}, {RequestURI: "https://example.com/callback", SessionID: "session"}} {
+		result, err := gcip.SignIn(context.Background(), Credential[GCIPCredential]{Data: credential})
+		require.ErrorIs(t, err, ErrCredential)
+		require.Zero(t, result)
+	}
 }

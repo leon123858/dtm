@@ -23,7 +23,7 @@ func isAuthPath(path string) bool { return path == "/auth" || strings.HasPrefix(
 // even though application access/body logging skips /auth. URLs can contain
 // intermediate login credentials (authorization code, state, one-time Login Code).
 // Protect production log access, retention and sensitive information accordingly.
-func setupAuthRoutes(r *gin.Engine, s *auth.Service, cfg config.Auth, dev bool) {
+func setupAuthRoutes(r *gin.Engine, s auth.Service, cfg config.Auth, dev bool) {
 	group := r.Group("/auth", func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
 		c.Header("Referrer-Policy", "no-referrer")
@@ -106,7 +106,7 @@ func setupAuthRoutes(r *gin.Engine, s *auth.Service, cfg config.Auth, dev bool) 
 			c.JSON(400, gin.H{"error": "invalid_request"})
 			return
 		}
-		result, err := s.Identity.Refresh(c.Request.Context(), body.RefreshToken)
+		result, err := s.Refresh(c.Request.Context(), body.RefreshToken)
 		if err != nil {
 			authFailure(c, "refresh", err)
 			return

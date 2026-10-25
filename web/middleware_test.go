@@ -44,15 +44,14 @@ func (v *testVerifier) Verify(_ context.Context, raw string) (string, error) {
 }
 func TestMemberHTTPFlow(t *testing.T) {
 	t.Setenv("ADMIN_KEY", "")
-	router, authService := testAuth(t)
 	trips, store := mem.NewInMemoryDB()
-	authService.Store = store
+	router, authService := testAuth(t, auth.Dependencies{Store: store})
 	verifier := &testVerifier{}
 	schema := graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{
 		Auth:        authService,
-		TripFactory: tripservice.NewTripFactory(trips, authService.Store, func(ctx context.Context) (db.Reader, error) { return db.TripDataLoaderFromContext(ctx) }),
+		TripFactory: tripservice.NewTripFactory(trips, store, func(ctx context.Context) (db.Reader, error) { return db.TripDataLoaderFromContext(ctx) }),
 	}})
-	router.POST("/query", UserBearerExtractIdMiddleware(verifier, authService.Store), TripDataLoaderInjectionMiddleware(trips), GraphQLHandler(schema))
+	router.POST("/query", UserBearerExtractIdMiddleware(verifier, store), TripDataLoaderInjectionMiddleware(trips), GraphQLHandler(schema))
 	query := func(token, q string) (int, map[string]any) {
 		body, _ := json.Marshal(map[string]string{"query": q})
 		req := httptest.NewRequest("POST", "/query", strings.NewReader(string(body)))
@@ -126,7 +125,7 @@ func TestMemberHTTPFlow(t *testing.T) {
 		_, out = query(tc.token, `mutation{touchSubscribedTrip(tripId:"`+tc.id+`"){id}}`)
 		require.Equal(t, tc.code, out["errors"].([]any)[0].(map[string]any)["extensions"].(map[string]any)["code"])
 	}
-	_, err = authService.Store.UpsertUser(context.Background(), "other")
+	_, err = store.UpsertUser(context.Background(), "other")
 	require.NoError(t, err)
 	_, out = query("other", "{me{subscribedTrips{id}}}")
 	require.Empty(t, out["data"].(map[string]any)["me"].(map[string]any)["subscribedTrips"])
@@ -165,8 +164,7 @@ func (failingUsers) UpsertUser(context.Context, string) (u domain.User, err erro
 	return u, errors.New("storage failed")
 }
 func TestMemberStorageFailureDoesNotIssueCode(t *testing.T) {
-	router, s := testAuth(t)
-	s.Store = failingUsers{AuthDBWrapper: s.Store}
+	router, _ := testAuth(t, auth.Dependencies{Store: failingUsers{AuthDBWrapper: mem.NewInMemoryAuthDBWrapper()}})
 	start := perform(router, "GET", "/auth/google", "", nil)
 	loc, err := url.Parse(start.Header().Get("Location"))
 	require.NoError(t, err)
@@ -180,10 +178,11 @@ func TestMemberStorageFailureDoesNotIssueCode(t *testing.T) {
 }
 
 func TestInvalidTokenNeverExecutesHandler(t *testing.T) {
-	router, s := testAuth(t)
+	store := mem.NewInMemoryAuthDBWrapper()
+	router, _ := testAuth(t, auth.Dependencies{Store: store})
 	verifier := &testVerifier{}
 	calls := 0
-	router.POST("/query", UserBearerExtractIdMiddleware(verifier, s.Store), func(c *gin.Context) { calls++; c.Status(200) })
+	router.POST("/query", UserBearerExtractIdMiddleware(verifier, store), func(c *gin.Context) { calls++; c.Status(200) })
 	for _, header := range []string{"Bearer invalid", "Bearer missing", "Bearer unavailable", "Basic invalid", "Bearer", ""} {
 		req := httptest.NewRequest("POST", "/query", strings.NewReader("{}"))
 		req.Header.Set("Content-Type", "application/json")
@@ -197,11 +196,12 @@ func TestInvalidTokenNeverExecutesHandler(t *testing.T) {
 
 // WebSocket upgrades preserve the identity established by the bearer middleware.
 func TestWebSocketRetainsMemberIdentity(t *testing.T) {
-	router, s := testAuth(t)
-	member, err := s.Store.UpsertUser(context.Background(), "member")
+	store := mem.NewInMemoryAuthDBWrapper()
+	router, s := testAuth(t, auth.Dependencies{Store: store})
+	member, err := store.UpsertUser(context.Background(), "member")
 	require.NoError(t, err)
-	schema := graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{Auth: &auth.Service{Store: s.Store}}})
-	router.GET("/query", UserBearerExtractIdMiddleware(&testVerifier{}, s.Store), GraphQLHandler(schema))
+	schema := graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{Auth: s}})
+	router.GET("/query", UserBearerExtractIdMiddleware(&testVerifier{}, store), GraphQLHandler(schema))
 	server := httptest.NewServer(router)
 	defer server.Close()
 	dialer := websocket.Dialer{Subprotocols: []string{"graphql-transport-ws"}}

@@ -14,13 +14,13 @@ import (
 )
 
 type GCIP struct {
-	Client                *http.Client
-	APIKey, RedirectURL   string
-	SignInURL, RefreshURL string
+	Client                            *http.Client
+	APIKey, RedirectURL               string
+	SignInURL, RefreshURL, AuthURIURL string
 }
 
 func NewGCIP(client *http.Client, key, redirect string) *GCIP {
-	return &GCIP{Client: client, APIKey: key, RedirectURL: redirect, SignInURL: "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp", RefreshURL: "https://securetoken.googleapis.com/v1/token"}
+	return &GCIP{Client: client, APIKey: key, RedirectURL: redirect, AuthURIURL: "https://identitytoolkit.googleapis.com/v1/accounts:createAuthUri", SignInURL: "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp", RefreshURL: "https://securetoken.googleapis.com/v1/token"}
 }
 func transportError(err error) error {
 	var ne net.Error
@@ -59,34 +59,36 @@ func checkedTokens(id, refresh, expiry string) (Tokens, error) {
 	}
 	return Tokens{IDToken: id, RefreshToken: refresh, ExpiresIn: seconds}, nil
 }
-func (g *GCIP) SignIn(ctx context.Context, cred Credential) (Tokens, error) {
-	form := url.Values{"providerId": {cred.ProviderID}}
-	if cred.IDToken != "" {
-		form.Set("id_token", cred.IDToken)
+func (g *GCIP) SignIn(ctx context.Context, credential Credential[GCIPCredential]) (Tokens, error) {
+	cred := credential.Data
+	if cred.ProviderID == "" || cred.RequestURI == "" || cred.SessionID == "" {
+		return Tokens{}, ErrCredential
 	}
-	if cred.AccessToken != "" {
-		form.Set("access_token", cred.AccessToken)
-	}
-	body, _ := json.Marshal(map[string]any{"requestUri": g.RedirectURL, "postBody": form.Encode(), "returnSecureToken": true})
+	request := map[string]any{"requestUri": cred.RequestURI, "sessionId": cred.SessionID, "returnSecureToken": true}
+	body, _ := json.Marshal(request)
 	var result struct {
 		IDToken          string `json:"idToken"`
 		RefreshToken     string `json:"refreshToken"`
 		ExpiresIn        string `json:"expiresIn"`
 		LocalID          string `json:"localId"`
+		ProviderID       string `json:"providerId"`
 		NeedConfirmation bool   `json:"needConfirmation"`
 	}
 	if err := g.request(ctx, g.SignInURL, "application/json", bytes.NewReader(body), &result, false); err != nil {
 		return Tokens{}, err
 	}
-	if result.NeedConfirmation {
+	if result.NeedConfirmation || result.ProviderID != cred.ProviderID {
 		return Tokens{}, ErrCredential
 	}
 	if result.LocalID == "" {
 		return Tokens{}, ErrUpstream
 	}
 	tokens, err := checkedTokens(result.IDToken, result.RefreshToken, result.ExpiresIn)
+	if err != nil {
+		return Tokens{}, err
+	}
 	tokens.LocalID = result.LocalID
-	return tokens, err
+	return tokens, nil
 }
 func (g *GCIP) Refresh(ctx context.Context, token string) (Tokens, error) {
 	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {token}}

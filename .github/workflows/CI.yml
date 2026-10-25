@@ -81,8 +81,6 @@ jobs:
       # Password E2E does not visit the frontend; non-dev requires an HTTPS origin.
       FRONTEND_URL: 'https://frontend.example'
       OAUTH_REDIRECT_PATH: '/backend/auth/callback'
-      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
       GCIP_API_KEY: ${{ secrets.GCIP_API_KEY }}
       GCIP_PROJECT_ID: ${{ secrets.GCIP_PROJECT_ID }}
       E2E_AUTH_ENABLED: 'true'
@@ -140,7 +138,7 @@ jobs:
         env:
           START_COMMAND: ${{ matrix.start_command }}
         run: |
-          for name in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GCIP_API_KEY GCIP_PROJECT_ID E2E_AUTH_EMAIL E2E_AUTH_PASSWORD; do
+          for name in GCIP_API_KEY GCIP_PROJECT_ID E2E_AUTH_EMAIL E2E_AUTH_PASSWORD; do
             if [[ -z "${!name}" ]]; then
               echo "Missing required secret: $name"
               exit 1

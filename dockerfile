@@ -22,8 +22,6 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 WORKDIR /home/appuser
 
-# ENV GOOGLE_CLIENT_ID="<OAuth client ID>"
-# ENV GOOGLE_CLIENT_SECRET="<OAuth client secret>"
 # ENV GCIP_API_KEY="<Identity Platform API key>"
 # ENV GCIP_PROJECT_ID="<Identity Platform project ID>"
 # ENV OAUTH_REDIRECT_PATH="/backend/auth/callback"

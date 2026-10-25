@@ -18,8 +18,8 @@ func NewEmailPassword(client *http.Client, key string) *EmailPassword {
 	return &EmailPassword{Client: client, APIKey: key, SignInURL: "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword"}
 }
 
-func (p *EmailPassword) SignIn(ctx context.Context, email, password string) (Tokens, error) {
-	body, _ := json.Marshal(map[string]any{"email": email, "password": password, "returnSecureToken": true})
+func (p *EmailPassword) SignIn(ctx context.Context, credential Credential[PasswordCredential]) (Tokens, error) {
+	body, _ := json.Marshal(map[string]any{"email": credential.Data.Email, "password": credential.Data.Password, "returnSecureToken": true})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.SignInURL+"?key="+url.QueryEscape(p.APIKey), bytes.NewReader(body))
 	if err != nil {
 		return Tokens{}, ErrUpstream
@@ -60,4 +60,8 @@ func (p *EmailPassword) SignIn(ctx context.Context, email, password string) (Tok
 	}
 	tokens.LocalID = result.LocalID
 	return tokens, nil
+}
+
+func (p *EmailPassword) Refresh(context.Context, string) (Tokens, error) {
+	return Tokens{}, ErrNotImplemented
 }

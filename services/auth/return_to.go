@@ -18,9 +18,9 @@ const (
 
 var escapedByte = regexp.MustCompile(`%[0-9a-fA-F]{2}`)
 
-// ValidateReturnTo returns only a validated browser-relative destination.
+// validateReturnTo returns only a validated browser-relative destination.
 // The caller has already decoded the outer login request's query parameter.
-func ValidateReturnTo(raw string) (string, error) {
+func validateReturnTo(raw string) (string, error) {
 	if raw == "" {
 		return "/", nil
 	}

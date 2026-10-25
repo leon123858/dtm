@@ -78,25 +78,29 @@ func TestAuthContract(t *testing.T) {
 	testutil.CheckUserContract(t, authDB, NewPgAuthDBWrapper(secondORM), NewPgTripDBWrapper(firstORM.Session(&gorm.Session{Logger: logger.Discard})))
 	require.Empty(t, logs.String(), "user queries must not reach the parent logger")
 	require.NoError(t, goose.Down(first, "../../../migration"))
-	var usersExist bool
-	require.NoError(t, first.QueryRow(`SELECT to_regclass('users') IS NOT NULL`).Scan(&usersExist))
-	require.True(t, usersExist)
-	var columnExists bool
-	require.NoError(t, first.QueryRow(`SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'trip_subscriptions' AND column_name = 'last_viewed_at')`).Scan(&columnExists))
-	require.False(t, columnExists)
+	for _, table := range []string{"auth_entries", "users", "trip_subscriptions"} {
+		var exists bool
+		require.NoError(t, first.QueryRow(`SELECT to_regclass($1) IS NOT NULL`, table).Scan(&exists))
+		require.False(t, exists, table)
+	}
+	require.NoError(t, goose.Up(first, "../../../migration"))
 	uid, tid := uuid.New(), uuid.New()
 	_, err = first.Exec(`INSERT INTO users(id,gcid) VALUES($1,$2)`, uid, uuid.NewString())
 	require.NoError(t, err)
-	_, err = first.Exec(`INSERT INTO trips(id,name) VALUES($1,'legacy')`, tid)
+	_, err = first.Exec(`INSERT INTO trips(id,name) VALUES($1,'default timestamp')`, tid)
 	require.NoError(t, err)
+	var insertedAt time.Time
+	require.NoError(t, first.QueryRow(`SELECT CURRENT_TIMESTAMP`).Scan(&insertedAt))
 	_, err = first.Exec(`INSERT INTO trip_subscriptions(user_id,trip_id) VALUES($1,$2)`, uid, tid)
 	require.NoError(t, err)
-	var migrationStart time.Time
-	require.NoError(t, first.QueryRow(`SELECT CURRENT_TIMESTAMP`).Scan(&migrationStart))
-	require.NoError(t, goose.Up(first, "../../../migration"))
-	var backfilled time.Time
-	require.NoError(t, first.QueryRow(`SELECT last_viewed_at FROM trip_subscriptions WHERE user_id=$1 AND trip_id=$2`, uid, tid).Scan(&backfilled))
-	require.False(t, backfilled.Before(migrationStart))
+	var lastViewed time.Time
+	require.NoError(t, first.QueryRow(`SELECT last_viewed_at FROM trip_subscriptions WHERE user_id=$1 AND trip_id=$2`, uid, tid).Scan(&lastViewed))
+	require.False(t, lastViewed.Before(insertedAt))
+	for _, index := range []string{"auth_entries_expiry", "trip_subscriptions_trip_id"} {
+		var exists bool
+		require.NoError(t, first.QueryRow(`SELECT to_regclass($1) IS NOT NULL`, index).Scan(&exists))
+		require.True(t, exists, index)
+	}
 	future := time.Now().UTC().Add(time.Hour).Truncate(time.Microsecond)
 	_, err = first.Exec(`UPDATE trip_subscriptions SET last_viewed_at=$1 WHERE user_id=$2 AND trip_id=$3`, future, uid, tid)
 	require.NoError(t, err)
@@ -107,11 +111,9 @@ func TestAuthContract(t *testing.T) {
 	require.True(t, subscriptions[0].LastViewedAt.Equal(future))
 
 	require.NoError(t, goose.Down(first, "../../../migration"))
-	var retained int
-	require.NoError(t, first.QueryRow(`SELECT count(*) FROM trip_subscriptions WHERE user_id=$1 AND trip_id=$2`, uid, tid).Scan(&retained))
-	require.Equal(t, 1, retained)
-	require.NoError(t, goose.DownTo(first, "../../../migration", 20261023115959))
-	var exists bool
-	require.NoError(t, first.QueryRow(`SELECT to_regclass('auth_entries') IS NOT NULL`).Scan(&exists))
-	require.False(t, exists)
+	for _, table := range []string{"auth_entries", "users", "trip_subscriptions"} {
+		var exists bool
+		require.NoError(t, first.QueryRow(`SELECT to_regclass($1) IS NOT NULL`, table).Scan(&exists))
+		require.False(t, exists, table)
+	}
 }

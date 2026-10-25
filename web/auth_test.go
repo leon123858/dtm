@@ -5,6 +5,7 @@ import (
 	"context"
 	"dtm/adapters/identity"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
@@ -26,26 +27,40 @@ import (
 
 type fakeProvider struct{}
 
-func (fakeProvider) AuthorizationURL(state, verifier, nonce string) string {
-	return "https://example.com?state=" + state
+var fakeStateSequence atomic.Int64
+
+func (fakeProvider) Start(context.Context) (identity.Authorization, error) {
+	state := fmt.Sprintf("managed-state-%d", fakeStateSequence.Add(1))
+	return identity.Authorization{State: state, URL: "https://example.com?state=" + state, SessionID: "managed-session"}, nil
 }
-func (fakeProvider) Exchange(context.Context, string, string, string) (identity.Credential, error) {
-	return identity.Credential{ProviderID: "google.com", IDToken: "provider-secret"}, nil
+func (fakeProvider) Exchange(_ context.Context, callback identity.OAuthCallback) (identity.Credential[identity.GCIPCredential], error) {
+	if callback.SessionID == "" {
+		return identity.Credential[identity.GCIPCredential]{}, identity.ErrCredential
+	}
+	return identity.Credential[identity.GCIPCredential]{Data: identity.GCIPCredential{ProviderID: "google.com", RequestURI: "https://example.com/callback", SessionID: callback.SessionID}}, nil
 }
 
 type fakeIdentity struct{}
 
-func (fakeIdentity) SignIn(context.Context, identity.Credential) (identity.Tokens, error) {
+func (fakeIdentity) SignIn(context.Context, identity.Credential[identity.GCIPCredential]) (identity.Tokens, error) {
 	return identity.Tokens{LocalID: "member", IDToken: "jwt-secret", RefreshToken: "refresh-secret", ExpiresIn: 3600}, nil
 }
 func (fakeIdentity) Refresh(context.Context, string) (identity.Tokens, error) {
 	return identity.Tokens{IDToken: "new-jwt", RefreshToken: "new-refresh", ExpiresIn: 3600}, nil
 }
-func testAuth(t *testing.T) (*gin.Engine, *auth.Service) {
-	t.Setenv("FRONTEND_URL", "http://localhost:3000")
+func testAuth(t *testing.T, overrides ...auth.Dependencies) (*gin.Engine, auth.Service) {
 	t.Helper()
+	deps := auth.Dependencies{Store: mem.NewInMemoryAuthDBWrapper()}
+	if len(overrides) > 0 {
+		deps = overrides[0]
+	}
+	deps.Providers = map[string]identity.Provider{"google": fakeProvider{}, "github": fakeProvider{}}
+	deps.Identity = fakeIdentity{}
+	s, err := auth.NewServiceWithDependencies(context.Background(), config.Auth{}, deps)
+	require.NoError(t, err)
+	t.Cleanup(s.Close)
+	t.Setenv("FRONTEND_URL", "http://localhost:3000")
 	gin.SetMode(gin.TestMode)
-	s := &auth.Service{Store: mem.NewInMemoryAuthDBWrapper(), Providers: map[string]identity.Provider{"google": fakeProvider{}}, Identity: fakeIdentity{}}
 	r := gin.New()
 	setupMiddlewares(r, ServiceConfig{IsDev: true})
 	setupAuthRoutes(r, s, config.Auth{FrontendURL: "http://localhost:3000", RedirectPath: "/backend/auth/callback"}, true)
@@ -63,46 +78,49 @@ func perform(r http.Handler, method, path, body string, cookie *http.Cookie) *ht
 }
 func TestAuthLoginAndExchange(t *testing.T) {
 	t.Setenv("ADMIN_KEY", "admin-secret")
-	r, _ := testAuth(t)
-	start := perform(r, "GET", "/auth/google", "", nil)
-	require.Equal(t, 302, start.Code)
-	location, err := url.Parse(start.Header().Get("Location"))
-	require.NoError(t, err)
-	state := location.Query().Get("state")
-	cookie := start.Result().Cookies()[0]
-	require.True(t, cookie.HttpOnly)
-	require.False(t, cookie.Secure)
-	require.Equal(t, http.SameSiteLaxMode, cookie.SameSite)
-	// A different browser cannot consume the transaction.
-	wrong := perform(r, "GET", "/auth/callback?state="+state+"&code=provider-code", "", nil)
-	require.Contains(t, wrong.Header().Get("Location"), "error=invalid_state")
-	callback := perform(r, "GET", "/auth/callback?state="+state+"&code=provider-code", "", cookie)
-	require.False(t, callback.Result().Cookies()[0].Secure)
-	u, err := url.Parse(callback.Header().Get("Location"))
-	require.NoError(t, err)
-	code := u.Query().Get("code")
-	require.NotEmpty(t, code)
-	require.Equal(t, "no-store", callback.Header().Get("Cache-Control"))
-	exchange := perform(r, "POST", "/auth/exchange", `{"code":"`+code+`"}`, nil)
-	require.Equal(t, 200, exchange.Code)
-	var tokens auth.OAuthExchangeResult
-	require.NoError(t, json.Unmarshal(exchange.Body.Bytes(), &tokens))
-	require.Equal(t, "/", tokens.ReturnTo)
-	require.Equal(t, "jwt-secret", tokens.IDToken)
-	require.Equal(t, "refresh-secret", tokens.RefreshToken)
-	require.Greater(t, tokens.ExpiresIn, int64(3590))
-	require.Equal(t, 400, perform(r, "POST", "/auth/exchange", `{"code":"`+code+`"}`, nil).Code)
-	require.Contains(t, perform(r, "GET", "/auth/callback?state="+state+"&code=replay", "", cookie).Header().Get("Location"), "error=invalid_state")
-	require.Equal(t, 404, perform(r, "GET", "/auth/github", "", nil).Code)
-	require.Equal(t, 200, perform(r, "POST", "/auth/refresh", `{"refreshToken":"refresh-secret"}`, nil).Code)
-	for _, body := range []string{`{}`, `null`, `{"code":5}`, `{"code":"x"} {}`, `{"code":"x","codeVerifier":"y"}`} {
-		require.Equal(t, 400, perform(r, "POST", "/auth/exchange", body, nil).Code)
+	for _, provider := range []string{"google", "github"} {
+		t.Run(provider, func(t *testing.T) {
+			r, _ := testAuth(t)
+			start := perform(r, "GET", "/auth/"+provider, "", nil)
+			require.Equal(t, 302, start.Code)
+			location, err := url.Parse(start.Header().Get("Location"))
+			require.NoError(t, err)
+			state := location.Query().Get("state")
+			cookie := start.Result().Cookies()[0]
+			require.True(t, cookie.HttpOnly)
+			require.False(t, cookie.Secure)
+			require.Equal(t, http.SameSiteLaxMode, cookie.SameSite)
+			// A different browser cannot consume the transaction.
+			wrong := perform(r, "GET", "/auth/callback?state="+state+"&code=provider-code", "", nil)
+			require.Contains(t, wrong.Header().Get("Location"), "error=invalid_state")
+			callback := perform(r, "GET", "/auth/callback?state="+state+"&code=provider-code", "", cookie)
+			require.False(t, callback.Result().Cookies()[0].Secure)
+			u, err := url.Parse(callback.Header().Get("Location"))
+			require.NoError(t, err)
+			code := u.Query().Get("code")
+			require.NotEmpty(t, code)
+			require.Equal(t, "no-store", callback.Header().Get("Cache-Control"))
+			exchange := perform(r, "POST", "/auth/exchange", `{"code":"`+code+`"}`, nil)
+			require.Equal(t, 200, exchange.Code)
+			var tokens auth.OAuthExchangeResult
+			require.NoError(t, json.Unmarshal(exchange.Body.Bytes(), &tokens))
+			require.Equal(t, "/", tokens.ReturnTo)
+			require.Equal(t, "jwt-secret", tokens.IDToken)
+			require.Equal(t, "refresh-secret", tokens.RefreshToken)
+			require.Greater(t, tokens.ExpiresIn, int64(3590))
+			require.Equal(t, 400, perform(r, "POST", "/auth/exchange", `{"code":"`+code+`"}`, nil).Code)
+			require.Contains(t, perform(r, "GET", "/auth/callback?state="+state+"&code=replay", "", cookie).Header().Get("Location"), "error=invalid_state")
+			require.Equal(t, 404, perform(r, "GET", "/auth/unsupported", "", nil).Code)
+			require.Equal(t, 200, perform(r, "POST", "/auth/refresh", `{"refreshToken":"refresh-secret"}`, nil).Code)
+			for _, body := range []string{`{}`, `null`, `{"code":5}`, `{"code":"x"} {}`, `{"code":"x","unexpected":"y"}`} {
+				require.Equal(t, 400, perform(r, "POST", "/auth/exchange", body, nil).Code)
+			}
+		})
 	}
 }
 func TestAuthExpiryAndAtomicConsumption(t *testing.T) {
-	_, s := testAuth(t)
 	now := time.Now()
-	s.Now = func() time.Time { return now }
+	_, s := testAuth(t, auth.Dependencies{Store: mem.NewInMemoryAuthDBWrapper(), Now: func() time.Time { return now }})
 	state, binding, _, err := s.OAuthStart(context.Background(), "google", "/")
 	require.NoError(t, err)
 	now = now.Add(10 * time.Minute)
@@ -177,10 +195,8 @@ func TestServeRejectsMissingAuthConfig(t *testing.T) {
 	t.Setenv("GCIP_PROJECT_ID", "project")
 	t.Chdir(t.TempDir())
 	t.Setenv("FRONTEND_URL", "http://localhost:3000")
-	for _, key := range []string{"GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GCIP_API_KEY"} {
-		t.Setenv(key, "")
-	}
-	require.PanicsWithError(t, "GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GCIP_API_KEY must all be set", func() {
+	t.Setenv("GCIP_API_KEY", "")
+	require.PanicsWithError(t, "GCIP_API_KEY must be set", func() {
 		Serve(ServiceConfig{IsDev: true, Port: "8080"})
 	})
 }
@@ -305,9 +321,8 @@ func TestAuthReturnToTransactionsAreIndependent(t *testing.T) {
 }
 
 func TestAuthInvalidReturnTo(t *testing.T) {
-	r, s := testAuth(t)
 	// Any attempt to persist a transaction would panic and fail the response checks.
-	s.Store = nil
+	r, _ := testAuth(t, auth.Dependencies{Store: panicAuthStore{}})
 	for _, query := range []string{"returnTo=%2F&returnTo=%2Fhistory", "returnTo=%2F&%72eturnTo=%2F", "returnTo=%zz", "returnTo=//evil.example", "returnTo=/auth/complete", "returnTo=/%252fhistory", "returnTo=/history%250a", "returnTo=/history;returnTo=/", "returnTo=" + url.QueryEscape("/history?q="+strings.Repeat("a", 4096)), "returnTo=" + url.QueryEscape("/history?q=%2525252541")} {
 		response := perform(r, "GET", "/auth/google?"+query, "", nil)
 		require.Equal(t, 400, response.Code, query)
@@ -317,13 +332,4 @@ func TestAuthInvalidReturnTo(t *testing.T) {
 	}
 }
 
-func TestLegacyTransactionReturnTo(t *testing.T) {
-	r, s := testAuth(t)
-	require.NoError(t, s.Store.PutLock(context.Background(), "transaction", auth.Hash("legacy-state"), auth.Hash("binding"), []byte(`{"Provider":"google","Verifier":"verifier","Nonce":"nonce"}`), time.Now().Add(time.Minute)))
-	code, err := s.OAuthCallback(context.Background(), "legacy-state", "binding", "provider-code", false)
-	require.NoError(t, err)
-	response := perform(r, "POST", "/auth/exchange", `{"code":"`+code+`"}`, nil)
-	var result auth.OAuthExchangeResult
-	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &result))
-	require.Equal(t, "/", result.ReturnTo)
-}
+type panicAuthStore struct{ db.AuthDBWrapper }

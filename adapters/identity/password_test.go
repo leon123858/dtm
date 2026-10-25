@@ -46,7 +46,7 @@ func TestEmailPassword(t *testing.T) {
 			defer server.Close()
 			p := NewEmailPassword(server.Client(), "key+&")
 			p.SignInURL = server.URL
-			tokens, err := p.SignIn(context.Background(), "test@example.com", " secret+& ")
+			tokens, err := p.SignIn(context.Background(), Credential[PasswordCredential]{Data: PasswordCredential{Email: "test@example.com", Password: " secret+& "}})
 			if tc.want != nil {
 				require.ErrorIs(t, err, tc.want)
 				require.Zero(t, tokens)
@@ -63,6 +63,16 @@ func TestEmailPasswordTimeout(t *testing.T) {
 	ctx, cancel := context.WithDeadline(context.Background(), time.Unix(0, 0))
 	defer cancel()
 	p := NewEmailPassword(http.DefaultClient, "key")
-	_, err := p.SignIn(ctx, "email", "password")
+	_, err := p.SignIn(ctx, Credential[PasswordCredential]{Data: PasswordCredential{Email: "email", Password: "password"}})
 	require.ErrorIs(t, err, ErrTimeout)
+}
+
+func TestEmailPasswordRefreshNotImplemented(t *testing.T) {
+	p := NewEmailPassword(&http.Client{Transport: verifierRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		t.Fatal("refresh must not make an HTTP request")
+		return nil, nil
+	})}, "key")
+	tokens, err := p.Refresh(context.Background(), "refresh")
+	require.ErrorIs(t, err, ErrNotImplemented)
+	require.Zero(t, tokens)
 }

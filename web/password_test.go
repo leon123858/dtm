@@ -15,12 +15,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type webPasswordProvider struct {
+type webPasswordIdentity struct {
 	calls int
 	err   error
 }
 
-func (p *webPasswordProvider) SignIn(context.Context, string, string) (identity.Tokens, error) {
+func (p *webPasswordIdentity) SignIn(context.Context, identity.Credential[identity.PasswordCredential]) (identity.Tokens, error) {
 	p.calls++
 	return identity.Tokens{LocalID: "member", IDToken: "password-jwt-secret", RefreshToken: "password-refresh-secret", ExpiresIn: 3600}, p.err
 }
@@ -42,8 +42,10 @@ func TestPasswordRoute(t *testing.T) {
 			old := logger
 			logger = slog.New(slog.NewTextHandler(&logs, nil))
 			t.Cleanup(func() { logger = old })
-			provider := &webPasswordProvider{err: tc.err}
-			s := &auth.Service{Store: mem.NewInMemoryAuthDBWrapper(), PasswordProvider: provider}
+			provider := &webPasswordIdentity{err: tc.err}
+			s, err := auth.NewServiceWithDependencies(context.Background(), config.Auth{E2EAuthEnabled: tc.enabled}, auth.Dependencies{Store: mem.NewInMemoryAuthDBWrapper(), PasswordIdentity: provider})
+			require.NoError(t, err)
+			t.Cleanup(s.Close)
 			r := gin.New()
 			setupMiddlewares(r, ServiceConfig{IsDev: true})
 			setupAuthRoutes(r, s, config.Auth{E2EAuthEnabled: tc.enabled}, true)
@@ -71,4 +73,8 @@ func TestPasswordRoute(t *testing.T) {
 			}
 		})
 	}
+}
+
+func (p *webPasswordIdentity) Refresh(context.Context, string) (identity.Tokens, error) {
+	return identity.Tokens{}, identity.ErrNotImplemented
 }

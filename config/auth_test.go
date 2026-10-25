@@ -10,15 +10,15 @@ import (
 )
 
 func TestAuthConfig(t *testing.T) {
+	t.Setenv("GOOGLE_CLIENT_ID", "")
+	t.Setenv("GOOGLE_CLIENT_SECRET", "")
 	t.Setenv("GCIP_PROJECT_ID", "project")
-	for _, key := range []string{"FRONTEND_URL", "OAUTH_REDIRECT_PATH", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GCIP_API_KEY"} {
+	for _, key := range []string{"FRONTEND_URL", "OAUTH_REDIRECT_PATH", "GCIP_API_KEY"} {
 		t.Setenv(key, "")
 	}
 	_, err := LoadAuth(false, "8081")
 	require.EqualError(t, err, "invalid FRONTEND_URL")
-	for _, key := range []string{"GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GCIP_API_KEY"} {
-		t.Setenv(key, "configured")
-	}
+	t.Setenv("GCIP_API_KEY", "configured")
 	for _, dev := range []bool{true, false} {
 		t.Setenv("FRONTEND_URL", "https://frontend.example/")
 		for _, invalid := range []string{"", "/", "callback", "https://backend.example/auth/callback", "//evil.example/callback", "/auth/../callback", "/./callback", "/auth//callback", "/auth/callback/", "/auth/%63allback", "/auth/%252fcallback", "/auth/callback?", "/auth/callback?q=1", "/auth/callback#", "/auth/callback#fragment", "/auth/\\callback", "/auth/callback\n", "/auth/call back", "/auth/call;back"} {
@@ -55,21 +55,18 @@ func TestFrontendURL(t *testing.T) {
 	require.Equal(t, "https://frontend.example", FrontendURL())
 }
 
-func TestAuthConfigRequiresEveryCredential(t *testing.T) {
+func TestAuthConfigRequiresAPIKey(t *testing.T) {
 	t.Setenv("GCIP_PROJECT_ID", "project")
+	t.Setenv("FRONTEND_URL", "https://frontend.example")
+	t.Setenv("OAUTH_REDIRECT_PATH", "/backend/auth/callback")
 	for _, dev := range []bool{true, false} {
-		for _, missing := range []string{"GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GCIP_API_KEY"} {
-			t.Run(fmt.Sprintf("dev=%t/%s", dev, missing), func(t *testing.T) {
-				t.Setenv("FRONTEND_URL", "https://frontend.example")
-				t.Setenv("OAUTH_REDIRECT_PATH", "/backend/auth/callback")
-				for _, key := range []string{"GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GCIP_API_KEY"} {
-					t.Setenv(key, "configured")
-				}
-				t.Setenv(missing, "")
+		t.Run(fmt.Sprintf("dev=%t", dev), func(t *testing.T) {
+			for _, key := range []string{"", " \t"} {
+				t.Setenv("GCIP_API_KEY", key)
 				_, err := LoadAuth(dev, "8080")
-				require.EqualError(t, err, "GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GCIP_API_KEY must all be set")
-			})
-		}
+				require.EqualError(t, err, "GCIP_API_KEY must be set")
+			}
+		})
 	}
 }
 
@@ -99,7 +96,7 @@ func TestAuthConfigRequiresProject(t *testing.T) {
 func TestE2EAuthConfig(t *testing.T) {
 	t.Setenv("FRONTEND_URL", "https://example.com")
 	t.Setenv("OAUTH_REDIRECT_PATH", "/auth/callback")
-	for _, key := range []string{"GCIP_PROJECT_ID", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GCIP_API_KEY"} {
+	for _, key := range []string{"GCIP_PROJECT_ID", "GCIP_API_KEY"} {
 		t.Setenv(key, "configured")
 	}
 	for _, tc := range []struct {

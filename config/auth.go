@@ -13,10 +13,10 @@ import (
 )
 
 type Auth struct {
-	E2EAuthEnabled                                                                     bool
-	E2EAuthEmail, E2EAuthPassword                                                      string
-	ProjectID                                                                          string
-	FrontendURL, RedirectPath, RedirectURL, GoogleClientID, GoogleClientSecret, APIKey string
+	E2EAuthEnabled                                 bool
+	E2EAuthEmail, E2EAuthPassword                  string
+	ProjectID                                      string
+	FrontendURL, RedirectPath, RedirectURL, APIKey string
 }
 
 func LoadDevEnv(dev bool) error {
@@ -39,7 +39,7 @@ func FrontendURL() string {
 }
 
 func LoadAuth(dev bool, port string) (Auth, error) {
-	c := Auth{ProjectID: os.Getenv("GCIP_PROJECT_ID"), FrontendURL: FrontendURL(), RedirectPath: os.Getenv("OAUTH_REDIRECT_PATH"), GoogleClientID: os.Getenv("GOOGLE_CLIENT_ID"), GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"), APIKey: os.Getenv("GCIP_API_KEY")}
+	c := Auth{ProjectID: os.Getenv("GCIP_PROJECT_ID"), FrontendURL: FrontendURL(), RedirectPath: os.Getenv("OAUTH_REDIRECT_PATH"), APIKey: os.Getenv("GCIP_API_KEY")}
 	validURL := func(raw string, origin bool) bool {
 		u, e := url.Parse(raw)
 		return e == nil && u.Hostname() != "" && u.User == nil && u.RawQuery == "" && u.Fragment == "" && (u.Scheme == "https" || (dev && u.Scheme == "http")) && (!origin || u.Path == "")
@@ -50,13 +50,13 @@ func LoadAuth(dev bool, port string) (Auth, error) {
 	if strings.TrimSpace(c.ProjectID) == "" {
 		return c, errors.New("GCIP_PROJECT_ID must be set")
 	}
-	if c.GoogleClientID == "" || c.GoogleClientSecret == "" || c.APIKey == "" {
-		return c, errors.New("GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GCIP_API_KEY must all be set")
+	if strings.TrimSpace(c.APIKey) == "" {
+		return c, errors.New("GCIP_API_KEY must be set")
 	}
 	if !validRedirectPath(c.RedirectPath) {
 		return c, errors.New("invalid OAUTH_REDIRECT_PATH")
 	}
-	// Google and GCIP require a full URL; the cookie uses the same public path.
+	// GCIP requires a full URL; the cookie uses the same public path.
 	c.RedirectURL = c.FrontendURL + c.RedirectPath
 	if raw := os.Getenv("E2E_AUTH_ENABLED"); raw != "" {
 		var err error

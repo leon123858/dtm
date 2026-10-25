@@ -7,10 +7,11 @@ import (
 )
 
 var (
-	ErrCredential = errors.New("invalid_provider_credential")
-	ErrUpstream   = errors.New("upstream_error")
-	ErrTimeout    = errors.New("upstream_timeout")
-	ErrRefresh    = errors.New("invalid_refresh_token")
+	ErrNotImplemented = errors.New("not_implemented")
+	ErrCredential     = errors.New("invalid_provider_credential")
+	ErrUpstream       = errors.New("upstream_error")
+	ErrTimeout        = errors.New("upstream_timeout")
+	ErrRefresh        = errors.New("invalid_refresh_token")
 )
 
 type Tokens struct {
@@ -20,19 +21,42 @@ type Tokens struct {
 	ExpiresIn    int64  `json:"expiresIn"`
 }
 
-type Credential struct{ ProviderID, IDToken, AccessToken string }
+// Credential carries the sign-in data required by an identity implementation.
+type Credential[T any] struct{ Data T }
 
-type Provider interface {
-	AuthorizationURL(state, verifier, nonce string) string
-	Exchange(context.Context, string, string, string) (Credential, error)
+type PasswordCredential struct{ Email, Password string }
+
+// GCIPCredential contains a GCIP-managed authorization response.
+type GCIPCredential struct {
+	ProviderID, RequestURI, SessionID string
 }
 
-type Identity interface {
-	SignIn(context.Context, Credential) (Tokens, error)
+// Authorization includes the GCIP state and server-side session.
+// SessionID stays on the server and is bound to the browser transaction.
+type Authorization struct{ URL, State, SessionID string }
+
+type OAuthCallback struct{ Code, State, SessionID string }
+
+// Provider starts GCIP-managed login and prepares its callback for sign-in.
+type Provider interface {
+	Start(context.Context) (Authorization, error)
+	Exchange(context.Context, OAuthCallback) (Credential[GCIPCredential], error)
+}
+
+type Identity[T any] interface {
+	SignIn(context.Context, Credential[T]) (Tokens, error)
 	Refresh(context.Context, string) (Tokens, error)
 }
 
-// PasswordProvider signs in directly without an OAuth redirect or code exchange.
-type PasswordProvider interface {
-	SignIn(context.Context, string, string) (Tokens, error)
+// TokenVerifier validates an application ID token and returns its user ID.
+type TokenVerifier interface {
+	Verify(context.Context, string) (string, error)
 }
+
+var (
+	_ TokenVerifier                = (*GCIPVerifier)(nil)
+	_ Provider                     = (*GoogleGCIPProvider)(nil)
+	_ Provider                     = (*GithubGCIPProvider)(nil)
+	_ Identity[GCIPCredential]     = (*GCIP)(nil)
+	_ Identity[PasswordCredential] = (*EmailPassword)(nil)
+)

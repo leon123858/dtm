@@ -15,8 +15,8 @@ import (
 
 type passwordFunc func(context.Context, string, string) (identity.Tokens, error)
 
-func (f passwordFunc) SignIn(ctx context.Context, email, password string) (identity.Tokens, error) {
-	return f(ctx, email, password)
+func (f passwordFunc) SignIn(ctx context.Context, credential identity.Credential[identity.PasswordCredential]) (identity.Tokens, error) {
+	return f(ctx, credential.Data.Email, credential.Data.Password)
 }
 
 type brokenPasswordStore struct{ db.AuthDBWrapper }
@@ -27,39 +27,49 @@ func (brokenPasswordStore) UpsertUser(context.Context, string) (domain.User, err
 
 func TestPasswordLogin(t *testing.T) {
 	ctx := context.Background()
-	s, err := NewService(ctx, config.Auth{E2EAuthEnabled: true, E2EAuthEmail: "test@example.com", E2EAuthPassword: " secret "}, mem.NewInMemoryAuthDBWrapper())
-	require.NoError(t, err)
-	defer s.Close()
-	require.NotNil(t, s.PasswordProvider)
-	s.PasswordProvider = passwordFunc(func(_ context.Context, email, password string) (identity.Tokens, error) {
+	store := mem.NewInMemoryAuthDBWrapper()
+	cfg := config.Auth{E2EAuthEnabled: true, E2EAuthEmail: "test@example.com", E2EAuthPassword: " secret "}
+	newService := func(store db.AuthDBWrapper, provider identity.Identity[identity.PasswordCredential]) Service {
+		t.Helper()
+		s, err := NewServiceWithDependencies(ctx, cfg, Dependencies{Store: store, PasswordIdentity: provider})
+		require.NoError(t, err)
+		t.Cleanup(s.Close)
+		return s
+	}
+	provider := passwordFunc(func(_ context.Context, email, password string) (identity.Tokens, error) {
 		require.Equal(t, "test@example.com", email)
 		require.Equal(t, " secret ", password)
 		return identity.Tokens{LocalID: "gcid", IDToken: "jwt", RefreshToken: "refresh", ExpiresIn: 3600}, nil
 	})
+	s := newService(store, provider)
+	_, err := s.PasswordLogin(ctx)
+	require.NoError(t, err)
+	id, err := store.UserGCID2UserId(ctx, "gcid")
+	require.NoError(t, err)
 	_, err = s.PasswordLogin(ctx)
 	require.NoError(t, err)
-	id, err := s.Store.UserGCID2UserId(ctx, "gcid")
-	require.NoError(t, err)
-	_, err = s.PasswordLogin(ctx)
-	require.NoError(t, err)
-	again, err := s.Store.UserGCID2UserId(ctx, "gcid")
+	again, err := store.UserGCID2UserId(ctx, "gcid")
 	require.NoError(t, err)
 	require.Equal(t, id, again)
-	s.Store = brokenPasswordStore{}
+	s = newService(brokenPasswordStore{}, provider)
 	tokens, err := s.PasswordLogin(ctx)
 	require.ErrorIs(t, err, ErrStorage)
 	require.Zero(t, tokens)
-	s.PasswordProvider = passwordFunc(func(context.Context, string, string) (identity.Tokens, error) {
+	s = newService(store, passwordFunc(func(context.Context, string, string) (identity.Tokens, error) {
 		return identity.Tokens{}, identity.ErrCredential
-	})
+	}))
 	_, err = s.PasswordLogin(ctx)
 	require.ErrorIs(t, err, identity.ErrCredential)
-	s.PasswordProvider = passwordFunc(func(context.Context, string, string) (identity.Tokens, error) {
+	s = newService(store, passwordFunc(func(context.Context, string, string) (identity.Tokens, error) {
 		return identity.Tokens{IDToken: "jwt"}, nil
-	})
+	}))
 	_, err = s.PasswordLogin(ctx)
 	require.ErrorIs(t, err, identity.ErrUpstream)
-	s.PasswordProvider = nil
+	s = newService(store, nil)
 	_, err = s.PasswordLogin(ctx)
 	require.ErrorIs(t, err, ErrUnauthenticated)
+}
+
+func (f passwordFunc) Refresh(context.Context, string) (identity.Tokens, error) {
+	return identity.Tokens{}, identity.ErrNotImplemented
 }

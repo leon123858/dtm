@@ -14,7 +14,7 @@ import (
 
 func TestValidateReturnTo(t *testing.T) {
 	for _, input := range []string{"", "/", "/history", "/trip/550e8400-e29b-41d4-a716-446655440000?tab=costs#record", "/history?q=a%20b&discount=100%25#中文", "/?next=https%3A%2F%2Fexample.com"} {
-		got, err := ValidateReturnTo(input)
+		got, err := validateReturnTo(input)
 		require.NoError(t, err, input)
 		if input == "" {
 			input = "/"
@@ -24,14 +24,14 @@ func TestValidateReturnTo(t *testing.T) {
 	for _, input := range []string{
 		"https://example.com", "//example.com", "///history", "history", " ", "/auth/complete", "/backend/auth/google", "/trip/abc123", "/history/", "/history/../", "/./history", "/trip//", "/%68istory", "/%2fhistory", "/%252fhistory", "/history%3fignored", "/history\\", "/history\n", "/history?q=%0a", "/history?q=%255c", "/history?q=%25&x=%255c", "/history#%250d", "/history?bad=%zz", "/history#%zz", "/history?q=%7f",
 	} {
-		_, err := ValidateReturnTo(input)
+		_, err := validateReturnTo(input)
 		require.ErrorIs(t, err, ErrRequest, input)
 	}
 }
 
 func TestInvalidReturnToDoesNotStartTransaction(t *testing.T) {
 	// Nil dependencies would panic if validation touched storage or a provider.
-	s := &Service{}
+	s := &service{}
 	state, binding, location, err := s.OAuthStart(context.Background(), "google", "//evil.example")
 	require.ErrorIs(t, err, ErrRequest)
 	require.Empty(t, state)
@@ -39,30 +39,31 @@ func TestInvalidReturnToDoesNotStartTransaction(t *testing.T) {
 	require.Empty(t, location)
 }
 
-func TestLegacyLoginAndRemainingLifetime(t *testing.T) {
+func TestLoginRemainingLifetime(t *testing.T) {
 	now := time.Now()
-	s := &Service{Store: mem.NewInMemoryAuthDBWrapper(), Now: func() time.Time { return now }}
-	data, err := json.Marshal(struct {
-		Tokens    identity.Tokens
-		ExpiresAt time.Time
-	}{identity.Tokens{IDToken: "test", ExpiresIn: 3600}, now.Add(3600 * time.Second)})
+	s := &service{store: mem.NewInMemoryAuthDBWrapper(), clock: func() time.Time { return now }}
+	data, err := json.Marshal(login{
+		Tokens:    identity.Tokens{IDToken: "test", ExpiresIn: 3600},
+		ExpiresAt: now.Add(time.Hour),
+		ReturnTo:  "/history",
+	})
 	require.NoError(t, err)
-	require.NoError(t, s.Store.PutLock(context.Background(), "login", Hash("legacy"), "", data, now.Add(time.Minute)))
+	require.NoError(t, s.store.PutLock(context.Background(), "login", Hash("login-code"), "", data, now.Add(time.Minute)))
 	now = now.Add(time.Second)
-	result, err := s.OAuthExchange(context.Background(), "legacy")
+	result, err := s.OAuthExchange(context.Background(), "login-code")
 	require.NoError(t, err)
-	require.Equal(t, "/", result.ReturnTo)
+	require.Equal(t, "/history", result.ReturnTo)
 	require.Equal(t, int64(3599), result.ExpiresIn)
 }
 
 func TestReturnToResourceLimits(t *testing.T) {
 	const prefix = "/history?q="
 	atLimit := prefix + strings.Repeat("a", maxReturnToBytes-len(prefix))
-	got, err := ValidateReturnTo(atLimit)
+	got, err := validateReturnTo(atLimit)
 	require.NoError(t, err)
 	require.Equal(t, atLimit, got)
 	nested := func(depth int) string { return prefix + "%" + strings.Repeat("25", depth-1) + "41" }
-	got, err = ValidateReturnTo(nested(maxReturnToDecodeDepth))
+	got, err = validateReturnTo(nested(maxReturnToDecodeDepth))
 	require.NoError(t, err)
 	require.Equal(t, nested(maxReturnToDecodeDepth), got)
 	for _, input := range []string{
@@ -72,7 +73,7 @@ func TestReturnToResourceLimits(t *testing.T) {
 		nested(30000), // Reviewer regression: ~60 KB quadratic decoding input.
 	} {
 		// Rejection must happen before any storage or provider access.
-		s := &Service{}
+		s := &service{}
 		state, binding, location, err := s.OAuthStart(context.Background(), "google", input)
 		require.ErrorIs(t, err, ErrRequest)
 		require.Empty(t, state)
