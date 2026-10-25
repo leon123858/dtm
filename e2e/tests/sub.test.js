@@ -1,410 +1,95 @@
-import { client } from '../src/apolloClient';
-import {
-	CREATE_TRIP,
-		CREATE_ADDRESS,
-		UPDATE_ADDRESS,
-	DELETE_ADDRESS,
-	CREATE_RECORD,
-	UPDATE_RECORD,
-	SUB_RECORD_CREATE,
-	SUB_RECORD_UPDATE,
-		SUB_ADDRESS_CREATE,
-		SUB_ADDRESS_UPDATE,
-	SUB_ADDRESS_DELETE,
-} from './graphql';
+import {createClient} from 'graphql-ws';
+import WebSocket from 'ws';
+import {print} from 'graphql';
+import {api, memberOperation} from '../src/api.js';
+import {CREATE_TRIP, CREATE_ADDRESS, UPDATE_ADDRESS, DELETE_ADDRESS, CREATE_RECORD, UPDATE_RECORD, SUB_ADDRESS_CREATE, SUB_ADDRESS_UPDATE, SUB_ADDRESS_DELETE, SUB_RECORD_CREATE, SUB_RECORD_UPDATE} from './graphql.js';
 
-/**
- * let thread sleep for a while
- * @param {number} ms
- * @returns {Promise<void>} Promise。
- */
-function sleep(ms) {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+// Retain every event so duplicates and cross-trip leaks cannot hide behind unsubscribe-on-first.
+function watch(client, document, tripId, acceptProbe = false) {
+ const events = [];
+ let failure;
+ let probeSeen = false;
+ const stop = client.subscribe({query: print(document), variables: {tripId}}, {
+  next: result => {
+   if (result.errors) failure = new Error(JSON.stringify(result.errors));
+   else {
+    const event = Object.values(result.data)[0];
+    if (acceptProbe && /^通知探測 \d+$/.test(event.name)) probeSeen = true;
+    else events.push(event);
+   }
+  },
+  error: () => { failure = new Error('Subscription transport failed'); },
+  complete: () => {},
+ });
+ return {
+  events, stop,
+  get ready() { return probeSeen; },
+  async count(count) {
+   const deadline = Date.now() + 5000;
+   while (events.length < count && !failure && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 20));
+   }
+   if (failure) throw failure;
+   expect(events).toHaveLength(count);
+   return events[count - 1];
+  },
+  check() { if (failure) throw failure; },
+ };
 }
 
-// Helper function to wait for a single emission from an Apollo Observable
-const waitForSubscription = (observable, timeout = 7000) => {
-	return new Promise((resolve, reject) => {
-		let received = false;
-		const timer = setTimeout(() => {
-			if (!received) {
-				received = true;
-				// It's important that 'observer' is defined before this timer function is called.
-				// Ensure 'observer' is in a scope accessible here or passed to this timer function.
-				// If 'observer' is the subscription object returned by observable.subscribe(),
-				// then it should be defined by the time setTimeout is called.
-				if (typeof observer !== 'undefined' && observer.unsubscribe) {
-					observer.unsubscribe();
-				}
-				reject(new Error(`Subscription timed out after ${timeout}ms`));
-			}
-		}, timeout);
-
-		const observer = observable.subscribe({
-			next: (data) => {
-				if (!received) {
-					received = true;
-					clearTimeout(timer);
-					observer.unsubscribe();
-					resolve(data);
-				}
-			},
-			error: (err) => {
-				if (!received) {
-					received = true;
-					clearTimeout(timer);
-					// observer.unsubscribe(); // Unsubscribe might not be defined on error or might have already happened
-					reject(err);
-				}
-			},
-		});
-	});
-};
-
-// Helper function to wait for a multi emission from an Apollo Observable
-const waitForMultiSubscription = (observable, count, timeout = 7000) => {
-	return new Promise((resolve, reject) => {
-		let receivedCount = 0;
-		const results = [];
-		const timer = setTimeout(() => {
-			if (receivedCount < count) {
-				reject(new Error(`Subscription timed out after ${timeout}ms`));
-			}
-		}, timeout);
-
-		const observer = observable.subscribe({
-			next: (data) => {
-				results.push(data);
-				receivedCount++;
-				if (receivedCount === count) {
-					clearTimeout(timer);
-					observer.unsubscribe();
-					resolve(results);
-				}
-			},
-			error: (err) => {
-				clearTimeout(timer);
-				reject(err);
-			},
-		});
-	});
-};
-
-describe('GraphQL API End-to-End Tests', () => {
-	let tripId;
-	const testTripName = `訂閱 📡 [旅程] - ${Date.now()}`;
-	let nenExistTripId = '0b4d17a1-7db3-4686-aae2-2120f7919d50';
-
-	beforeAll(async () => {
-		const { data } = await client.mutate({
-			mutation: CREATE_TRIP,
-			variables: { input: { name: testTripName } },
-		});
-		expect(data.createTrip.id).toBeDefined();
-		tripId = data.createTrip.id;
-	});
-
-	// --- Subscription ---
-	describe('Subscription Tests', () => {
-		const commonAddressForSubRecords = `成員 👩🏽‍💻 (訂閱)-${Date.now()}`;
-		let commonAddress;
-	let recordIdForSubTests;
-	let latestRecordPayload;
-		let newRecordPayload;
-
-		beforeAll(async () => {
-			const { data, error } = await client.mutate({
-				mutation: CREATE_ADDRESS,
-				variables: { tripId, input: { name: commonAddressForSubRecords } },
-			});
-			expect(error).toBeUndefined();
-			commonAddress = data.createAddress;
-			expect(commonAddress.name).toBe(commonAddressForSubRecords);
-			newRecordPayload = {
-				name: '<meal> 🍱 & 飲料', amount: 77.88, time: '1672531399',
-				prePayAddressId: commonAddress.id,
-				shouldPayAddressIds: [commonAddress.id],
-				category: 'NORMAL', extendPayMsg: [],
-			};
-		});
-
-		it('should receive a notification when a new address is created (subAddressCreate)', async () => {
-			const newAddressName = `新成員 🍜 <address>-${Date.now()}`;
-
-			const subObservable = client.subscribe({
-				query: SUB_ADDRESS_CREATE,
-				variables: { tripId },
-			});
-			const subscriptionPromise = waitForSubscription(subObservable);
-
-			// sleep to wait subscript trigger
-			await sleep(1000);
-
-			// mutation
-			const { data: mutationData, error: mutationError } = await client.mutate({
-				mutation: CREATE_ADDRESS,
-				variables: { tripId, input: { name: newAddressName } },
-			});
-
-			expect(mutationError).toBeUndefined();
-			const createdAddress = mutationData.createAddress;
-			expect(createdAddress.name).toBe(newAddressName);
-
-			// wait and verify subscription
-			const { data: subData, errors: subErrors } = await subscriptionPromise;
-			expect(subErrors).toBeUndefined();
-			expect(subData.subAddressCreate).toEqual(createdAddress);
-
-			// clear
-			await client.mutate({
-				mutation: DELETE_ADDRESS,
-				variables: { tripId, addressId: createdAddress.id },
-			});
-		});
-
-		it('should receive multiple notifications when multiple addresses are created (subAddressCreate)', async () => {
-			const newAddressNames = [
-				`成員一 🧑‍🚀-${Date.now()}`,
-				`成員二 🧑🏽‍🍳-${Date.now()}`,
-			];
-			const subObservable = client.subscribe({
-				query: SUB_ADDRESS_CREATE,
-				variables: { tripId },
-			});
-
-			const subscriptionPromise = waitForMultiSubscription(subObservable, 2);
-			// sleep to wait subscript trigger
-			await sleep(1000);
-
-			// trigger many mutation
-			const mutationPromises = newAddressNames.map((address) =>
-				client.mutate({
-					mutation: CREATE_ADDRESS,
-					variables: { tripId, input: { name: address } },
-				})
-			);
-			const mutationResults = await Promise.all(mutationPromises);
-			mutationResults.forEach((result, index) => {
-				expect(result.error).toBeUndefined();
-				expect(result.data.createAddress.name).toBe(newAddressNames[index]);
-			});
-			// subscription
-			const subscriptionResults = await subscriptionPromise;
-			expect(subscriptionResults.length).toBe(2);
-			// just check include
-			expect(subscriptionResults.map((r) => r.data.subAddressCreate.name)).toEqual(
-				expect.arrayContaining(newAddressNames)
-			);
-
-			await Promise.all(
-				mutationResults.map((result) =>
-					client.mutate({
-						mutation: DELETE_ADDRESS,
-						variables: { tripId, addressId: result.data.createAddress.id },
-					})
-				)
-			);
-		});
-
-		it('should receive the same address ID when an address is renamed', async () => {
-			const address = (await client.mutate({
-				mutation: CREATE_ADDRESS,
-				variables: { tripId, input: { name: `改名前 🍀-${Date.now()}` } },
-			})).data.createAddress;
-			const subscriptionPromise = waitForSubscription(client.subscribe({
-				query: SUB_ADDRESS_UPDATE,
-				variables: { tripId },
-			}));
-			await sleep(1000);
-			const renamed = (await client.mutate({
-				mutation: UPDATE_ADDRESS,
-				variables: { tripId, addressId: address.id, input: { name: `改名後 🌻 [更新]-${Date.now()}` } },
-			})).data.updateAddress;
-			const { data } = await subscriptionPromise;
-			expect(renamed.id).toBe(address.id);
-			expect(data.subAddressUpdate).toEqual(renamed);
-			await client.mutate({ mutation: DELETE_ADDRESS, variables: { tripId, addressId: address.id } });
-		});
-
-		it('should not receive a notification when a new address is created (because not tripId)', async () => {
-			const newAddressName = `新成員 🍜 <address>-${Date.now()}`;
-
-			const subObservable = client.subscribe({
-				query: SUB_ADDRESS_CREATE,
-				variables: { tripId: nenExistTripId },
-			});
-			const subscriptionPromise = waitForSubscription(subObservable, 1500);
-
-			// sleep to wait subscript trigger
-			await sleep(1000);
-
-			// mutation
-			const { data: mutationData, error: mutationError } = await client.mutate({
-				mutation: CREATE_ADDRESS,
-				variables: { tripId, input: { name: newAddressName } },
-			});
-
-			expect(mutationError).toBeUndefined();
-			const createdAddress = mutationData.createAddress;
-			expect(createdAddress.name).toBe(newAddressName);
-
-			// subscription
-			try {
-				await subscriptionPromise;
-				throw 'should not receive here as tripID not map';
-			} catch (err) {
-				expect(err).not.toBe('should not receive here as tripID not map');
-			}
-
-			await client.mutate({
-				mutation: DELETE_ADDRESS,
-				variables: { tripId, addressId: createdAddress.id },
-			});
-		});
-
-		it('should receive a notification when a new record is created (subRecordCreate)', async () => {
-			const subObservable = client.subscribe({
-				query: SUB_RECORD_CREATE,
-				variables: { tripId },
-			});
-			const subscriptionPromise = waitForSubscription(subObservable);
-
-			// sleep to wait subscript trigger
-			await sleep(1000);
-
-			const { data: mutationData, error: mutationError } = await client.mutate({
-				mutation: CREATE_RECORD,
-				variables: { tripId, input: newRecordPayload },
-			});
-
-			expect(mutationError).toBeUndefined();
-			expect(mutationData.createRecord.id).toBeDefined();
-			recordIdForSubTests = mutationData.createRecord.id;
-
-			const { data: subData, errors: subErrors } = await subscriptionPromise;
-			expect(subErrors).toBeUndefined();
-			expect(subData.subRecordCreate).toBeDefined();
-			expect(subData.subRecordCreate.id).toBe(recordIdForSubTests);
-			expect(subData.subRecordCreate.name).toBe(newRecordPayload.name);
-			expect(subData.subRecordCreate.amount).toBe(newRecordPayload.amount);
-			expect(subData.subRecordCreate.time).toBe(newRecordPayload.time);
-			expect(subData.subRecordCreate.prePayAddress).toEqual(commonAddress);
-			expect(subData.subRecordCreate.shouldPayAddress).toEqual([commonAddress]);
-			expect(subData.subRecordCreate.category).toBe('NORMAL');
-			expect(subData.subRecordCreate.isValid).toBe(true);
-		});
-
-		it('should receive a notification when a record is updated (subRecordUpdate)', async () => {
-			expect(recordIdForSubTests).toBeDefined();
-
-			const updatedRecordPayload = {
-				name: '晚餐 🍽️ [更新]',
-				amount: 99.55,
-				time: '1672531499',
-				prePayAddressId: commonAddress.id,
-				shouldPayAddressIds: [commonAddress.id],
-				category: 'FIX',
-				extendPayMsg: [99.55],
-			};
-
-			const subObservable = client.subscribe({
-				query: SUB_RECORD_UPDATE,
-				variables: { tripId },
-			});
-			const subscriptionPromise = waitForSubscription(subObservable);
-
-			// sleep to wait subscript trigger
-			await sleep(1000);
-
-			const { data: mutationData, error: mutationError } = await client.mutate({
-				mutation: UPDATE_RECORD,
-				variables: {
-					recordId: recordIdForSubTests,
-					input: {
-                        old: newRecordPayload,
-                        new: updatedRecordPayload,
-                    },
-				},
-			});
-
-			expect(mutationError).toBeUndefined();
-			expect(mutationData.updateRecord.name).toBe(updatedRecordPayload.name);
-			expect(mutationData.updateRecord.id).not.toBe(recordIdForSubTests);
-			expect(mutationData.updateRecord.parentRecordId).toBe(recordIdForSubTests);
-
-			const { data: subData, errors: subErrors } = await subscriptionPromise;
-			expect(subErrors).toBeUndefined();
-			expect(subData.subRecordUpdate).toBeDefined();
-			expect(subData.subRecordUpdate.id).toBe(mutationData.updateRecord.id);
-			expect(subData.subRecordUpdate.parentRecordId).toBe(recordIdForSubTests);
-			expect(subData.subRecordUpdate.name).toBe(updatedRecordPayload.name);
-			expect(subData.subRecordUpdate.amount).toBe(updatedRecordPayload.amount);
-			expect(subData.subRecordUpdate.time).toBe(updatedRecordPayload.time);
-			expect(subData.subRecordUpdate.category).toBe('FIX');
-			recordIdForSubTests = mutationData.updateRecord.id;
-			latestRecordPayload = updatedRecordPayload;
-		});
-
-		it('should receive deletion through subRecordUpdate', async () => {
-			expect(recordIdForSubTests).toBeDefined();
-
-			const subObservable = client.subscribe({
-				query: SUB_RECORD_UPDATE,
-				variables: { tripId },
-			});
-			const subscriptionPromise = waitForSubscription(subObservable);
-
-			// sleep to wait subscript trigger
-			await sleep(1000);
-
-			const { data: mutationData, error: mutationError } = await client.mutate({
-				mutation: UPDATE_RECORD,
-				variables: {
-					recordId: recordIdForSubTests,
-					input: { old: latestRecordPayload, new: { ...latestRecordPayload, isDeleted: true } },
-				},
-			});
-			expect(mutationError).toBeUndefined();
-			expect(mutationData.updateRecord.id).not.toBe(recordIdForSubTests);
-			expect(mutationData.updateRecord.isDeleted).toBe(true);
-
-			const { data: subData, errors: subErrors } = await subscriptionPromise;
-			expect(subErrors).toBeUndefined();
-			expect(subData.subRecordUpdate).toBeDefined();
-			expect(subData.subRecordUpdate.id).toBe(mutationData.updateRecord.id);
-			expect(subData.subRecordUpdate.isDeleted).toBe(true);
-
-			recordIdForSubTests = null;
-		});
-
-		it('should receive a notification when an address is deleted (subAddressDelete)', async () => {
-			const addressNameToDelete = `刪除成員 🗑️-${Date.now()}`;
-
-			const addressToDelete = (await client.mutate({
-				mutation: CREATE_ADDRESS,
-				variables: { tripId, input: { name: addressNameToDelete } },
-			})).data.createAddress;
-
-			const subObservable = client.subscribe({
-				query: SUB_ADDRESS_DELETE,
-				variables: { tripId },
-			});
-			const subscriptionPromise = waitForSubscription(subObservable);
-
-			// sleep to wait subscript trigger
-			await sleep(1000);
-
-			const { data: mutationData, error: mutationError } = await client.mutate({
-				mutation: DELETE_ADDRESS,
-				variables: { tripId, addressId: addressToDelete.id },
-			});
-
-			expect(mutationError).toBeUndefined();
-			expect(mutationData.deleteAddress).toEqual(addressToDelete);
-
-			const { data: subData, errors: subErrors } = await subscriptionPromise;
-			expect(subErrors).toBeUndefined();
-			expect(subData.subAddressDelete).toEqual(addressToDelete);
-		});
-	});
-});
+test('anonymous streams receive member changes and stay isolated between trips', async () => {
+ const member = api(process.env.DTM_E2E_ID_TOKEN);
+ const anonymous = api();
+ const trip = (await member.run(CREATE_TRIP, {input: {name: '通知流程'}})).createTrip;
+ const sockets = createClient({
+  url: process.env.GRAPHQL_ENDPOINT_WS || 'ws://127.0.0.1:8080/subscription',
+  webSocketImpl: WebSocket, retryAttempts: 0,
+ });
+ const streams = [];
+ try {
+  const other = (await anonymous.run(CREATE_TRIP, {input: {name: '隔離旅程'}})).createTrip;
+  const tripId = trip.id;
+  const [created, renamed, removed, recorded, edited, isolated] = [
+   [SUB_ADDRESS_CREATE, tripId], [SUB_ADDRESS_UPDATE, tripId], [SUB_ADDRESS_DELETE, tripId],
+   [SUB_RECORD_CREATE, tripId], [SUB_RECORD_UPDATE, tripId], [SUB_ADDRESS_CREATE, other.id],
+  ].map(([document, id]) => { const stream = watch(sockets, document, id, document === SUB_ADDRESS_CREATE && id === tripId); streams.push(stream); return stream; });
+  // graphql-transport-ws acknowledges the connection, not individual subscriptions.
+  // Establish readiness with actual probe events instead of an unconditional sleep.
+  let ready = false;
+  for (let attempt = 0; attempt < 20 && !ready; attempt++) {
+   await member.run(CREATE_ADDRESS, {tripId, input: {name: `通知探測 ${attempt}`}});
+   await new Promise(resolve => setTimeout(resolve, 50));
+   streams.forEach(stream => stream.check());
+   ready = created.ready;
+  }
+  expect(ready).toBe(true);
+  // All subscribe messages were sent on the same socket before the probe response.
+  const alice = (await member.run(CREATE_ADDRESS, {tripId, input: {name: 'Alice'}})).createAddress;
+  expect(await created.count(1)).toEqual(alice);
+  const bob = (await member.run(CREATE_ADDRESS, {tripId, input: {name: 'Bob'}})).createAddress;
+  expect(await created.count(2)).toEqual(bob);
+  const renamedAlice = (await member.run(UPDATE_ADDRESS, {tripId, addressId: alice.id, input: {name: 'Alice 🌻'}})).updateAddress;
+  expect(await renamed.count(1)).toEqual(renamedAlice);
+  const old = {name: '午餐', amount: 100, time: '1700000000000', prePayAddressId: alice.id, shouldPayAddressIds: [alice.id], category: 'NORMAL', extendPayMsg: []};
+  const record = (await member.run(CREATE_RECORD, {tripId, input: old})).createRecord;
+  expect(await recorded.count(1)).toEqual(record);
+  const next = {...old, amount: 200};
+  const updated = (await member.run(UPDATE_RECORD, {recordId: record.id, input: {old, new: next}})).updateRecord;
+  expect(await edited.count(1)).toEqual(updated);
+  const deleted = (await member.run(UPDATE_RECORD, {recordId: updated.id, input: {old: next, new: {...next, isDeleted: true}}})).updateRecord;
+  expect(await edited.count(2)).toEqual(deleted);
+  expect(deleted.isDeleted).toBe(true);
+  const deletedBob = (await member.run(DELETE_ADDRESS, {tripId, addressId: bob.id})).deleteAddress;
+  expect(await removed.count(1)).toEqual(deletedBob);
+  const marker = (await member.run(CREATE_ADDRESS, {tripId: other.id, input: {name: '另一旅程事件'}})).createAddress;
+  expect(await isolated.count(1)).toEqual(marker);
+  await new Promise(resolve => setTimeout(resolve, 200));
+  expect(isolated.events).toEqual([marker]);
+  expect(created.events).toEqual([alice, bob]);
+  streams.forEach(stream => stream.check());
+ } finally {
+  streams.forEach(stream => stream.stop());
+  await sockets.dispose();
+  await memberOperation(member, 'unsubscribeTrip', trip.id);
+ }
+}, 20000);

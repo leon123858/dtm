@@ -16,9 +16,6 @@ import (
 var (
 	ErrInvalidRecordSnapshot  = errors.New("invalid record snapshot")
 	ErrInvalidRecordAddresses = errors.New("invalid record addresses")
-	ErrRecordNotFound         = errors.New("record not found")
-	ErrTripNotFound           = errors.New("trip not found")
-	ErrInvalidChain           = errors.New("invalid record chain")
 )
 
 type Record interface {
@@ -84,6 +81,6 @@ func NewRecordFactory(readers db.ReaderProvider) RecordFactory {
 	return &recordFactory{readers: readers}
 }
 
-func NewTripFactory(store db.TripStore, readers db.ReaderProvider) TripFactory {
-	return &tripFactory{store: store, readers: readers, policy: recordPolicy{}}
+func NewTripFactory(store db.TripStore, authStore db.AuthDBWrapper, readers db.ReaderProvider) TripFactory {
+	return &tripFactory{store: store, authStore: authStore, readers: readers, policy: recordPolicy{}}
 }

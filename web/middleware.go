@@ -2,13 +2,18 @@ package web
 
 import (
 	"bytes"
+	"dtm/domain"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 
 	"dtm/adapters/db/db"
+	"dtm/adapters/identity"
+	"dtm/config"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/secure"
@@ -27,6 +32,10 @@ func AdminKeyMiddleware() gin.HandlerFunc {
 	}
 
 	return func(c *gin.Context) {
+		if isAuthPath(c.Request.URL.Path) {
+			c.Next()
+			return
+		}
 		reqKey := c.GetHeader("X-Admin-Key")
 
 		if reqKey == adminKey {
@@ -40,18 +49,9 @@ func AdminKeyMiddleware() gin.HandlerFunc {
 
 func CorsConfig(webConfig ServiceConfig) cors.Config {
 	corsConf := cors.DefaultConfig()
-	if webConfig.IsDev {
-		corsConf.AllowAllOrigins = true
-	} else {
-		var frontend string = "http://localhost:3000" // Default frontend URL
-		if os.Getenv("FRONTEND_URL") != "" {
-			frontend = os.Getenv("FRONTEND_URL")
-		}
-		corsConf.AllowAllOrigins = false
-		corsConf.AllowOrigins = []string{frontend}
-	}
+	corsConf.AllowOrigins = []string{config.FrontendURL()}
 	corsConf.AllowMethods = []string{"GET", "POST"}
-	corsConf.AllowHeaders = []string{"Origin", "Content-Type", "X-Requested-With"}
+	corsConf.AllowHeaders = []string{"Origin", "Content-Type", "X-Requested-With", "Authorization"}
 	corsConf.AllowCredentials = true
 	corsConf.MaxAge = 1 * 3600 // 1 hours
 	return corsConf
@@ -72,7 +72,7 @@ func CorsConfig(webConfig ServiceConfig) cors.Config {
 // GraphQLBodyLogMiddleware log post body
 func GraphQLBodyLogMiddleware(logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.Request.Method != http.MethodPost {
+		if isAuthPath(c.Request.URL.Path) || c.Request.Method != http.MethodPost {
 			c.Next()
 			return
 		}
@@ -122,10 +122,72 @@ func TripDataLoaderInjectionMiddleware(wrapper db.TripDBWrapper) gin.HandlerFunc
 	}
 }
 
+func UserBearerExtractIdMiddleware(verifier identity.TokenVerifier, store db.AuthDBWrapper) gin.HandlerFunc {
+	httpAuthError := func(status int) string {
+		if status == 401 {
+			return "UNAUTHENTICATED"
+		}
+		return "SERVICE_UNAVAILABLE"
+	}
+
+	return func(c *gin.Context) {
+		headers := c.Request.Header.Values("Authorization")
+		if len(headers) == 0 {
+			c.Next()
+			return
+		}
+		fields := strings.Fields(c.GetHeader("Authorization"))
+		if len(headers) != 1 || len(fields) != 2 || !strings.EqualFold(fields[0], "Bearer") {
+			c.AbortWithStatusJSON(401, gin.H{"error": "UNAUTHENTICATED"})
+			return
+		}
+		gcid, err := verifier.Verify(c.Request.Context(), fields[1])
+		if err != nil {
+			status := 401
+			if errors.Is(err, identity.ErrKeysUnavailable) {
+				status = 503
+			}
+			c.AbortWithStatusJSON(status, gin.H{"error": httpAuthError(status)})
+			return
+		}
+		userID, err := store.UserGCID2UserId(c.Request.Context(), gcid)
+		if err != nil {
+			status := 503
+			if errors.Is(err, domain.ErrUserNotFound) {
+				status = 401
+			}
+			c.AbortWithStatusJSON(status, gin.H{"error": httpAuthError(status)})
+			return
+		}
+		c.Request = c.Request.WithContext(domain.WithUserID(c.Request.Context(), userID))
+		c.Next()
+	}
+}
+
 func setupMiddlewares(r *gin.Engine, webConfig ServiceConfig) {
 	// r.Use(limiterMiddleWare()) // We limit it by cloudflare, so no need to limit here
-	r.Use(gin.Recovery())
-	r.Use(gin.Logger())
+	standardRecovery := gin.Recovery()
+	r.Use(func(c *gin.Context) {
+		if !isAuthPath(c.Request.URL.Path) {
+			standardRecovery(c)
+			return
+		}
+		defer func() {
+			if recover() != nil {
+				logger.Error("auth failed", "stage", "recovery", "code", "internal_error")
+				c.AbortWithStatusJSON(500, gin.H{"error": "internal_error"})
+			}
+		}()
+		c.Next()
+	})
+	accessLogger := gin.Logger()
+	r.Use(func(c *gin.Context) {
+		if isAuthPath(c.Request.URL.Path) {
+			c.Next()
+			return
+		}
+		accessLogger(c)
+	})
 	r.Use(AdminKeyMiddleware())
 	r.Use(GraphQLBodyLogMiddleware(logger))
 	r.Use(cors.New(CorsConfig(webConfig)))

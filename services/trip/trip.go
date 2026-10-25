@@ -8,30 +8,44 @@ import (
 
 	"dtm/adapters/db/db"
 	"dtm/domain"
+	"dtm/libs/textvalidate"
 	"dtm/services/tx"
 
 	"github.com/google/uuid"
 )
 
 type tripFactory struct {
-	store   db.TripStore
-	readers db.ReaderProvider
-	policy  recordPolicy
+	authStore db.AuthDBWrapper
+	store     db.TripStore
+	readers   db.ReaderProvider
+	policy    recordPolicy
 }
 
 var _ TripFactory = (*tripFactory)(nil)
 
 func (f *tripFactory) Create(ctx context.Context, name string) (Trip, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fromStoreError(err)
+		return nil, err
 	}
 	if f.store == nil {
 		return nil, fmt.Errorf("trip store is not available")
 	}
+	if err := textvalidate.ValidateName(name); err != nil {
+		return nil, fmt.Errorf("trip name %w", err)
+	}
 	id := uuid.New()
 	info := &domain.TripInfo{ID: id, Name: name}
-	if err := f.store.CreateTrip(info); err != nil {
-		return nil, fromStoreError(err)
+	var err error
+	if userID, ok := domain.UserIDFromContext(ctx); ok {
+		if f.authStore == nil {
+			return nil, fmt.Errorf("auth store is not available")
+		}
+		err = f.authStore.CreateSubscribedTrip(ctx, userID, info)
+	} else {
+		err = f.store.CreateTrip(info)
+	}
+	if err != nil {
+		return nil, err
 	}
 	return &trip{id: id, store: f.store, readers: f.readers, policy: f.policy}, nil
 }
@@ -69,7 +83,7 @@ func (t *trip) writable(ctx context.Context) error {
 func (t *trip) reader(ctx context.Context) (db.Reader, error) {
 	reader, err := readerFrom(ctx, t.readers)
 	if err != nil {
-		return nil, fromStoreError(err)
+		return nil, err
 	}
 	if reader == nil {
 		return nil, fmt.Errorf("chain reader is not available")
@@ -80,14 +94,14 @@ func (t *trip) reader(ctx context.Context) (db.Reader, error) {
 func (t *trip) Info(ctx context.Context) (*domain.TripInfo, error) {
 	reader, err := t.reader(ctx)
 	if err != nil {
-		return nil, fromStoreError(err)
+		return nil, err
 	}
 	info, err := reader.LoadTrip(ctx, t.id)
 	if err != nil {
-		return nil, fromStoreError(err)
+		return nil, err
 	}
 	if info == nil {
-		return nil, fmt.Errorf("%w: %s", ErrTripNotFound, t.id)
+		return nil, fmt.Errorf("%w: %s", domain.ErrTripNotFound, t.id)
 	}
 	result := *info
 	return &result, nil
@@ -95,11 +109,11 @@ func (t *trip) Info(ctx context.Context) (*domain.TripInfo, error) {
 
 func (t *trip) UpdateInfo(ctx context.Context, name string) (*domain.TripInfo, error) {
 	if err := t.writable(ctx); err != nil {
-		return nil, fromStoreError(err)
+		return nil, err
 	}
 	info := &domain.TripInfo{ID: t.id, Name: name}
 	if err := t.store.UpdateTripInfo(info); err != nil {
-		return nil, fromStoreError(err)
+		return nil, err
 	}
 	result := *info
 	return &result, nil
@@ -108,37 +122,37 @@ func (t *trip) UpdateInfo(ctx context.Context, name string) (*domain.TripInfo, e
 func (t *trip) Addresses(ctx context.Context) ([]domain.Address, error) {
 	reader, err := t.reader(ctx)
 	if err != nil {
-		return nil, fromStoreError(err)
+		return nil, err
 	}
 	addresses, err := reader.LoadTripAddresses(ctx, t.id)
 	if err != nil {
-		return nil, fromStoreError(err)
+		return nil, err
 	}
 	return slices.Clone(addresses), nil
 }
 
 func (t *trip) CreateAddress(ctx context.Context, name string) (*domain.Address, error) {
 	if err := t.writable(ctx); err != nil {
-		return nil, fromStoreError(err)
+		return nil, err
 	}
 	address, err := t.store.CreateAddress(t.id, name)
-	return cloneAddress(address), fromStoreError(err)
+	return cloneAddress(address), err
 }
 
 func (t *trip) UpdateAddress(ctx context.Context, addressID uuid.UUID, name string) (*domain.Address, error) {
 	if err := t.writable(ctx); err != nil {
-		return nil, fromStoreError(err)
+		return nil, err
 	}
 	address, err := t.store.UpdateAddress(t.id, addressID, name)
-	return cloneAddress(address), fromStoreError(err)
+	return cloneAddress(address), err
 }
 
 func (t *trip) DeleteAddress(ctx context.Context, addressID uuid.UUID) (*domain.Address, error) {
 	if err := t.writable(ctx); err != nil {
-		return nil, fromStoreError(err)
+		return nil, err
 	}
 	address, err := t.store.DeleteAddress(t.id, addressID)
-	return cloneAddress(address), fromStoreError(err)
+	return cloneAddress(address), err
 }
 
 func cloneAddress(address *domain.Address) *domain.Address {
@@ -164,14 +178,14 @@ func (t *trip) Append(ctx context.Context, value Record) (AppendResult, error) {
 	case intentCreate:
 		materialized, err := t.store.AppendNew(ctx, t.id, r.DomainRecord(), t.policy)
 		if err != nil {
-			return AppendResult{}, fromStoreError(err)
+			return AppendResult{}, err
 		}
 		result := newMaterializedRecord(t.id, materialized)
 		return AppendResult{TripID: t.id, Record: result, Appended: true}, nil
 	case intentPatch:
 		tripID, materialized, appended, err := t.store.AppendPatch(ctx, t.id, r.targetID, r.patch, t.policy)
 		if err != nil {
-			return AppendResult{}, fromStoreError(err)
+			return AppendResult{}, err
 		}
 		result := newMaterializedRecord(tripID, materialized)
 		return AppendResult{TripID: tripID, Record: result, Appended: appended}, nil
@@ -198,7 +212,7 @@ func (t *trip) loadProjection(ctx context.Context) (recordProjection, error) {
 	}
 	records, err := reader.LoadTripRecords(ctx, t.id, db.RecordReadOptions{HaveHistory: t.readOptions.HaveHistory})
 	if err != nil {
-		return recordProjection{}, fromStoreError(err)
+		return recordProjection{}, err
 	}
 	projection := recordProjection{records: records, active: make(map[uuid.UUID]bool, len(records))}
 	if t.readOptions.HaveHistory {

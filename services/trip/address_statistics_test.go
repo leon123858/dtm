@@ -37,7 +37,7 @@ func TestAddressStatisticsSplitStrategies(t *testing.T) {
 				shares[i] = domain.ExtendAddress{Address: member, ExtendMsg: tc.weights[i]}
 			}
 			reader := projectionReader{records: []domain.RecordInfo{record}, shouldPay: map[uuid.UUID][]domain.ExtendAddress{record.ID: shares}}
-			trip := NewTripFactory(nil, staticReader(reader)).ForTrip(uuid.New())
+			trip := NewTripFactory(nil, nil, staticReader(reader)).ForTrip(uuid.New())
 			got, err := trip.CalculateAddressStatistics(context.Background())
 			require.NoError(t, err)
 			require.Len(t, got, 3)
@@ -72,7 +72,7 @@ func TestAddressStatisticsUsesValidLiveTails(t *testing.T) {
 		reader.records = append(reader.records, record.RecordInfo)
 		reader.shouldPay[record.ID] = record.ShouldPayAddress
 	}
-	factory := NewTripFactory(nil, staticReader(reader))
+	factory := NewTripFactory(nil, nil, staticReader(reader))
 	id := uuid.New()
 	expected := map[uuid.UUID]AddressStatistics{
 		a.ID: {TotalExpense: 10, TotalPrepaid: 10, ActiveRecordCount: 2},
@@ -98,7 +98,7 @@ func (r statisticsErrorReader) LoadTripRecords(context.Context, uuid.UUID, db.Re
 }
 
 func TestAddressStatisticsEmptyAndReadErrors(t *testing.T) {
-	trip := NewTripFactory(nil, staticReader(projectionReader{})).ForTrip(uuid.New())
+	trip := NewTripFactory(nil, nil, staticReader(projectionReader{})).ForTrip(uuid.New())
 	result, err := trip.CalculateAddressStatistics(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -108,7 +108,7 @@ func TestAddressStatisticsEmptyAndReadErrors(t *testing.T) {
 	_, err = trip.CalculateAddressStatistics(ctx)
 	require.ErrorIs(t, err, context.Canceled)
 	failure := errors.New("record read failed")
-	trip = NewTripFactory(nil, staticReader(statisticsErrorReader{err: failure})).ForTrip(uuid.New())
+	trip = NewTripFactory(nil, nil, staticReader(statisticsErrorReader{err: failure})).ForTrip(uuid.New())
 	_, err = trip.CalculateAddressStatistics(context.Background())
 	require.ErrorIs(t, err, failure)
 }

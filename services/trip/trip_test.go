@@ -46,7 +46,7 @@ func TestTripReadsInfoAndAddressesThroughReader(t *testing.T) {
 	tripID := uuid.New()
 	info := &domain.TripInfo{ID: tripID, Name: "trip"}
 	addresses := []domain.Address{{ID: uuid.New(), Name: "member"}}
-	trip := NewTripFactory(nil, staticReader(projectionReader{tripInfo: info, addresses: addresses})).ForTrip(tripID)
+	trip := NewTripFactory(nil, nil, staticReader(projectionReader{tripInfo: info, addresses: addresses})).ForTrip(tripID)
 
 	actualInfo, err := trip.Info(context.Background())
 	require.NoError(t, err)
@@ -64,7 +64,7 @@ func TestTripReadsInfoAndAddressesThroughReader(t *testing.T) {
 func TestTripReadMethodsPropagateErrors(t *testing.T) {
 	tripErr := errors.New("trip read failed")
 	addressErr := errors.New("address read failed")
-	trip := NewTripFactory(nil, staticReader(projectionReader{tripErr: tripErr, addressErr: addressErr})).ForTrip(uuid.New())
+	trip := NewTripFactory(nil, nil, staticReader(projectionReader{tripErr: tripErr, addressErr: addressErr})).ForTrip(uuid.New())
 
 	_, err := trip.Info(context.Background())
 	assert.ErrorIs(t, err, tripErr)
@@ -73,9 +73,9 @@ func TestTripReadMethodsPropagateErrors(t *testing.T) {
 }
 
 func TestTripInfoClassifiesMissingTrip(t *testing.T) {
-	trip := NewTripFactory(nil, staticReader(projectionReader{})).ForTrip(uuid.New())
+	trip := NewTripFactory(nil, nil, staticReader(projectionReader{})).ForTrip(uuid.New())
 	_, err := trip.Info(context.Background())
-	require.ErrorIs(t, err, ErrTripNotFound)
+	require.ErrorIs(t, err, domain.ErrTripNotFound)
 }
 
 func TestSettlementUsesOnlyNonDeletedCanonicalTail(t *testing.T) {
@@ -90,19 +90,19 @@ func TestSettlementUsesOnlyNonDeletedCanonicalTail(t *testing.T) {
 	root.ChildRecordID = &tailID
 	reader := projectionReader{records: []domain.RecordInfo{root, tail}, shouldPay: map[uuid.UUID][]domain.ExtendAddress{tailID: {{Address: member, ExtendMsg: 10}}}}
 
-	tripFactory := NewTripFactory(nil, staticReader(reader))
+	tripFactory := NewTripFactory(nil, nil, staticReader(reader))
 	result, err := tripFactory.ForTrip(tripID).CalculateMoneyShare(context.Background())
 	require.NoError(t, err)
 	assert.True(t, result.Valid)
 
 	reader.records[1].Amount = 0
-	tripFactory = NewTripFactory(nil, staticReader(reader))
+	tripFactory = NewTripFactory(nil, nil, staticReader(reader))
 	result, err = tripFactory.ForTrip(tripID).CalculateMoneyShare(context.Background())
 	require.NoError(t, err)
 	assert.False(t, result.Valid)
 
 	reader.records[1].IsDeleted = true
-	tripFactory = NewTripFactory(nil, staticReader(reader))
+	tripFactory = NewTripFactory(nil, nil, staticReader(reader))
 	result, err = tripFactory.ForTrip(tripID).CalculateMoneyShare(context.Background())
 	require.NoError(t, err)
 	assert.True(t, result.Valid)

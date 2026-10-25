@@ -59,15 +59,17 @@ func (r *addressResolver) Statistics(ctx context.Context, obj *model.Address) (*
 
 // CreateTrip is the resolver for the createTrip field.
 func (r *mutationResolver) CreateTrip(ctx context.Context, input model.NewTrip) (*model.TripSnapshot, error) {
-	if err := textvalidate.ValidateName(input.Name); err != nil {
-		return nil, fmt.Errorf("trip name %w", err)
-	}
-
 	if r.TripFactory == nil {
 		return nil, fmt.Errorf("trip factory is not configured")
 	}
 	trip, err := r.TripFactory.Create(ctx, input.Name)
 	if err != nil {
+		if errors.Is(err, textvalidate.ErrInvalidUTF8) || errors.Is(err, textvalidate.ErrInvalidCharacter) || errors.Is(err, textvalidate.ErrEmptyName) || errors.Is(err, textvalidate.ErrNameTooLong) {
+			return nil, err
+		}
+		if errors.Is(err, domain.ErrUserNotFound) {
+			return nil, utils.UserError("UNAUTHENTICATED")
+		}
 		return nil, fmt.Errorf("failed to create trip: %w", err)
 	}
 	result := &model.TripSnapshot{
@@ -303,6 +305,35 @@ func (r *mutationResolver) DeleteAddress(ctx context.Context, tripID string, add
 	return utils.ToAddressSnapshot(utils.ToModelAddress(*address)), nil
 }
 
+// SubscribeTrip is the resolver for the subscribeTrip field.
+func (r *mutationResolver) SubscribeTrip(ctx context.Context, tripID string) (*model.User, error) {
+	return r.changeSubscription(ctx, tripID, true)
+}
+
+// TouchSubscribedTrip is the resolver for the touchSubscribedTrip field.
+func (r *mutationResolver) TouchSubscribedTrip(ctx context.Context, tripID string) (*model.User, error) {
+	userID, ok := domain.UserIDFromContext(ctx)
+	if !ok {
+		return nil, utils.UserError("UNAUTHENTICATED")
+	}
+	id, err := uuid.Parse(tripID)
+	if err != nil {
+		return nil, utils.UserError("BAD_USER_INPUT")
+	}
+	if r.Auth == nil {
+		return nil, utils.UserError("INTERNAL_SERVER_ERROR")
+	}
+	if err := r.Auth.TouchSubscribedTrip(ctx, userID, id); err != nil {
+		return nil, utils.MemberError(err)
+	}
+	return r.userModel(ctx, userID)
+}
+
+// UnsubscribeTrip is the resolver for the unsubscribeTrip field.
+func (r *mutationResolver) UnsubscribeTrip(ctx context.Context, tripID string) (*model.User, error) {
+	return r.changeSubscription(ctx, tripID, false)
+}
+
 // Trip is the resolver for the trip field.
 func (r *queryResolver) Trip(ctx context.Context, tripID string, haveHistory bool) (*model.Trip, error) {
 	id, err := uuid.Parse(tripID)
@@ -316,7 +347,7 @@ func (r *queryResolver) Trip(ctx context.Context, tripID string, haveHistory boo
 	}
 	tripInfo, err := trip.Info(ctx)
 	if err != nil {
-		if errors.Is(err, tripservice.ErrTripNotFound) {
+		if errors.Is(err, domain.ErrTripNotFound) {
 			return nil, fmt.Errorf("trip not found with ID %s: %w", tripID, err)
 		}
 		return nil, fmt.Errorf("failed to get trip info: %w", err)
@@ -330,6 +361,15 @@ func (r *queryResolver) Trip(ctx context.Context, tripID string, haveHistory boo
 		ID:          tripInfo.ID.String(),
 		Name:        tripInfo.Name,
 	}, nil
+}
+
+// Me is the resolver for the me field.
+func (r *queryResolver) Me(ctx context.Context) (*model.User, error) {
+	userID, ok := domain.UserIDFromContext(ctx)
+	if !ok {
+		return nil, nil
+	}
+	return r.userModel(ctx, userID)
 }
 
 // SubRecordCreate is the resolver for the subRecordCreate field.

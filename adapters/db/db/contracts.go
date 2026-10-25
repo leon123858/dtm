@@ -10,9 +10,6 @@ import (
 )
 
 var (
-	ErrRecordNotFound       = errors.New("record not found")
-	ErrTripNotFound         = errors.New("trip not found")
-	ErrInvalidChain         = errors.New("invalid record chain")
 	ErrMaterializerRequired = errors.New("record materializer is required")
 )
 

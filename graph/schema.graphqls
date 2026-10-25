@@ -162,3 +162,21 @@ type Mutation {
 	updateAddress(tripId: ID!, addressId: ID!, input: NewAddress!): AddressSnapshot!
 	deleteAddress(tripId: ID!, addressId: ID!): AddressSnapshot!
 }
+
+type User {
+ id: ID!
+ subscribedTrips: [SubscribedTrip!]!
+}
+extend type Query { me: User }
+extend type Mutation {
+ subscribeTrip(tripId: ID!): User!
+ touchSubscribedTrip(tripId: ID!): User!
+ unsubscribeTrip(tripId: ID!): User!
+}
+
+type SubscribedTrip {
+ id: ID!
+ name: String!
+ "Unix milliseconds as a decimal string."
+ lastViewedAt: String!
+}

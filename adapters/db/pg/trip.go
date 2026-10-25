@@ -17,17 +17,17 @@ import (
 
 func uuidPtr(v uuid.UUID) *uuid.UUID { return &v }
 
-// pgDBWrapper is an implementation of TripDBWrapper using GORM.
-type pgDBWrapper struct {
+// pgTripDBWrapper is an implementation of TripDBWrapper using GORM.
+type pgTripDBWrapper struct {
 	db *gorm.DB
 }
 
-// NewPgDBWrapper creates a new instance of pgDBWrapper.
-func NewPgDBWrapper(db *gorm.DB) db.TripDBWrapper {
-	return &pgDBWrapper{db: db}
+// NewPgTripDBWrapper creates a new instance of pgTripDBWrapper.
+func NewPgTripDBWrapper(db *gorm.DB) db.TripDBWrapper {
+	return &pgTripDBWrapper{db: db}
 }
 
-func (p *pgDBWrapper) CreateTrip(info *domain.TripInfo) error {
+func (p *pgTripDBWrapper) CreateTrip(info *domain.TripInfo) error {
 	tripModel := TripInfoModel{
 		ID:   info.ID,
 		Name: info.Name,
@@ -35,7 +35,7 @@ func (p *pgDBWrapper) CreateTrip(info *domain.TripInfo) error {
 	return p.db.Create(&tripModel).Error
 }
 
-func (p *pgDBWrapper) AppendNew(ctx context.Context, tripID uuid.UUID, record domain.Record, policy db.RecordMaterializer) (materialized domain.Record, err error) {
+func (p *pgTripDBWrapper) AppendNew(ctx context.Context, tripID uuid.UUID, record domain.Record, policy db.RecordMaterializer) (materialized domain.Record, err error) {
 	if policy == nil {
 		return domain.Record{}, db.ErrMaterializerRequired
 	}
@@ -43,7 +43,7 @@ func (p *pgDBWrapper) AppendNew(ctx context.Context, tripID uuid.UUID, record do
 		addresses, loadErr := loadTripAddresses(tx, tripID)
 		if loadErr != nil {
 			if errors.Is(loadErr, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("%w: %s", db.ErrTripNotFound, tripID)
+				return fmt.Errorf("%w: %s", domain.ErrTripNotFound, tripID)
 			}
 			return loadErr
 		}
@@ -56,7 +56,7 @@ func (p *pgDBWrapper) AppendNew(ctx context.Context, tripID uuid.UUID, record do
 	return
 }
 
-func (p *pgDBWrapper) AppendPatch(ctx context.Context, tripID, targetID uuid.UUID, patch domain.RecordPatch, policy db.RecordMaterializer) (resultTripID uuid.UUID, materialized domain.Record, appended bool, err error) {
+func (p *pgTripDBWrapper) AppendPatch(ctx context.Context, tripID, targetID uuid.UUID, patch domain.RecordPatch, policy db.RecordMaterializer) (resultTripID uuid.UUID, materialized domain.Record, appended bool, err error) {
 	if policy == nil {
 		return uuid.Nil, domain.Record{}, false, db.ErrMaterializerRequired
 	}
@@ -79,14 +79,14 @@ func (p *pgDBWrapper) AppendPatch(ctx context.Context, tripID, targetID uuid.UUI
 		for node, walkErr := range source.WalkCanonical(ctx, targetID, false) {
 			if walkErr != nil {
 				if tailModel.ID == uuid.Nil && errors.Is(walkErr, chainlist.ErrNodeNotFound) {
-					return fmt.Errorf("%w: %s: %w", db.ErrRecordNotFound, targetID, walkErr)
+					return fmt.Errorf("%w: %s: %w", domain.ErrRecordNotFound, targetID, walkErr)
 				}
-				return fmt.Errorf("%w: %w", db.ErrInvalidChain, walkErr)
+				return fmt.Errorf("%w: %w", domain.ErrInvalidChain, walkErr)
 			}
 			tailModel = node.Value
 		}
 		if tailModel.ID == uuid.Nil {
-			return fmt.Errorf("%w: %s: %w", db.ErrRecordNotFound, targetID, chainlist.ErrNodeNotFound)
+			return fmt.Errorf("%w: %s: %w", domain.ErrRecordNotFound, targetID, chainlist.ErrNodeNotFound)
 		}
 		addresses, loadErr := loadTripAddresses(tx, tripID)
 		if loadErr != nil {
@@ -171,7 +171,7 @@ func loadDomainRecord(tx *gorm.DB, model RecordModel, addresses []domain.Address
 	return result, nil
 }
 
-func (p *pgDBWrapper) UpdateTripInfo(info *domain.TripInfo) error {
+func (p *pgTripDBWrapper) UpdateTripInfo(info *domain.TripInfo) error {
 	tripModel := TripInfoModel{
 		ID:   info.ID,
 		Name: info.Name,
@@ -179,7 +179,7 @@ func (p *pgDBWrapper) UpdateTripInfo(info *domain.TripInfo) error {
 	return p.db.Model(&TripInfoModel{}).Where("id = ?", info.ID).Updates(tripModel).Error
 }
 
-func (p *pgDBWrapper) CreateAddress(tripID uuid.UUID, name string) (*domain.Address, error) {
+func (p *pgTripDBWrapper) CreateAddress(tripID uuid.UUID, name string) (*domain.Address, error) {
 	model := AddressModel{ID: uuid.New(), TripID: tripID, Name: name}
 	if err := p.db.Create(&model).Error; err != nil {
 		return nil, err
@@ -187,7 +187,7 @@ func (p *pgDBWrapper) CreateAddress(tripID uuid.UUID, name string) (*domain.Addr
 	return &domain.Address{ID: model.ID, Name: model.Name}, nil
 }
 
-func (p *pgDBWrapper) UpdateAddress(tripID, addressID uuid.UUID, name string) (*domain.Address, error) {
+func (p *pgTripDBWrapper) UpdateAddress(tripID, addressID uuid.UUID, name string) (*domain.Address, error) {
 	result := p.db.Model(&AddressModel{}).Where("trip_id = ? AND id = ?", tripID, addressID).Update("name", name)
 	if result.Error != nil {
 		return nil, result.Error
@@ -198,7 +198,7 @@ func (p *pgDBWrapper) UpdateAddress(tripID, addressID uuid.UUID, name string) (*
 	return &domain.Address{ID: addressID, Name: name}, nil
 }
 
-func (p *pgDBWrapper) DeleteAddress(tripID, addressID uuid.UUID) (*domain.Address, error) {
+func (p *pgTripDBWrapper) DeleteAddress(tripID, addressID uuid.UUID) (*domain.Address, error) {
 	var model AddressModel
 	if err := p.db.Where("trip_id = ? AND id = ?", tripID, addressID).First(&model).Error; err != nil {
 		return nil, err
@@ -209,7 +209,7 @@ func (p *pgDBWrapper) DeleteAddress(tripID, addressID uuid.UUID) (*domain.Addres
 	return &domain.Address{ID: model.ID, Name: model.Name}, nil
 }
 
-func (p *pgDBWrapper) DeleteTrip(id uuid.UUID) error {
+func (p *pgTripDBWrapper) DeleteTrip(id uuid.UUID) error {
 	return p.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("trip_id = ?", id).Delete(&RecordShouldPayAddressListModel{}).Error; err != nil {
 			return err
@@ -225,7 +225,7 @@ func (p *pgDBWrapper) DeleteTrip(id uuid.UUID) error {
 }
 
 // joinedRecords materializes complete records in one SQL statement.
-func (p *pgDBWrapper) joinedRecords(ctx context.Context, column clause.Column, ids []uuid.UUID, options db.RecordReadOptions) ([]db.RecordSnapshot, error) {
+func (p *pgTripDBWrapper) joinedRecords(ctx context.Context, column clause.Column, ids []uuid.UUID, options db.RecordReadOptions) ([]db.RecordSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -273,7 +273,7 @@ func (p *pgDBWrapper) joinedRecords(ctx context.Context, column clause.Column, i
 	return result, nil
 }
 
-func (p *pgDBWrapper) DataLoaderGetTripRecords(ctx context.Context, tripIds []uuid.UUID, options db.RecordReadOptions) (map[uuid.UUID][]db.RecordSnapshot, error) {
+func (p *pgTripDBWrapper) DataLoaderGetTripRecords(ctx context.Context, tripIds []uuid.UUID, options db.RecordReadOptions) (map[uuid.UUID][]db.RecordSnapshot, error) {
 	records, err := p.joinedRecords(ctx, clause.Column{Table: "r", Name: "trip_id"}, tripIds, options)
 	if err != nil {
 		return nil, err
@@ -288,7 +288,7 @@ func (p *pgDBWrapper) DataLoaderGetTripRecords(ctx context.Context, tripIds []uu
 	return result, nil
 }
 
-func (p *pgDBWrapper) DataLoaderGetRecordList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID]db.RecordSnapshot, error) {
+func (p *pgTripDBWrapper) DataLoaderGetRecordList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID]db.RecordSnapshot, error) {
 	records, err := p.joinedRecords(ctx, clause.Column{Table: "r", Name: "id"}, recordIds, db.RecordReadOptions{HaveHistory: true})
 	if err != nil {
 		return nil, err
@@ -300,7 +300,7 @@ func (p *pgDBWrapper) DataLoaderGetRecordList(ctx context.Context, recordIds []u
 	errorsByID := make(map[uuid.UUID]error)
 	for _, id := range recordIds {
 		if _, ok := result[id]; !ok {
-			errorsByID[id] = fmt.Errorf("%w: %w: %s", db.ErrRecordNotFound, chainlist.ErrNodeNotFound, id)
+			errorsByID[id] = fmt.Errorf("%w: %w: %s", domain.ErrRecordNotFound, chainlist.ErrNodeNotFound, id)
 		}
 	}
 	if len(errorsByID) > 0 {
@@ -309,7 +309,7 @@ func (p *pgDBWrapper) DataLoaderGetRecordList(ctx context.Context, recordIds []u
 	return result, nil
 }
 
-func (p *pgDBWrapper) DataLoaderGetTripAddressList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]domain.Address, error) {
+func (p *pgTripDBWrapper) DataLoaderGetTripAddressList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]domain.Address, error) {
 	var addresses []AddressModel
 	if err := p.db.WithContext(ctx).Where("trip_id IN ?", tripIds).Find(&addresses).Error; err != nil {
 		return nil, err
@@ -328,7 +328,7 @@ func (p *pgDBWrapper) DataLoaderGetTripAddressList(ctx context.Context, tripIds 
 	return result, nil
 }
 
-func (p *pgDBWrapper) DataLoaderGetTripInfoList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID]*domain.TripInfo, error) {
+func (p *pgTripDBWrapper) DataLoaderGetTripInfoList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID]*domain.TripInfo, error) {
 	var trips []TripInfoModel
 	if err := p.db.WithContext(ctx).Where("id IN ?", tripIds).Find(&trips).Error; err != nil {
 		return nil, err
@@ -365,7 +365,7 @@ func recordInfoFromModel(r RecordModel, addresses map[uuid.UUID]domain.Address) 
 	}
 }
 
-func (p *pgDBWrapper) addressesByID(ids []uuid.UUID) (map[uuid.UUID]domain.Address, error) {
+func (p *pgTripDBWrapper) addressesByID(ids []uuid.UUID) (map[uuid.UUID]domain.Address, error) {
 	result := make(map[uuid.UUID]domain.Address, len(ids))
 	if len(ids) == 0 {
 		return result, nil

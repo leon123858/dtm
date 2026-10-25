@@ -72,17 +72,17 @@ func (f *recordFactory) New(_ context.Context, tripID uuid.UUID, value domain.Re
 func (f *recordFactory) Update(ctx context.Context, recordID uuid.UUID, patch domain.RecordPatch) (Record, error) {
 	reader, err := readerFrom(ctx, f.readers)
 	if err != nil {
-		return nil, fromStoreError(err)
+		return nil, err
 	}
 	if reader == nil {
 		return nil, fmt.Errorf("record reader is not available")
 	}
 	node, err := reader.LoadRecord(ctx, recordID)
 	if err != nil {
-		if errors.Is(err, chainlist.ErrNodeNotFound) || errors.Is(err, db.ErrRecordNotFound) {
-			return nil, fmt.Errorf("%w: %s: %w", ErrRecordNotFound, recordID, err)
+		if errors.Is(err, chainlist.ErrNodeNotFound) || errors.Is(err, domain.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: %s: %w", domain.ErrRecordNotFound, recordID, err)
 		}
-		return nil, fromStoreError(err)
+		return nil, err
 	}
 	return &record{tripID: node.TripID, intent: intentPatch, targetID: recordID, patch: patch.Clone()}, nil
 }
@@ -90,17 +90,17 @@ func (f *recordFactory) Update(ctx context.Context, recordID uuid.UUID, patch do
 func (f *recordFactory) ByID(ctx context.Context, recordID uuid.UUID) (Record, error) {
 	reader, err := readerFrom(ctx, f.readers)
 	if err != nil {
-		return nil, fromStoreError(err)
+		return nil, err
 	}
 	if reader == nil {
 		return nil, fmt.Errorf("record reader is not available")
 	}
 	node, err := reader.LoadRecord(ctx, recordID)
 	if err != nil {
-		if errors.Is(err, chainlist.ErrNodeNotFound) || errors.Is(err, db.ErrRecordNotFound) {
-			return nil, fmt.Errorf("%w: %s: %w", ErrRecordNotFound, recordID, err)
+		if errors.Is(err, chainlist.ErrNodeNotFound) || errors.Is(err, domain.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: %s: %w", domain.ErrRecordNotFound, recordID, err)
 		}
-		return nil, fromStoreError(err)
+		return nil, err
 	}
 	return &record{tripID: node.TripID, data: cloneDomainRecord(node.Record), active: node.ChildRecordID == nil}, nil
 }

@@ -2,12 +2,16 @@ package web
 
 import (
 	"context"
+	"dtm/adapters/identity"
 	"dtm/adapters/mq/gcppubsub"
 	"dtm/adapters/mq/goch"
 	"dtm/adapters/mq/mq"
 	"dtm/adapters/mq/rabbit"
+	appconfig "dtm/config"
 	"dtm/graph"
+	"dtm/services/auth"
 	tripservice "dtm/services/trip"
+
 	"log"
 
 	"dtm/adapters/db/db"
@@ -26,6 +30,14 @@ type ServiceConfig struct {
 }
 
 func Serve(config ServiceConfig) {
+	if err := appconfig.LoadDevEnv(config.IsDev); err != nil {
+		panic(err)
+	}
+	authConfig, err := appconfig.LoadAuth(config.IsDev, config.Port)
+	if err != nil {
+		panic(err)
+	}
+
 	// set by config
 	if config.IsDev {
 		gin.SetMode(gin.DebugMode)
@@ -33,7 +45,7 @@ func Serve(config ServiceConfig) {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	// Setting up Gin
-	r := gin.Default()
+	r := gin.New()
 	// middle ware
 	setupMiddlewares(r, config)
 	// Setting up health check endpoint
@@ -41,18 +53,30 @@ func Serve(config ServiceConfig) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 	// setup service
-	var dbDep db.TripDBWrapper
+	var tripDB db.TripDBWrapper
+	var authDB db.AuthDBWrapper
 	var mqDep mq.TripMessageQueueWrapper
 	if config.IsDev {
-		dbDep = mem.NewInMemoryTripDBWrapper()
+		tripDB, authDB = mem.NewInMemoryDB()
 	} else {
 		iDB, err := pg.InitPostgresGORM(pg.CreateDSN())
 		if err != nil {
 			panic(err)
 		}
 		defer pg.CloseGORM(iDB)
-		dbDep = pg.NewPgDBWrapper(iDB)
+		tripDB = pg.NewPgTripDBWrapper(iDB)
+		authDB = pg.NewPgAuthDBWrapper(iDB)
 	}
+
+	// auth service
+	authService, err := auth.NewService(context.Background(), authConfig, authDB)
+	if err != nil {
+		panic(err)
+	}
+	defer authService.Close()
+	setupAuthRoutes(r, authService, authConfig, config.IsDev)
+
+	// mq service
 	switch config.MqMode {
 	case mq.ModeGoChan:
 		mqDep = goch.NewGoChanTripMessageQueueWrapper()
@@ -87,22 +111,29 @@ func Serve(config ServiceConfig) {
 		return db.TripDataLoaderFromContext(ctx)
 	}
 	executableSchema := graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{
+		Auth:                    authService,
 		RecordFactory:           tripservice.NewRecordFactory(readerProvider),
-		TripFactory:             tripservice.NewTripFactory(dbDep, readerProvider),
+		TripFactory:             tripservice.NewTripFactory(tripDB, authDB, readerProvider),
 		TripMessageQueueWrapper: mqDep,
 	}})
 	if config.IsDev {
 		r.GET("/", GraphQLPlaygroundHandler("DTM", "/query"))
 	}
 	// query and mutation endpoints
-	r.POST("/query", gzip.Gzip(gzip.DefaultCompression), TripDataLoaderInjectionMiddleware(dbDep), GraphQLHandler(executableSchema))
-	r.GET("/query", gzip.Gzip(gzip.DefaultCompression), TripDataLoaderInjectionMiddleware(dbDep), GraphQLHandler(executableSchema))
+	query := r.Group("/query")
+	query.Use(
+		UserBearerExtractIdMiddleware(identity.NewGCIPVerifier(authConfig.ProjectID), authDB),
+		gzip.Gzip(gzip.DefaultCompression),
+		TripDataLoaderInjectionMiddleware(tripDB),
+	)
+	query.POST("", GraphQLHandler(executableSchema))
+	query.GET("", GraphQLHandler(executableSchema))
 	// Subscriptions endpoint
-	r.GET("/subscription", TripDataLoaderInjectionMiddleware(dbDep), GraphQLHandler(executableSchema))
+	r.GET("/subscription", TripDataLoaderInjectionMiddleware(tripDB), GraphQLHandler(executableSchema))
 
 	// Start the server
 	println("Starting web server on port " + config.Port)
-	err := r.Run("0.0.0.0:" + config.Port)
+	err = r.Run("0.0.0.0:" + config.Port)
 	if err != nil {
 		log.Fatal(err)
 		return

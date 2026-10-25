@@ -28,12 +28,12 @@ func scanChains(ctx context.Context, records []db.RecordSnapshot) ([][]chainlist
 	}
 	source, err := chainlist.NewMemorySource(nodes)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrInvalidChain, err)
+		return nil, fmt.Errorf("%w: %w", domain.ErrInvalidChain, err)
 	}
 	var chains [][]chainlist.Node[uuid.UUID, domain.RecordInfo]
 	for c, walkErr := range source.Chains(ctx, func(a, b chainlist.Node[uuid.UUID, domain.RecordInfo]) int { return order[a.ID] - order[b.ID] }) {
 		if walkErr != nil {
-			return nil, fmt.Errorf("%w: %w", ErrInvalidChain, walkErr)
+			return nil, fmt.Errorf("%w: %w", domain.ErrInvalidChain, walkErr)
 		}
 		chains = append(chains, c)
 	}

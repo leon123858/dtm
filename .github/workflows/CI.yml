@@ -2,9 +2,9 @@ name: CI Pipeline
 
 on:
   push:
-    branches: ["main"]
+    branches: ['main']
   pull_request:
-    branches: ["main"]
+    branches: ['main']
   workflow_dispatch:
 
 jobs:
@@ -14,8 +14,8 @@ jobs:
   unit-test:
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: "host=localhost user=postgres dbname=postgres port=5432 sslmode=disable TimeZone=Asia/Taipei"
-      RABBITMQ_URL: "amqp://guest:guest@localhost:5672/"
+      DATABASE_URL: 'host=localhost user=postgres dbname=postgres port=5432 sslmode=disable TimeZone=Asia/Taipei'
+      RABBITMQ_URL: 'amqp://guest:guest@localhost:5672/'
 
     services:
       postgres:
@@ -40,7 +40,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: "1.23"
+          go-version: '1.23'
 
       - name: Build Go application
         run: make build
@@ -61,6 +61,8 @@ jobs:
   # Job 2: (E2E Test)
   # ===================================================================
   e2e-test:
+    # Fork pull requests cannot access repository secrets.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     needs: unit-test
     runs-on: ubuntu-latest
 
@@ -68,14 +70,24 @@ jobs:
       fail-fast: false
       matrix:
         start_command:
-          - 'serve --dev=true --mq="go_chan"'
-          - 'serve --dev=true --mq="rabbitmq"'
-          - 'serve --dev=false --mq="go_chan"'
-          - 'serve --dev=false --mq="rabbitmq"'
+          - 'serve --dev=true --mq=go_chan'
+          - 'serve --dev=true --mq=rabbitmq'
+          - 'serve --dev=false --mq=go_chan'
+          - 'serve --dev=false --mq=rabbitmq'
 
     env:
-      DATABASE_URL: "host=localhost user=postgres dbname=postgres port=5432 sslmode=disable TimeZone=Asia/Taipei"
-      RABBITMQ_URL: "amqp://guest:guest@localhost:5672/"
+      DATABASE_URL: 'host=localhost user=postgres dbname=postgres port=5432 sslmode=disable TimeZone=Asia/Taipei'
+      RABBITMQ_URL: 'amqp://guest:guest@localhost:5672/'
+      # Password E2E does not visit the frontend; non-dev requires an HTTPS origin.
+      FRONTEND_URL: 'https://frontend.example'
+      OAUTH_REDIRECT_PATH: '/backend/auth/callback'
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      GCIP_API_KEY: ${{ secrets.GCIP_API_KEY }}
+      GCIP_PROJECT_ID: ${{ secrets.GCIP_PROJECT_ID }}
+      E2E_AUTH_ENABLED: 'true'
+      E2E_AUTH_EMAIL: ${{ secrets.E2E_AUTH_EMAIL }}
+      E2E_AUTH_PASSWORD: ${{ secrets.E2E_AUTH_PASSWORD }}
 
     services:
       postgres:
@@ -100,12 +112,12 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: "1.23"
+          go-version: '1.23'
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: '20'
 
       - name: Download executable artifact
         uses: actions/download-artifact@v4
@@ -125,7 +137,25 @@ jobs:
         run: cd e2e && yarn
 
       - name: Run Go application in background
-        run: ./app ${{ matrix.start_command }} &
+        env:
+          START_COMMAND: ${{ matrix.start_command }}
+        run: |
+          for name in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GCIP_API_KEY GCIP_PROJECT_ID E2E_AUTH_EMAIL E2E_AUTH_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing required secret: $name"
+              exit 1
+            fi
+          done
+          read -r -a args <<< "$START_COMMAND"
+          ./app "${args[@]}" > /tmp/dtm-e2e-server.log 2>&1 &
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:8080/health > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo 'Service did not become ready; check authentication configuration and dependencies.'
+          exit 1
 
       - name: Run E2E tests
         run: make testE2E

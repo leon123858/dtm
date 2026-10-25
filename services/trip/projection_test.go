@@ -15,7 +15,7 @@ func TestListHistoryAndLiveTails(t *testing.T) {
 	tail.ParentRecordID = &root.ID
 	deleted.IsDeleted = true
 	reader := projectionReader{records: []domain.RecordInfo{tail.RecordInfo, deleted.RecordInfo, root.RecordInfo}, shouldPay: map[uuid.UUID][]domain.ExtendAddress{root.ID: root.ShouldPayAddress, tail.ID: tail.ShouldPayAddress, deleted.ID: deleted.ShouldPayAddress}}
-	factory := NewTripFactory(nil, staticReader(reader))
+	factory := NewTripFactory(nil, nil, staticReader(reader))
 	tripID := uuid.New()
 	live, err := factory.ForTrip(tripID).List(context.Background())
 	require.NoError(t, err)
@@ -58,12 +58,12 @@ func TestListHistoryRejectsCorruptChains(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			trip := NewTripFactory(nil, staticReader(projectionReader{records: tt.records})).ForTrip(uuid.New(), ReadOptions{HaveHistory: true})
+			trip := NewTripFactory(nil, nil, staticReader(projectionReader{records: tt.records})).ForTrip(uuid.New(), ReadOptions{HaveHistory: true})
 			result, err := trip.List(context.Background())
-			require.ErrorIs(t, err, ErrInvalidChain)
+			require.ErrorIs(t, err, domain.ErrInvalidChain)
 			require.Nil(t, result)
 			_, err = trip.CalculateMoneyShare(context.Background())
-			require.ErrorIs(t, err, ErrInvalidChain)
+			require.ErrorIs(t, err, domain.ErrInvalidChain)
 		})
 	}
 }

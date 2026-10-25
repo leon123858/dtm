@@ -34,7 +34,7 @@ func setupTestDB(t *testing.T) (db.TripDBWrapper, func()) {
 	if err != nil {
 		t.Skipf("PostgreSQL is unavailable: %v", err)
 	}
-	wrapper := NewPgDBWrapper(gormDB)
+	wrapper := NewPgTripDBWrapper(gormDB)
 	cleanup := func() {
 		require.NoError(t, gormDB.Exec("TRUNCATE TABLE record_should_pay_address_lists, records, addresses, trips RESTART IDENTITY CASCADE").Error)
 		if sqlDB, sqlErr := gormDB.DB(); sqlErr == nil {
@@ -123,12 +123,12 @@ func (l *sqlRecorder) Trace(_ context.Context, _ time.Time, fc func() (string, i
 func TestAppendPatchQueryCountAndBatch(t *testing.T) {
 	store, cleanup, tripID, payer, member := setupTrip(t)
 	defer cleanup()
-	wrapper := store.(*pgDBWrapper)
+	wrapper := store.(*pgTripDBWrapper)
 	ctx := context.Background()
 	tail, err := store.AppendNew(ctx, tripID, pgPayment(uuid.New(), payer, member), testutil.Materializer{})
 	require.NoError(t, err)
 	recorder := &sqlRecorder{Interface: wrapper.db.Logger}
-	measured := &pgDBWrapper{db: wrapper.db.Session(&gorm.Session{Logger: recorder})}
+	measured := &pgTripDBWrapper{db: wrapper.db.Session(&gorm.Session{Logger: recorder})}
 	for i := 0; i < 5; i++ {
 		recorder.statements = nil
 		patch := testutil.Patch(t, domain.RecordFields{}, domain.RecordFields{Name: fmt.Sprintf("meal-%d", i), ShouldPayAddress: domain.RecordShares{{AddressID: payer.ID.String(), ExtendMsg: 1}, {AddressID: member.ID.String(), ExtendMsg: 2}}})
@@ -153,9 +153,9 @@ func TestAppendPatchQueryCountAndBatch(t *testing.T) {
 		tail = next
 	}
 	_, _, _, err = store.AppendPatch(ctx, uuid.New(), tail.ID, domain.RecordPatch{}, testutil.Materializer{})
-	require.ErrorIs(t, err, db.ErrRecordNotFound)
+	require.ErrorIs(t, err, domain.ErrRecordNotFound)
 	_, _, _, err = store.AppendPatch(ctx, tripID, uuid.New(), domain.RecordPatch{}, testutil.Materializer{})
-	require.ErrorIs(t, err, db.ErrRecordNotFound)
+	require.ErrorIs(t, err, domain.ErrRecordNotFound)
 }
 
 // Block inside the policy, after the writer has locked the tail.
@@ -200,7 +200,7 @@ func TestAppendPatchWaitsAndFollowsNewTail(t *testing.T) {
 			}
 			// Capture the waiting transaction PID before its first node query.
 			pids := make(chan int, 1)
-			secondDB := store.(*pgDBWrapper).db.Session(&gorm.Session{NewDB: true})
+			secondDB := store.(*pgTripDBWrapper).db.Session(&gorm.Session{NewDB: true})
 			require.NoError(t, secondDB.Callback().Query().Before("gorm:query").Register("test:waiting_pid", func(tx *gorm.DB) {
 				if tx.Statement.Context.Value(waitingWriterKey{}) == true {
 					var pid int
@@ -219,7 +219,7 @@ func TestAppendPatchWaitsAndFollowsNewTail(t *testing.T) {
 				target = root.ID
 			}
 			go func() {
-				_, _, _, err := (&pgDBWrapper{db: secondDB}).AppendPatch(context.WithValue(ctx, waitingWriterKey{}, true), tripID, target, amountPatch, testutil.Materializer{})
+				_, _, _, err := (&pgTripDBWrapper{db: secondDB}).AppendPatch(context.WithValue(ctx, waitingWriterKey{}, true), tripID, target, amountPatch, testutil.Materializer{})
 				second <- err
 			}()
 			var pid int
@@ -230,7 +230,7 @@ func TestAppendPatchWaitsAndFollowsNewTail(t *testing.T) {
 			}
 			require.Eventually(t, func() bool {
 				var blocked bool
-				err := store.(*pgDBWrapper).db.Raw("SELECT cardinality(pg_blocking_pids(?)) > 0", pid).Scan(&blocked).Error
+				err := store.(*pgTripDBWrapper).db.Raw("SELECT cardinality(pg_blocking_pids(?)) > 0", pid).Scan(&blocked).Error
 				return err == nil && blocked
 			}, 3*time.Second, 10*time.Millisecond)
 			release()
@@ -280,7 +280,7 @@ func TestAppendPatchBatchFailureRollsBack(t *testing.T) {
 	require.Len(t, records[tripID], 1)
 	assert.Nil(t, records[tripID][0].ChildRecordID)
 	var shares []RecordShouldPayAddressListModel
-	require.NoError(t, store.(*pgDBWrapper).db.Where("trip_id = ?", tripID).Find(&shares).Error)
+	require.NoError(t, store.(*pgTripDBWrapper).db.Where("trip_id = ?", tripID).Find(&shares).Error)
 	require.Len(t, shares, 1)
 	assert.Equal(t, root.ID, shares[0].RecordID)
 }
@@ -296,7 +296,7 @@ func TestAppendPatchForwardChainErrors(t *testing.T) {
 			require.NoError(t, err)
 			_, tail, _, err := store.AppendPatch(ctx, tripID, root.ID, testutil.Patch(t, domain.RecordFields{}, domain.RecordFields{Name: "tail"}), testutil.Materializer{})
 			require.NoError(t, err)
-			conn := store.(*pgDBWrapper).db
+			conn := store.(*pgTripDBWrapper).db
 			want := chainlist.ErrInconsistentLink
 			if cycle {
 				require.NoError(t, conn.Transaction(func(tx *gorm.DB) error {
@@ -310,7 +310,7 @@ func TestAppendPatchForwardChainErrors(t *testing.T) {
 				require.NoError(t, conn.Model(&RecordModel{}).Where("id = ?", tail.ID).Update("parent_record_id", nil).Error)
 			}
 			_, _, _, err = store.AppendPatch(ctx, tripID, root.ID, domain.RecordPatch{}, testutil.Materializer{})
-			require.ErrorIs(t, err, db.ErrInvalidChain)
+			require.ErrorIs(t, err, domain.ErrInvalidChain)
 			require.ErrorIs(t, err, want)
 		})
 	}
@@ -355,7 +355,7 @@ func TestCompleteRecordReadsUseOneSelect(t *testing.T) {
 		ids = append(ids, record.ID)
 	}
 	recorder := &sqlRecorder{Interface: logger.Default}
-	wrapper := &pgDBWrapper{db: store.(*pgDBWrapper).db.Session(&gorm.Session{Logger: recorder})}
+	wrapper := &pgTripDBWrapper{db: store.(*pgTripDBWrapper).db.Session(&gorm.Session{Logger: recorder})}
 	for _, history := range []bool{false, true} {
 		recorder.statements = nil
 		got, err := wrapper.DataLoaderGetTripRecords(ctx, []uuid.UUID{tripID}, db.RecordReadOptions{HaveHistory: history})

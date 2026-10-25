@@ -25,6 +25,7 @@ if (typeof window === 'undefined') {
 
 const httpLink = new HttpLink({
 	uri: GRAPHQL_ENDPOINT_HTTP,
+	// Business-rule suites exercise public sharing; member journeys use api(token).
 });
 
 const wsLink = new GraphQLWsLink(

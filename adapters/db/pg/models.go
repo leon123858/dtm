@@ -67,3 +67,30 @@ type AddressModel struct {
 func (AddressModel) TableName() string {
 	return "addresses"
 }
+
+// AuthEntryModel maps the short-lived, single-use authentication entries.
+type AuthEntryModel struct {
+	Kind        string `gorm:"primaryKey"`
+	KeyHash     string `gorm:"primaryKey"`
+	BindingHash string
+	Payload     []byte
+	ExpiresAt   time.Time
+}
+
+func (AuthEntryModel) TableName() string { return "auth_entries" }
+
+// UserModel maps a GCIP identity to a local member.
+type UserModel struct {
+	ID   uuid.UUID `gorm:"type:uuid;primaryKey"`
+	GCID string    `gorm:"column:gcid;not null;uniqueIndex"`
+}
+
+func (UserModel) TableName() string { return "users" }
+
+type TripSubscriptionModel struct {
+	LastViewedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
+	UserID       uuid.UUID `gorm:"type:uuid;primaryKey"`
+	TripID       uuid.UUID `gorm:"type:uuid;primaryKey"`
+}
+
+func (TripSubscriptionModel) TableName() string { return "trip_subscriptions" }

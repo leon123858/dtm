@@ -53,7 +53,7 @@ func resolverWithChain(wrapper db.TripDBWrapper) *Resolver {
 	}
 	return &Resolver{
 		RecordFactory: tripservice.NewRecordFactory(provider),
-		TripFactory:   tripservice.NewTripFactory(wrapper, provider),
+		TripFactory:   tripservice.NewTripFactory(wrapper, nil, provider),
 	}
 }
 

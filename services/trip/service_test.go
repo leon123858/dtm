@@ -2,6 +2,7 @@ package trip
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"dtm/domain"
 	"dtm/libs/chainlist"
 	"dtm/libs/recordpatch"
+	"dtm/libs/textvalidate"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -78,7 +80,7 @@ func TestUpdateOnlyResolvesTargetIdentity(t *testing.T) {
 	assert.Equal(t, uuid.Nil, intent.ID())
 
 	_, err = NewRecordFactory(staticReader(factoryReader{err: fmt.Errorf("%w: missing", chainlist.ErrNodeNotFound)})).Update(context.Background(), target, domain.RecordPatch{})
-	require.ErrorIs(t, err, ErrRecordNotFound)
+	require.ErrorIs(t, err, domain.ErrRecordNotFound)
 	assert.ErrorIs(t, err, chainlist.ErrNodeNotFound)
 }
 
@@ -126,7 +128,7 @@ func (s *trackingTripStore) DeleteAddress(tripID, addressID uuid.UUID) (*domain.
 
 func TestTripFactoryAndTripOwnTripMutations(t *testing.T) {
 	store := &trackingTripStore{}
-	factory := NewTripFactory(store, nil)
+	factory := NewTripFactory(store, nil, nil)
 	trip, err := factory.Create(context.Background(), "holiday")
 	require.NoError(t, err)
 	require.NotEqual(t, uuid.Nil, trip.ID())
@@ -156,15 +158,15 @@ func TestTripFactoryAndTripOwnTripMutations(t *testing.T) {
 }
 
 func TestTripMutationsRejectUnavailableStoreAndCanceledContext(t *testing.T) {
-	_, err := NewTripFactory(nil, nil).Create(context.Background(), "trip")
+	_, err := NewTripFactory(nil, nil, nil).Create(context.Background(), "trip")
 	assert.EqualError(t, err, "trip store is not available")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	store := &trackingTripStore{}
-	_, err = NewTripFactory(store, nil).Create(ctx, "trip")
+	_, err = NewTripFactory(store, nil, nil).Create(ctx, "trip")
 	assert.ErrorIs(t, err, context.Canceled)
-	_, err = NewTripFactory(store, nil).ForTrip(uuid.New()).CreateAddress(ctx, "member")
+	_, err = NewTripFactory(store, nil, nil).ForTrip(uuid.New()).CreateAddress(ctx, "member")
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
@@ -194,4 +196,93 @@ func TestUpdateIntentOwnsPatch(t *testing.T) {
 	stored := intent.(*record).patch
 	assert.Equal(t, []string{"ShouldPayAddress", old.ShouldPayAddress[0].AddressID}, stored.Changes[0].Path)
 	assert.Equal(t, next.ShouldPayAddress[0], stored.Changes[0].To)
+}
+
+type trackingAuthStore struct {
+	db.AuthDBWrapper
+	calls   int
+	userID  uuid.UUID
+	created domain.TripInfo
+	err     error
+}
+
+func (s *trackingAuthStore) CreateSubscribedTrip(_ context.Context, userID uuid.UUID, info *domain.TripInfo) error {
+	s.calls++
+	s.userID = userID
+	s.created = *info
+	return s.err
+}
+
+func TestCreateTripSelectsAtomicStoreFromIdentity(t *testing.T) {
+	failure := errors.New("transaction failed")
+	for _, tc := range []struct {
+		name         string
+		member       bool
+		missingStore bool
+		canceled     bool
+		invalidName  bool
+		storeErr     error
+	}{
+		{name: "anonymous"},
+		{name: "member", member: true},
+		{name: "missing auth store", member: true, missingStore: true},
+		{name: "deleted user", member: true, storeErr: domain.ErrUserNotFound},
+		{name: "transaction failure", member: true, storeErr: failure},
+		{name: "canceled", member: true, canceled: true},
+		{name: "invalid member name", member: true, invalidName: true},
+		{name: "invalid anonymous name", invalidName: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tripStore := &trackingTripStore{}
+			authStore := &trackingAuthStore{err: tc.storeErr}
+			var authDB db.AuthDBWrapper = authStore
+			if tc.missingStore {
+				authDB = nil
+			}
+			ctx := context.Background()
+			userID := uuid.New()
+			if tc.member {
+				ctx = domain.WithUserID(ctx, userID)
+			}
+			if tc.canceled {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			}
+			name := "holiday"
+			if tc.invalidName {
+				name = ""
+			}
+			trip, err := NewTripFactory(tripStore, authDB, nil).Create(ctx, name)
+			if tc.missingStore || tc.canceled || tc.invalidName || tc.storeErr != nil {
+				require.Error(t, err)
+				require.Nil(t, trip)
+				require.Nil(t, tripStore.created, "must not fall back to anonymous creation")
+				if tc.storeErr != nil {
+					require.ErrorIs(t, err, tc.storeErr)
+					require.Equal(t, 1, authStore.calls)
+				} else {
+					require.Zero(t, authStore.calls)
+				}
+				if tc.invalidName {
+					require.ErrorIs(t, err, textvalidate.ErrEmptyName)
+					require.EqualError(t, err, "trip name "+textvalidate.ErrEmptyName.Error())
+				}
+				if tc.canceled {
+					require.ErrorIs(t, err, context.Canceled)
+				}
+				return
+			}
+			require.NoError(t, err)
+			if tc.member {
+				require.Nil(t, tripStore.created)
+				require.Equal(t, 1, authStore.calls)
+				require.Equal(t, userID, authStore.userID)
+				require.Equal(t, domain.TripInfo{ID: trip.ID(), Name: name}, authStore.created)
+			} else {
+				require.Zero(t, authStore.calls)
+				require.Equal(t, &domain.TripInfo{ID: trip.ID(), Name: name}, tripStore.created)
+			}
+		})
+	}
 }

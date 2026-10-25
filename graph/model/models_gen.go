@@ -76,6 +76,13 @@ type RecordSnapshot struct {
 	IsActive         bool               `json:"isActive"`
 }
 
+type SubscribedTrip struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Unix milliseconds as a decimal string.
+	LastViewedAt string `json:"lastViewedAt"`
+}
+
 type Subscription struct {
 }
 
@@ -87,6 +94,11 @@ type TripSnapshot struct {
 type Tx struct {
 	Input  []*Payment `json:"input"`
 	Output *Payment   `json:"output"`
+}
+
+type User struct {
+	ID              string            `json:"id"`
+	SubscribedTrips []*SubscribedTrip `json:"subscribedTrips"`
 }
 
 type RecordCategory string

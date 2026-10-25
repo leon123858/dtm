@@ -1,0 +1,10 @@
+.git
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+bin
+node_modules
+**/node_modules

@@ -25,7 +25,7 @@ func TestJoinedRecordsBindsUUIDs(t *testing.T) {
 				sql = tx.Statement.SQL.String()
 				vars = append([]any(nil), tx.Statement.Vars...)
 			}))
-			wrapper := &pgDBWrapper{db: database}
+			wrapper := &pgTripDBWrapper{db: database}
 			// Scan reports ErrDryRunModeUnsupported after building the actual loader SQL.
 			if column == "trip_id" {
 				_, err = wrapper.DataLoaderGetTripRecords(context.Background(), ids, db.RecordReadOptions{HaveHistory: true})

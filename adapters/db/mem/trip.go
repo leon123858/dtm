@@ -3,7 +3,6 @@ package mem
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	dbpkg "dtm/adapters/db/db"
 	"dtm/domain"
@@ -15,21 +14,10 @@ import (
 
 // inMemoryTripDBWrapper is an in-memory implementation of dbpkg.TripDBWrapper.
 // It uses maps to store data for quick lookups.
-type inMemoryTripDBWrapper struct {
-	// Using maps to store domain.TripInfo and TripData by Trip ID.
-	tripsInfo map[uuid.UUID]*domain.TripInfo
-	tripsData map[uuid.UUID]*domain.TripData // Stores records and address lists for each trip
+type inMemoryTripDBWrapper struct{ *memoryState }
 
-	// Mutex for thread-safety, important for concurrent access in a real application.
-	mu sync.RWMutex
-}
-
-// NewInMemoryTripDBWrapper creates and returns a new instance of inMemoryTripDBWrapper.
 func NewInMemoryTripDBWrapper() dbpkg.TripDBWrapper {
-	return &inMemoryTripDBWrapper{
-		tripsInfo: make(map[uuid.UUID]*domain.TripInfo),
-		tripsData: make(map[uuid.UUID]*domain.TripData),
-	}
+	return &inMemoryTripDBWrapper{newMemoryState()}
 }
 
 // --- Create Operations ---
@@ -43,6 +31,13 @@ func (db *inMemoryTripDBWrapper) CreateTrip(info *domain.TripInfo) error {
 		return fmt.Errorf("trip with ID %s already exists", info.ID)
 	}
 
+	return db.createTripLocked(info)
+}
+
+func (db *memoryState) createTripLocked(info *domain.TripInfo) error {
+	if _, exists := db.tripsInfo[info.ID]; exists {
+		return fmt.Errorf("trip already exists")
+	}
 	// Store a copy to prevent external modification of the original info pointer
 	infoCopy := *info
 	db.tripsInfo[info.ID] = &infoCopy
@@ -64,7 +59,7 @@ func (db *inMemoryTripDBWrapper) AppendNew(ctx context.Context, tripID uuid.UUID
 	defer db.mu.Unlock()
 	tripData, ok := db.tripsData[tripID]
 	if !ok {
-		return domain.Record{}, fmt.Errorf("%w: %s", dbpkg.ErrTripNotFound, tripID)
+		return domain.Record{}, fmt.Errorf("%w: %s", domain.ErrTripNotFound, tripID)
 	}
 	for _, existing := range tripData.Records {
 		if existing.ID == record.ID {
@@ -101,7 +96,7 @@ func (db *inMemoryTripDBWrapper) AppendPatch(ctx context.Context, tripID, target
 		}
 	}
 	if tripData == nil {
-		return uuid.Nil, domain.Record{}, false, fmt.Errorf("%w: %s: %w", dbpkg.ErrRecordNotFound, targetID, chainlist.ErrNodeNotFound)
+		return uuid.Nil, domain.Record{}, false, fmt.Errorf("%w: %s: %w", domain.ErrRecordNotFound, targetID, chainlist.ErrNodeNotFound)
 	}
 	nodes := make([]chainlist.Node[uuid.UUID, domain.RecordInfo], len(tripData.Records))
 	byID := make(map[uuid.UUID]int, len(tripData.Records))
@@ -111,12 +106,12 @@ func (db *inMemoryTripDBWrapper) AppendPatch(ctx context.Context, tripID, target
 	}
 	source, err := chainlist.NewMemorySource(nodes)
 	if err != nil {
-		return uuid.Nil, domain.Record{}, false, fmt.Errorf("%w: %w", dbpkg.ErrInvalidChain, err)
+		return uuid.Nil, domain.Record{}, false, fmt.Errorf("%w: %w", domain.ErrInvalidChain, err)
 	}
 	var tail domain.Record
 	for node, walkErr := range source.WalkCanonical(ctx, targetID, true) {
 		if walkErr != nil {
-			return uuid.Nil, domain.Record{}, false, fmt.Errorf("%w: %w", dbpkg.ErrInvalidChain, walkErr)
+			return uuid.Nil, domain.Record{}, false, fmt.Errorf("%w: %w", domain.ErrInvalidChain, walkErr)
 		}
 		tail = cloneRecord(tripData.Records[byID[node.ID]])
 	}
@@ -270,6 +265,9 @@ func (db *inMemoryTripDBWrapper) DeleteTrip(id uuid.UUID) error {
 	}
 
 	delete(db.tripsInfo, id)
+	for _, trips := range db.subscriptions {
+		delete(trips, id)
+	}
 	delete(db.tripsData, id)
 	return nil
 }
@@ -313,7 +311,7 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetTripRecords(ctx context.Context, t
 		result[id] = []dbpkg.RecordSnapshot{}
 		data, exists := db.tripsData[id]
 		if !exists {
-			errors[id] = fmt.Errorf("%w: %s", dbpkg.ErrTripNotFound, id)
+			errors[id] = fmt.Errorf("%w: %s", domain.ErrTripNotFound, id)
 			continue
 		}
 		for _, record := range data.Records {
@@ -349,7 +347,7 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetRecordList(ctx context.Context, re
 			}
 		}
 		if !found {
-			errorsByID[id] = fmt.Errorf("%w: %w: %s", dbpkg.ErrRecordNotFound, chainlist.ErrNodeNotFound, id)
+			errorsByID[id] = fmt.Errorf("%w: %w: %s", domain.ErrRecordNotFound, chainlist.ErrNodeNotFound, id)
 		}
 	}
 	return result, mappedFetchError(errorsByID)
@@ -371,7 +369,7 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetTripAddressList(_ context.Context,
 			result[tripID] = addressListCopy
 		} else {
 			result[tripID] = []domain.Address{}
-			errors[tripID] = fmt.Errorf("%w: %s", dbpkg.ErrTripNotFound, tripID)
+			errors[tripID] = fmt.Errorf("%w: %s", domain.ErrTripNotFound, tripID)
 		}
 	}
 	return result, mappedFetchError(errors)
@@ -393,7 +391,7 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetTripInfoList(_ context.Context, tr
 		} else {
 			// If a trip ID is not found, typically nil is returned for that specific key.
 			result[tripID] = nil
-			errors[tripID] = fmt.Errorf("%w: %s", dbpkg.ErrTripNotFound, tripID)
+			errors[tripID] = fmt.Errorf("%w: %s", domain.ErrTripNotFound, tripID)
 		}
 	}
 

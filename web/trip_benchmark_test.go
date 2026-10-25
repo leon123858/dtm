@@ -93,7 +93,7 @@ func newTripBenchHarness(t testing.TB) *tripBenchHarness {
 	var version string
 	require.NoError(t, pool.QueryRow("SHOW server_version").Scan(&version))
 	t.Logf("environment go=%s os=%s arch=%s CPUs=%d GOMAXPROCS=%d postgres=%s pool=32", runtime.Version(), runtime.GOOS, runtime.GOARCH, runtime.NumCPU(), runtime.GOMAXPROCS(0), version)
-	return &tripBenchHarness{pg.NewPgDBWrapper(orm), pool, counter}
+	return &tripBenchHarness{pg.NewPgTripDBWrapper(orm), pool, counter}
 }
 
 func (h *tripBenchHarness) seed(t testing.TB, n int) tripBenchFixture {
@@ -153,7 +153,7 @@ func (h *tripBenchHarness) server(t testing.TB, cached bool) *httptest.Server {
 		}
 		return db.TripDataLoaderFromContext(ctx)
 	}
-	resolver := &graph.Resolver{TripFactory: tripservice.NewTripFactory(h.store, provider), RecordFactory: tripservice.NewRecordFactory(provider)}
+	resolver := &graph.Resolver{TripFactory: tripservice.NewTripFactory(h.store, nil, provider), RecordFactory: tripservice.NewRecordFactory(provider)}
 	router := gin.New()
 	router.POST("/query", TripDataLoaderInjectionMiddleware(h.store), GraphQLHandler(graph.NewExecutableSchema(graph.Config{Resolvers: resolver})))
 	server := httptest.NewServer(router)

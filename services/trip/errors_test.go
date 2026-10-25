@@ -13,27 +13,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestObjectBoundariesTranslatePersistenceErrors(t *testing.T) {
+func TestObjectBoundariesPreserveDomainErrors(t *testing.T) {
 	ctx := context.Background()
 	id := uuid.New()
 	for _, tc := range []struct {
-		name              string
-		storage, business error
+		name string
+		kind error
 	}{
-		{"trip", db.ErrTripNotFound, ErrTripNotFound},
-		{"record", db.ErrRecordNotFound, ErrRecordNotFound},
-		{"chain", db.ErrInvalidChain, ErrInvalidChain},
+		{"trip", domain.ErrTripNotFound},
+		{"user", domain.ErrUserNotFound},
+		{"record", domain.ErrRecordNotFound},
+		{"chain", domain.ErrInvalidChain},
+		{"canceled", context.Canceled},
+		{"deadline", context.DeadlineExceeded},
+		{"unknown", errors.New("connection lost")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cause := fmt.Errorf("storage failure: %w", tc.storage)
+			cause := fmt.Errorf("storage failure: %w", tc.kind)
 			store := &trackingTripStore{err: cause}
 			readers := staticReader(projectionReader{tripErr: cause, addressErr: cause})
-			factory := NewTripFactory(store, readers)
+			factory := NewTripFactory(store, nil, readers)
 			trip := factory.ForTrip(id)
 			check := func(err error) {
 				t.Helper()
-				require.ErrorIs(t, err, tc.business)
+				require.ErrorIs(t, err, tc.kind)
 				require.ErrorIs(t, err, cause)
+				if tc.name == "unknown" || tc.name == "canceled" || tc.name == "deadline" {
+					require.Same(t, cause, err)
+				}
 			}
 			_, err := factory.Create(ctx, "trip")
 			check(err)
@@ -55,17 +62,9 @@ func TestObjectBoundariesTranslatePersistenceErrors(t *testing.T) {
 	}
 }
 
-func TestStoreErrorPreservesBusinessAndUnknownErrors(t *testing.T) {
-	for _, err := range []error{nil, context.Canceled, errors.New("connection lost"), ErrInvalidRecordSnapshot} {
-		require.Equal(t, err, fromStoreError(err))
-	}
-	err := fromStoreError(db.ErrTripNotFound)
-	require.Same(t, err, fromStoreError(err))
-}
-
 func TestAppendPassesPrivatePolicyToStore(t *testing.T) {
 	store := &validatingTripStore{}
-	factory := NewTripFactory(store, nil)
+	factory := NewTripFactory(store, nil, nil)
 	id := uuid.New()
 	intent, err := NewRecordFactory(nil).New(context.Background(), id, domain.Record{})
 	require.NoError(t, err)

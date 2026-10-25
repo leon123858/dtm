@@ -51,6 +51,10 @@ func TestNameValidationOnEveryMutation(t *testing.T) {
 				run         func() error
 			}{
 				{"create trip", "trip", func() error { _, err := resolver.CreateTrip(ctx, model.NewTrip{Name: tc.value}); return err }},
+				{"create member trip", "trip", func() error {
+					_, err := resolver.CreateTrip(domain.WithUserID(ctx, uuid.New()), model.NewTrip{Name: tc.value})
+					return err
+				}},
 				{"update trip", "trip", func() error {
 					_, err := resolver.UpdateTrip(ctx, tripID.String(), model.NewTrip{Name: tc.value})
 					return err
@@ -73,6 +77,9 @@ func TestNameValidationOnEveryMutation(t *testing.T) {
 				t.Run(operation.name, func(t *testing.T) {
 					err := operation.run()
 					require.ErrorIs(t, err, tc.kind)
+					if operation.name == "create trip" || operation.name == "create member trip" {
+						require.EqualError(t, err, "trip name "+tc.reason)
+					}
 					require.True(t, strings.HasSuffix(err.Error(), operation.field+" name "+tc.reason), err.Error())
 					if operation.field == "record" {
 						require.ErrorIs(t, err, tripservice.ErrInvalidRecordSnapshot)

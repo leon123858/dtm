@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"dtm/adapters/db/db"
 	"dtm/adapters/db/internal/testutil"
 	"dtm/domain"
 	"dtm/libs/chainlist"
@@ -131,12 +130,12 @@ func TestAppendPatchReturnsStableResolutionErrors(t *testing.T) {
 	database.tripsData[tripID].Records = []domain.Record{root, canonical, branch}
 
 	_, _, _, err := database.AppendPatch(context.Background(), tripID, branchID, domain.RecordPatch{}, testutil.Materializer{})
-	require.ErrorIs(t, err, db.ErrInvalidChain)
+	require.ErrorIs(t, err, domain.ErrInvalidChain)
 	assert.True(t, errors.Is(err, chainlist.ErrNonCanonical))
 
 	missing := uuid.New()
 	_, _, _, err = database.AppendPatch(context.Background(), tripID, missing, domain.RecordPatch{}, testutil.Materializer{})
-	require.ErrorIs(t, err, db.ErrRecordNotFound)
+	require.ErrorIs(t, err, domain.ErrRecordNotFound)
 	assert.True(t, errors.Is(err, chainlist.ErrNodeNotFound))
 }
 

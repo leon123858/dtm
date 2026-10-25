@@ -53,6 +53,6 @@ go run dtm.go serve
 
 Once the server starts, you can open your browser to http://localhost:8080/ to use the GraphQL Playground.
 
-More production mode settings can be checked in [dockerfile](./dockerfile)
+The [dockerfile comments](./dockerfile) are the single source of truth for environment variables, defaults, requirements, and CI secrets. Use [.env.example](./.env.example) as a local starter template.
 
 Ref Frontend: [dtmf](https://github.com/leon123858/dtmf)

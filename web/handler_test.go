@@ -37,7 +37,7 @@ func TestResetTripDataLoaderAfterMutation(t *testing.T) {
 			ctx := db.WithTripDataLoader(context.Background(), loader)
 			ctx = graphql.WithFieldContext(ctx, &graphql.FieldContext{Object: tt.object})
 
-			trip := tripservice.NewTripFactory(store, func(context.Context) (db.Reader, error) { return loader, nil }).ForTrip(tripID)
+			trip := tripservice.NewTripFactory(store, nil, func(context.Context) (db.Reader, error) { return loader, nil }).ForTrip(tripID)
 			db.DataLoaderDebug.Reset()
 			_, err := trip.List(ctx)
 			require.NoError(t, err)
