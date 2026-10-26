@@ -326,7 +326,7 @@ func (r *mutationResolver) TouchSubscribedTrip(ctx context.Context, tripID strin
 	if err := r.Auth.TouchSubscribedTrip(ctx, userID, id); err != nil {
 		return nil, utils.MemberError(err)
 	}
-	return r.userModel(ctx, userID)
+	return &model.User{ID: userID.String()}, nil
 }
 
 // UnsubscribeTrip is the resolver for the unsubscribeTrip field.
@@ -369,7 +369,7 @@ func (r *queryResolver) Me(ctx context.Context) (*model.User, error) {
 	if !ok {
 		return nil, nil
 	}
-	return r.userModel(ctx, userID)
+	return &model.User{ID: userID.String()}, nil
 }
 
 // SubRecordCreate is the resolver for the subRecordCreate field.
@@ -570,6 +570,26 @@ func (r *tripResolver) IsValid(ctx context.Context, obj *model.Trip) (bool, erro
 	return result.Valid, nil
 }
 
+// SubscribedTrips is the resolver for the subscribedTrips field.
+func (r *userResolver) SubscribedTrips(ctx context.Context, obj *model.User) ([]*model.SubscribedTrip, error) {
+	if r.Auth == nil {
+		return nil, utils.UserError("INTERNAL_SERVER_ERROR")
+	}
+	userID, err := uuid.Parse(obj.ID)
+	if err != nil {
+		return nil, utils.UserError("INTERNAL_SERVER_ERROR")
+	}
+	trips, err := r.Auth.SubscribedTrips(ctx, userID)
+	if err != nil {
+		return nil, utils.MemberError(err)
+	}
+	out := make([]*model.SubscribedTrip, 0, len(trips))
+	for _, trip := range trips {
+		out = append(out, &model.SubscribedTrip{ID: trip.ID.String(), Name: trip.Name, LastViewedAt: strconv.FormatInt(trip.LastViewedAt.UnixMilli(), 10)})
+	}
+	return out, nil
+}
+
 // Address returns AddressResolver implementation.
 func (r *Resolver) Address() AddressResolver { return &addressResolver{r} }
 
@@ -585,8 +605,12 @@ func (r *Resolver) Subscription() SubscriptionResolver { return &subscriptionRes
 // Trip returns TripResolver implementation.
 func (r *Resolver) Trip() TripResolver { return &tripResolver{r} }
 
+// User returns UserResolver implementation.
+func (r *Resolver) User() UserResolver { return &userResolver{r} }
+
 type addressResolver struct{ *Resolver }
 type mutationResolver struct{ *Resolver }
 type queryResolver struct{ *Resolver }
 type subscriptionResolver struct{ *Resolver }
 type tripResolver struct{ *Resolver }
+type userResolver struct{ *Resolver }

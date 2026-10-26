@@ -45,6 +45,7 @@ type ResolverRoot interface {
 	Query() QueryResolver
 	Subscription() SubscriptionResolver
 	Trip() TripResolver
+	User() UserResolver
 }
 
 type DirectiveRoot struct {
@@ -191,6 +192,9 @@ type TripResolver interface {
 	MoneyShare(ctx context.Context, obj *model.Trip) ([]*model.Tx, error)
 	Addresses(ctx context.Context, obj *model.Trip) ([]*model.Address, error)
 	IsValid(ctx context.Context, obj *model.Trip) (bool, error)
+}
+type UserResolver interface {
+	SubscribedTrips(ctx context.Context, obj *model.User) ([]*model.SubscribedTrip, error)
 }
 
 type executableSchema struct {
@@ -5026,7 +5030,7 @@ func (ec *executionContext) _User_subscribedTrips(ctx context.Context, field gra
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return obj.SubscribedTrips, nil
+		return ec.resolvers.User().SubscribedTrips(rctx, obj)
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -5047,8 +5051,8 @@ func (ec *executionContext) fieldContext_User_subscribedTrips(_ context.Context,
 	fc = &graphql.FieldContext{
 		Object:     "User",
 		Field:      field,
-		IsMethod:   false,
-		IsResolver: false,
+		IsMethod:   true,
+		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
 			case "id":
@@ -8120,13 +8124,44 @@ func (ec *executionContext) _User(ctx context.Context, sel ast.SelectionSet, obj
 		case "id":
 			out.Values[i] = ec._User_id(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "subscribedTrips":
-			out.Values[i] = ec._User_subscribedTrips(ctx, field, obj)
-			if out.Values[i] == graphql.Null {
-				out.Invalids++
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._User_subscribedTrips(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
 			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}

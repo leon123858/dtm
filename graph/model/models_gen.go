@@ -96,11 +96,6 @@ type Tx struct {
 	Output *Payment   `json:"output"`
 }
 
-type User struct {
-	ID              string            `json:"id"`
-	SubscribedTrips []*SubscribedTrip `json:"subscribedTrips"`
-}
-
 type RecordCategory string
 
 const (

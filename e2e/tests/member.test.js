@@ -84,3 +84,22 @@ test('real login, automatic collection, shared trip collection, refresh and remo
   for (const id of ids) await memberOperation(member, 'unsubscribeTrip', id);
  }
 }, 60000);
+
+test('ID-only membership mutations still update subscriptions', async () => {
+ const trip = await create(anonymous);
+ const mutate = operation => member.run(`mutation($id: ID!) { ${operation}(tripId: $id) { id } }`, {id: trip.id});
+ const entries = async () => (await member.run(ME)).me.subscribedTrips.filter(t => t.id === trip.id);
+ try {
+  const user = (await member.run('{ me { id } }')).me;
+  expect(await mutate('subscribeTrip')).toEqual({subscribeTrip: {id: user.id}});
+  const before = await entries();
+  expect(before).toHaveLength(1);
+  await new Promise(resolve => setTimeout(resolve, 5));
+  expect(await mutate('touchSubscribedTrip')).toEqual({touchSubscribedTrip: {id: user.id}});
+  expect(Number((await entries())[0].lastViewedAt)).toBeGreaterThan(Number(before[0].lastViewedAt));
+  expect(await mutate('unsubscribeTrip')).toEqual({unsubscribeTrip: {id: user.id}});
+  expect(await entries()).toEqual([]);
+ } finally {
+  await memberOperation(member, 'unsubscribeTrip', trip.id);
+ }
+});

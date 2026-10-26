@@ -8,7 +8,6 @@ import (
 	"dtm/services/auth"
 
 	"fmt"
-	"strconv"
 
 	"dtm/adapters/mq/mq"
 	tripservice "dtm/services/trip"
@@ -42,21 +41,6 @@ func (r *Resolver) tripForID(tripID uuid.UUID, options ...tripservice.ReadOption
 	return r.TripFactory.ForTrip(tripID, options...), nil
 }
 
-func (r *Resolver) userModel(ctx context.Context, userID uuid.UUID) (*model.User, error) {
-	if r.Auth == nil {
-		return nil, utils.UserError("INTERNAL_SERVER_ERROR")
-	}
-	trips, err := r.Auth.SubscribedTrips(ctx, userID)
-	if err != nil {
-		return nil, utils.MemberError(err)
-	}
-	out := &model.User{ID: userID.String(), SubscribedTrips: []*model.SubscribedTrip{}}
-	for _, trip := range trips {
-		out.SubscribedTrips = append(out.SubscribedTrips, &model.SubscribedTrip{ID: trip.ID.String(), Name: trip.Name, LastViewedAt: strconv.FormatInt(trip.LastViewedAt.UnixMilli(), 10)})
-	}
-	return out, nil
-}
-
 func (r *Resolver) changeSubscription(ctx context.Context, tripID string, subscribe bool) (*model.User, error) {
 	userID, ok := domain.UserIDFromContext(ctx)
 	if !ok {
@@ -77,5 +61,5 @@ func (r *Resolver) changeSubscription(ctx context.Context, tripID string, subscr
 	if err != nil {
 		return nil, utils.MemberError(err)
 	}
-	return r.userModel(ctx, userID)
+	return &model.User{ID: userID.String()}, nil
 }
