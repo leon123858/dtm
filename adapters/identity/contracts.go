@@ -15,6 +15,7 @@ var (
 )
 
 type Tokens struct {
+	Email        string `json:"-"`
 	LocalID      string `json:"-"`
 	IDToken      string `json:"idToken"`
 	RefreshToken string `json:"refreshToken"`

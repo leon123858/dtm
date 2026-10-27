@@ -6,7 +6,7 @@ func ToAddressSnapshot(address *model.Address) *model.AddressSnapshot {
 	if address == nil {
 		return nil
 	}
-	return &model.AddressSnapshot{ID: address.ID, Name: address.Name}
+	return &model.AddressSnapshot{ID: address.ID, Name: address.Name, UseNickname: address.UseNickname}
 }
 
 func ToRecordSnapshot(record *model.Record) *model.RecordSnapshot {

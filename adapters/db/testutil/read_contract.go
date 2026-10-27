@@ -20,9 +20,9 @@ func CheckReadContract(t *testing.T, store db.TripDBWrapper) {
 	for _, id := range []uuid.UUID{tripID, emptyID} {
 		require.NoError(t, store.CreateTrip(&domain.TripInfo{ID: id, Name: "read contract"}))
 	}
-	payer, err := store.CreateAddress(tripID, "payer")
+	payer, err := store.CreateAddress(context.Background(), tripID, "payer")
 	require.NoError(t, err)
-	member, err := store.CreateAddress(tripID, "member")
+	member, err := store.CreateAddress(context.Background(), tripID, "member")
 	require.NoError(t, err)
 	root := domain.Record{RecordInfo: domain.RecordInfo{ID: uuid.New(), Name: "root", Amount: 30, Time: time.Unix(1, 0), PrePayAddress: *payer}, RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{{Address: *payer, ExtendMsg: 10}, {Address: *member, ExtendMsg: 20}}}}
 	root, err = store.AppendNew(ctx, tripID, root, Materializer{})

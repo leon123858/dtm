@@ -16,6 +16,8 @@ import (
 
 // Service exposes authentication, member subscriptions, and lifecycle operations.
 type Service interface {
+	GetUser(context.Context, uuid.UUID) (domain.User, error)
+	UpdateMe(context.Context, *string, *bool) (domain.User, error)
 	OAuthStart(context.Context, string, string) (string, string, string, error)
 	OAuthCallback(context.Context, string, string, string, bool) (string, error)
 	OAuthExchange(context.Context, string) (OAuthExchangeResult, error)

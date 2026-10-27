@@ -4,6 +4,7 @@ import (
 	"dtm/domain"
 	"dtm/graph/model"
 	"dtm/libs/recordpatch"
+	"dtm/libs/textvalidate"
 	tripservice "dtm/services/trip"
 	"dtm/services/tx"
 	"fmt"
@@ -75,7 +76,7 @@ func ToModelTxList(txList []tx.Tx) []*model.Tx {
 }
 
 func ToModelAddress(address domain.Address) *model.Address {
-	return &model.Address{ID: address.ID.String(), Name: address.Name}
+	return &model.Address{ID: address.ID.String(), Name: address.Name, UseNickname: address.UseNickname}
 }
 
 func ToModelRecord(record domain.Record, active bool) *model.Record {
@@ -126,7 +127,7 @@ func ToDomainAddress(address *model.Address) (domain.Address, error) {
 	if err != nil {
 		return domain.Address{}, fmt.Errorf("invalid address ID: %w", err)
 	}
-	return domain.Address{ID: id, Name: address.Name}, nil
+	return domain.Address{ID: id, Name: address.Name, UseNickname: address.UseNickname}, nil
 }
 
 // BuildRecordPatch compares normalized client values without consulting the DB.
@@ -173,8 +174,8 @@ func recordInputFields(input model.NewRecord) domain.RecordFields {
 	}
 	if input.Time != nil {
 		fields.Time = *input.Time
-		if millis, err := strconv.ParseInt(fields.Time, 10, 64); err == nil {
-			fields.Time = strconv.FormatInt(millis, 10)
+		if timestamp, err := textvalidate.ParseTimestamp(fields.Time); err == nil {
+			fields.Time = strconv.FormatInt(timestamp.UnixMilli(), 10)
 		}
 	}
 	for i, rawID := range input.ShouldPayAddressIds {
@@ -250,4 +251,8 @@ func MapNewRecordToDomainRecord(input model.NewRecord) (*domain.Record, error) {
 	}
 
 	return record, nil
+}
+
+func ToModelUser(u domain.User) *model.User {
+	return &model.User{ID: u.ID.String(), Name: u.Name, Email: u.Email, SubMail: u.SubMail}
 }

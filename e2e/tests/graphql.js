@@ -13,7 +13,7 @@ export const CREATE_TRIP = gql`
 `;
 
 export const UPDATE_TRIP = gql`
-	mutation UpdateTrip($tripId: ID!, $input: NewTrip!) {
+	mutation UpdateTrip($tripId: ID!, $input: EditTrip!) {
 		updateTrip(tripId: $tripId, input: $input) {
 			id
 			name

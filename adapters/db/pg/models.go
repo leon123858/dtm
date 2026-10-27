@@ -7,8 +7,9 @@ import (
 )
 
 type TripInfoModel struct {
-	ID   uuid.UUID `gorm:"type:uuid;primaryKey"`
-	Name string    `gorm:"size:255;not null"`
+	Private bool      `gorm:"not null;default:false"`
+	ID      uuid.UUID `gorm:"type:uuid;primaryKey"`
+	Name    string    `gorm:"size:255;not null"`
 	// meta data
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -55,9 +56,10 @@ func (RecordShouldPayAddressListModel) TableName() string {
 }
 
 type AddressModel struct {
-	ID     uuid.UUID `gorm:"type:uuid;primaryKey"`
-	TripID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_addresses_trip_name,priority:1"`
-	Name   string    `gorm:"size:255;not null;uniqueIndex:idx_addresses_trip_name,priority:2"`
+	UseNickname bool      `gorm:"not null;default:false"`
+	ID          uuid.UUID `gorm:"type:uuid;primaryKey"`
+	TripID      uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_addresses_trip_name,priority:1"`
+	Name        string    `gorm:"size:255;not null;uniqueIndex:idx_addresses_trip_name,priority:2"`
 	// meta data
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -81,8 +83,11 @@ func (AuthEntryModel) TableName() string { return "auth_entries" }
 
 // UserModel maps a GCIP identity to a local member.
 type UserModel struct {
-	ID   uuid.UUID `gorm:"type:uuid;primaryKey"`
-	GCID string    `gorm:"column:gcid;not null;uniqueIndex"`
+	Name    *string
+	Email   *string
+	SubMail bool      `gorm:"not null;default:false"`
+	ID      uuid.UUID `gorm:"type:uuid;primaryKey"`
+	GCID    string    `gorm:"column:gcid;not null;uniqueIndex"`
 }
 
 func (UserModel) TableName() string { return "users" }
@@ -94,3 +99,11 @@ type TripSubscriptionModel struct {
 }
 
 func (TripSubscriptionModel) TableName() string { return "trip_subscriptions" }
+
+type TripBindingModel struct {
+	UserID    uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	TripID    uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	AddressID *uuid.UUID `gorm:"type:uuid"`
+}
+
+func (TripBindingModel) TableName() string { return "trip_bindings" }

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"dtm/adapters/db/internal/testutil"
+	"dtm/adapters/db/testutil"
 	_ "dtm/migration"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
@@ -78,6 +78,8 @@ func TestAuthContract(t *testing.T) {
 	testutil.CheckUserContract(t, authDB, NewPgAuthDBWrapper(secondORM), NewPgTripDBWrapper(firstORM.Session(&gorm.Session{Logger: logger.Discard})))
 	require.Empty(t, logs.String(), "user queries must not reach the parent logger")
 	require.NoError(t, goose.Down(first, "../../../migration"))
+	require.NoError(t, goose.Down(first, "../../../migration"))
+	require.NoError(t, goose.Down(first, "../../../migration"))
 	for _, table := range []string{"auth_entries", "users", "trip_subscriptions"} {
 		var exists bool
 		require.NoError(t, first.QueryRow(`SELECT to_regclass($1) IS NOT NULL`, table).Scan(&exists))
@@ -110,6 +112,8 @@ func TestAuthContract(t *testing.T) {
 	require.Len(t, subscriptions, 1)
 	require.True(t, subscriptions[0].LastViewedAt.Equal(future))
 
+	require.NoError(t, goose.Down(first, "../../../migration"))
+	require.NoError(t, goose.Down(first, "../../../migration"))
 	require.NoError(t, goose.Down(first, "../../../migration"))
 	for _, table := range []string{"auth_entries", "users", "trip_subscriptions"} {
 		var exists bool

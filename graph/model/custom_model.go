@@ -1,17 +1,22 @@
 package model
 
 type User struct {
-	ID string `json:"id"`
+	Name    *string `json:"name"`
+	Email   *string `json:"email"`
+	SubMail bool    `json:"subMail"`
+	ID      string  `json:"id"`
 }
 
 type Address struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	UseNickname bool   `json:"useNickname"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
 }
 
 // Trip retains read options for its field resolvers.
 
 type Trip struct {
+	Private     bool   `json:"private"`
 	HaveHistory bool   `json:"-"`
 	ID          string `json:"id"`
 	Name        string `json:"name"`

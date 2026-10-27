@@ -19,7 +19,7 @@ func floatEquals(a, b float64) bool {
 // Custom DeepEqual for Cash slice, considering float precision and order
 func cashListEquals(t *testing.T, got, want []Cash, msg string) {
 	if len(got) != len(want) {
-		t.Errorf("%s: lengths differ, got %d, want %d", msg, len(got), len(want))
+		t.Errorf("%v: lengths differ, got %d, want %d", msg, len(got), len(want))
 		return
 	}
 
@@ -29,13 +29,13 @@ func cashListEquals(t *testing.T, got, want []Cash, msg string) {
 
 	for i := range got {
 		if got[i].Address != want[i].Address {
-			t.Errorf("%s: Addresses at index %d differ, got %s, want %s", msg, i, got[i].Address, want[i].Address)
+			t.Errorf("%v: Addresses at index %d differ, got %v, want %v", msg, i, got[i].Address, want[i].Address)
 		}
 		if !floatEquals(got[i].InputAmount, want[i].InputAmount) {
-			t.Errorf("%s: InputAmount for %s at index %d differs, got %f, want %f", msg, got[i].Address, i, got[i].InputAmount, want[i].InputAmount)
+			t.Errorf("%v: InputAmount for %v at index %d differs, got %f, want %f", msg, got[i].Address, i, got[i].InputAmount, want[i].InputAmount)
 		}
 		if !floatEquals(got[i].OutputAmount, want[i].OutputAmount) {
-			t.Errorf("%s: OutputAmount for %s at index %d differs, got %f, want %f", msg, got[i].Address, i, got[i].OutputAmount, want[i].OutputAmount)
+			t.Errorf("%v: OutputAmount for %v at index %d differs, got %f, want %f", msg, got[i].Address, i, got[i].OutputAmount, want[i].OutputAmount)
 		}
 	}
 }

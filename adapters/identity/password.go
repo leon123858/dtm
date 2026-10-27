@@ -46,6 +46,7 @@ func (p *EmailPassword) SignIn(ctx context.Context, credential Credential[Passwo
 		return Tokens{}, ErrUpstream
 	}
 	var result struct {
+		Email        string `json:"email"`
 		LocalID      string `json:"localId"`
 		IDToken      string `json:"idToken"`
 		RefreshToken string `json:"refreshToken"`
@@ -59,6 +60,7 @@ func (p *EmailPassword) SignIn(ctx context.Context, credential Credential[Passwo
 		return Tokens{}, err
 	}
 	tokens.LocalID = result.LocalID
+	tokens.Email = result.Email
 	return tokens, nil
 }
 

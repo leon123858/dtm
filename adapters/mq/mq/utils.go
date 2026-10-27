@@ -22,8 +22,10 @@ func SubscribeProcessor[S Subscriber[M], M any, O any](
 	service S,
 	transformFunc func(msg M) (O, bool, error),
 	outputStream chan<- O,
+	authorize ...func() error,
 ) {
 	go func() {
+		defer close(outputStream)
 
 		uid, inputCh, err := service.Subscribe(topicId)
 		if err != nil {
@@ -36,7 +38,6 @@ func SubscribeProcessor[S Subscriber[M], M any, O any](
 			} else {
 				// fmt.Printf("De-subscribed %s successfully.\n", uid)
 			}
-			close(outputStream)
 		}()
 
 		for {
@@ -57,6 +58,11 @@ func SubscribeProcessor[S Subscriber[M], M any, O any](
 					continue
 				}
 
+				for _, check := range authorize {
+					if check() != nil {
+						return
+					}
+				}
 				select {
 				case outputStream <- output:
 					// Message sent successfully

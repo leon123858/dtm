@@ -114,7 +114,7 @@ func GraphQLBodyLogMiddleware(logger *slog.Logger) gin.HandlerFunc {
 	}
 }
 
-func TripDataLoaderInjectionMiddleware(wrapper db.TripDBWrapper) gin.HandlerFunc {
+func TripDataLoaderInjectionMiddleware(wrapper db.DataLoaderStore) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := db.WithTripDataLoader(c.Request.Context(), db.NewTripDataLoader(wrapper))
 		c.Request = c.Request.WithContext(ctx)

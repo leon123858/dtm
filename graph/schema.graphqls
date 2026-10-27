@@ -62,6 +62,8 @@ type RecordSnapshot {
 }
 
 type AddressSnapshot {
+	"Use the trip nickname instead of the bound user profile name; defaults to false."
+	useNickname: Boolean!
 	id: ID!
 	name: String!
 }
@@ -69,6 +71,7 @@ type AddressSnapshot {
 type TripSnapshot {
 	id: ID!
 	name: String!
+	private: Boolean!
 }
 
 type Payment {
@@ -77,6 +80,8 @@ type Payment {
 }
 
 type Address {
+	"Use the trip nickname instead of the bound user profile name; defaults to false."
+	useNickname: Boolean!
 	id: ID!
 	name: String!
 	"""
@@ -108,6 +113,7 @@ type Tx {
 type Trip {
 	id: ID!
 	name: String!
+	private: Boolean!
 	records: [Record!]!
 	moneyShare: [Tx!]!
 	addresses: [Address!]!
@@ -123,6 +129,7 @@ type Subscription {
 }
 
 type Query {
+	me: User
 	trip(tripId: ID!, haveHistory: Boolean! = false): Trip
 }
 
@@ -149,34 +156,56 @@ input NewTrip {
 	name: String!
 }
 
+input EditTrip {
+	name: String
+	private: Boolean
+}
+
 input NewAddress {
-	name: String!
+	"Use the trip nickname instead of the bound user profile name; defaults to false."
+	useNickname: Boolean
+	"Trip nickname for this participant."
+	name: String
 }
 
 type Mutation {
+	updateMe(input: UpdateMe!): User!
 	createTrip(input: NewTrip!): TripSnapshot!
-	updateTrip(tripId: ID!, input: NewTrip!): TripSnapshot!
+	updateTrip(tripId: ID!, input: EditTrip!): TripSnapshot!
 	createRecord(tripId: ID!, input: NewRecord!): RecordSnapshot!
 	updateRecord(recordId: ID!, input: EditRecord!): RecordSnapshot!
-	createAddress(tripId: ID!, input: NewAddress!): AddressSnapshot!
+	createAddress(tripId: ID!, input: NewAddress!, bindToMe: Boolean! = false): AddressSnapshot!
 	updateAddress(tripId: ID!, addressId: ID!, input: NewAddress!): AddressSnapshot!
 	deleteAddress(tripId: ID!, addressId: ID!): AddressSnapshot!
+	subscribeTrip(tripId: ID!): User!
+	touchSubscribedTrip(tripId: ID!): User!
+	unsubscribeTrip(tripId: ID!): User!
+	bind(tripId: ID!, addressId: ID): User!
+	unbind(tripId: ID!): User!
+}
+
+input UpdateMe {
+	name: String
+	subMail: Boolean
 }
 
 type User {
- id: ID!
- subscribedTrips: [SubscribedTrip!]!
-}
-extend type Query { me: User }
-extend type Mutation {
- subscribeTrip(tripId: ID!): User!
- touchSubscribedTrip(tripId: ID!): User!
- unsubscribeTrip(tripId: ID!): User!
+	name: String
+	email: String
+	subMail: Boolean!
+	id: ID!
+	subscribedTrips: [SubscribedTrip!]!
+	bind(tripId: ID!): TripBinding
 }
 
 type SubscribedTrip {
- id: ID!
- name: String!
- "Unix milliseconds as a decimal string."
- lastViewedAt: String!
+	id: ID!
+	name: String!
+	"Unix milliseconds as a decimal string."
+	lastViewedAt: String!
+}
+
+type TripBinding {
+	tripId: ID!
+	address: Address
 }

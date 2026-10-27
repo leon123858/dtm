@@ -160,7 +160,7 @@ func TestMemberHTTPFlow(t *testing.T) {
 
 type failingUsers struct{ db.AuthDBWrapper }
 
-func (failingUsers) UpsertUser(context.Context, string) (u domain.User, err error) {
+func (failingUsers) UpsertUser(context.Context, string, ...string) (u domain.User, err error) {
 	return u, errors.New("storage failed")
 }
 func TestMemberStorageFailureDoesNotIssueCode(t *testing.T) {

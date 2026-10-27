@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"dtm/adapters/db/testutil"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -59,6 +60,7 @@ type tripBenchFixture struct {
 	payer, member uuid.UUID
 }
 type tripBenchHarness struct {
+	fetches testutil.LoaderCounters
 	store   db.TripDBWrapper
 	sqlDB   *sql.DB
 	counter *tripSQLCounter
@@ -93,7 +95,7 @@ func newTripBenchHarness(t testing.TB) *tripBenchHarness {
 	var version string
 	require.NoError(t, pool.QueryRow("SHOW server_version").Scan(&version))
 	t.Logf("environment go=%s os=%s arch=%s CPUs=%d GOMAXPROCS=%d postgres=%s pool=32", runtime.Version(), runtime.GOOS, runtime.GOARCH, runtime.NumCPU(), runtime.GOMAXPROCS(0), version)
-	return &tripBenchHarness{pg.NewPgTripDBWrapper(orm), pool, counter}
+	return &tripBenchHarness{store: pg.NewPgTripDBWrapper(orm), sqlDB: pool, counter: counter}
 }
 
 func (h *tripBenchHarness) seed(t testing.TB, n int) tripBenchFixture {
@@ -149,13 +151,13 @@ func (h *tripBenchHarness) server(t testing.TB, cached bool) *httptest.Server {
 	t.Helper()
 	provider := func(ctx context.Context) (db.Reader, error) {
 		if !cached {
-			return uncachedTripReader{h.store}, nil
+			return uncachedTripReader{h.fetches.Wrap(h.store)}, nil
 		}
 		return db.TripDataLoaderFromContext(ctx)
 	}
 	resolver := &graph.Resolver{TripFactory: tripservice.NewTripFactory(h.store, nil, provider), RecordFactory: tripservice.NewRecordFactory(provider)}
 	router := gin.New()
-	router.POST("/query", TripDataLoaderInjectionMiddleware(h.store), GraphQLHandler(graph.NewExecutableSchema(graph.Config{Resolvers: resolver})))
+	router.POST("/query", TripDataLoaderInjectionMiddleware(h.fetches.Wrap(h.store)), GraphQLHandler(graph.NewExecutableSchema(graph.Config{Resolvers: resolver})))
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
 	return server
@@ -290,7 +292,7 @@ type tripBenchReport struct {
 	Seconds, RPS, P50ms, P95ms, P99ms float64
 	Errors                            int64
 	SQL                               int64
-	Fetches                           db.DataLoaderDebugSnapshot
+	Fetches                           testutil.LoaderSnapshot
 	PoolWaitCount                     int64
 	PoolWaitMS                        float64
 }
@@ -317,7 +319,7 @@ func (h *tripBenchHarness) run(t testing.TB, url string, s tripBenchScenario, f 
 		return validateTripBench(data, s, f)
 	}
 	require.NoError(t, call(), "warmup")
-	db.DataLoaderDebug.Reset()
+	h.fetches.Reset()
 	h.counter.selects.Store(0)
 	h.counter.failures.Store(0)
 	before := h.sqlDB.Stats()
@@ -358,7 +360,7 @@ func (h *tripBenchHarness) run(t testing.TB, url string, s tripBenchScenario, f 
 		b.StopTimer()
 	}
 	after := h.sqlDB.Stats()
-	got := db.DataLoaderDebug.Snapshot()
+	got := h.fetches.Snapshot()
 	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
 	percentile := func(p int) float64 { return float64(latencies[(requests*p+99)/100-1]) / float64(time.Millisecond) }
 	report := tripBenchReport{Scenario: s.name, Records: f.live, Concurrency: workers, Requests: requests, Seconds: elapsed.Seconds(), RPS: float64(requests) / elapsed.Seconds(), P50ms: percentile(50), P95ms: percentile(95), P99ms: percentile(99), Errors: failures.Load(), SQL: h.counter.selects.Load(), Fetches: got, PoolWaitCount: after.WaitCount - before.WaitCount, PoolWaitMS: float64(after.WaitDuration-before.WaitDuration) / float64(time.Millisecond)}
@@ -368,11 +370,11 @@ func (h *tripBenchHarness) run(t testing.TB, url string, s tripBenchScenario, f 
 	require.Zero(t, failures.Load())
 	require.Zero(t, h.counter.failures.Load())
 	n := int64(requests)
-	want := db.DataLoaderDebugSnapshot{Trips: db.DataLoadCount{Batches: s.trips * n, Keys: s.trips * n}, TripRecords: db.DataLoadCount{Batches: s.records * n, Keys: s.records * n}, TripAddresses: db.DataLoadCount{Batches: s.addresses * n, Keys: s.addresses * n}}
+	want := testutil.LoaderSnapshot{Trips: testutil.DataLoadCount{Batches: s.trips * n, Keys: s.trips * n}, TripRecords: testutil.DataLoadCount{Batches: s.records * n, Keys: s.records * n}, TripAddresses: testutil.DataLoadCount{Batches: s.addresses * n, Keys: s.addresses * n}}
 	if !cached {
-		want.Trips = db.DataLoadCount{Batches: int64(s.aliases) * n, Keys: int64(s.aliases) * n}
+		want.Trips = testutil.DataLoadCount{Batches: int64(s.aliases) * n, Keys: int64(s.aliases) * n}
 		want.TripAddresses = want.Trips
-		want.TripRecords = db.DataLoadCount{Batches: int64(3*s.aliases) * n, Keys: int64(3*s.aliases) * n}
+		want.TripRecords = testutil.DataLoadCount{Batches: int64(3*s.aliases) * n, Keys: int64(3*s.aliases) * n}
 	}
 	require.Equal(t, want, got, "backing fetch budget")
 	require.Equal(t, want.Trips.Batches+want.TripRecords.Batches+want.TripAddresses.Batches, report.SQL, "actual SELECT budget")

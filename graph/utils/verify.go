@@ -2,8 +2,8 @@ package utils
 
 import (
 	"dtm/graph/model"
+	"dtm/libs/textvalidate"
 	"fmt"
-	"strconv"
 	"time"
 )
 
@@ -30,10 +30,9 @@ func NormalizeRecordRequest(r *model.NewRecord) bool {
 // ParseJSTimestampString parses a JavaScript Date.now() string (milliseconds since epoch)
 // into a Go time.Time object.
 func ParseJSTimestampString(jsTimestampStr string) (time.Time, error) {
-	unixMilli, err := strconv.ParseInt(jsTimestampStr, 10, 64)
+	timestamp, err := textvalidate.ParseTimestamp(jsTimestampStr)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("failed to parse timestamp string '%s' to int64: %w", jsTimestampStr, err)
 	}
-
-	return time.UnixMilli(unixMilli), nil
+	return timestamp, nil
 }

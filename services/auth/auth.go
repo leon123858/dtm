@@ -5,15 +5,19 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"dtm/adapters/db/db"
-	"dtm/adapters/identity"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
+	"dtm/adapters/db/db"
+	"dtm/adapters/identity"
 	"dtm/config"
+	"dtm/libs/textvalidate"
+
+	"github.com/google/uuid"
 )
 
 var (
@@ -61,7 +65,7 @@ func (s *service) PasswordLogin(ctx context.Context) (identity.Tokens, error) {
 	if tokens.LocalID == "" {
 		return identity.Tokens{}, identity.ErrUpstream
 	}
-	if _, err := s.store.UpsertUser(ctx, tokens.LocalID); err != nil {
+	if _, err := s.store.UpsertUser(ctx, tokens.LocalID, tokens.Email); err != nil {
 		return identity.Tokens{}, ErrStorage
 	}
 	return tokens, nil
@@ -149,7 +153,7 @@ func (s *service) OAuthCallback(ctx context.Context, state, binding, code string
 	if tokens.LocalID == "" {
 		return "", identity.ErrUpstream
 	}
-	if _, err := s.store.UpsertUser(ctx, tokens.LocalID); err != nil {
+	if _, err := s.store.UpsertUser(ctx, tokens.LocalID, tokens.Email); err != nil {
 		return "", ErrStorage
 	}
 	lc := random()
@@ -180,4 +184,46 @@ func (s *service) OAuthExchange(ctx context.Context, code string) (OAuthExchange
 		return OAuthExchangeResult{}, db.ErrInvalidAuthEntry
 	}
 	return OAuthExchangeResult{Tokens: result.Tokens, ReturnTo: result.ReturnTo}, nil
+}
+
+// Bound work on unauthenticated input, including nested percent encoding.
+const (
+	maxReturnToBytes       = 4096
+	maxReturnToDecodeDepth = 4
+)
+
+// validateReturnTo returns only a validated browser-relative destination.
+// The caller has already decoded the outer login request's query parameter.
+func validateReturnTo(raw string) (string, error) {
+	if raw == "" {
+		return "/", nil
+	}
+	if len(raw) > maxReturnToBytes {
+		return "", ErrRequest
+	}
+	u, err := textvalidate.ParseUnescapedRelativeURL(raw)
+	if err != nil {
+		return "", ErrRequest
+	}
+	// Route membership is an application policy, separate from URL text safety.
+	parts := strings.Split(u.Path, "/")
+	switch u.Path {
+	case "/", "/history":
+	default:
+		if len(parts) != 3 || parts[0] != "" || parts[1] != "trip" {
+			return "", ErrRequest
+		}
+		if _, err := uuid.Parse(parts[2]); err != nil {
+			return "", ErrRequest
+		}
+	}
+	// Inspect encoded query/fragment values without rewriting them. Repeated
+	// decoding catches nested escaped controls and backslashes. A literal '%'
+	// produced by a valid escape is allowed; malformed original escapes are not.
+	for _, component := range []string{raw, u.RawQuery, u.EscapedFragment()} {
+		if err := textvalidate.ValidateEncodedURLComponent(component, maxReturnToDecodeDepth); err != nil {
+			return "", ErrRequest
+		}
+	}
+	return raw, nil
 }

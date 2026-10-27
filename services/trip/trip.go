@@ -15,6 +15,7 @@ import (
 )
 
 type tripFactory struct {
+	db.BindingStore
 	authStore db.AuthDBWrapper
 	store     db.TripStore
 	readers   db.ReaderProvider
@@ -81,6 +82,11 @@ func (t *trip) writable(ctx context.Context) error {
 }
 
 func (t *trip) reader(ctx context.Context) (db.Reader, error) {
+	if t.store != nil {
+		if err := t.store.CheckTripAccess(ctx, t.id); err != nil {
+			return nil, err
+		}
+	}
 	reader, err := readerFrom(ctx, t.readers)
 	if err != nil {
 		return nil, err
@@ -112,7 +118,7 @@ func (t *trip) UpdateInfo(ctx context.Context, name string) (*domain.TripInfo, e
 		return nil, err
 	}
 	info := &domain.TripInfo{ID: t.id, Name: name}
-	if err := t.store.UpdateTripInfo(info); err != nil {
+	if err := t.store.UpdateTripInfo(ctx, info); err != nil {
 		return nil, err
 	}
 	result := *info
@@ -135,7 +141,7 @@ func (t *trip) CreateAddress(ctx context.Context, name string) (*domain.Address,
 	if err := t.writable(ctx); err != nil {
 		return nil, err
 	}
-	address, err := t.store.CreateAddress(t.id, name)
+	address, err := t.store.CreateAddress(ctx, t.id, name)
 	return cloneAddress(address), err
 }
 
@@ -143,7 +149,7 @@ func (t *trip) UpdateAddress(ctx context.Context, addressID uuid.UUID, name stri
 	if err := t.writable(ctx); err != nil {
 		return nil, err
 	}
-	address, err := t.store.UpdateAddress(t.id, addressID, name)
+	address, err := t.store.UpdateAddress(ctx, t.id, addressID, name)
 	return cloneAddress(address), err
 }
 
@@ -151,7 +157,7 @@ func (t *trip) DeleteAddress(ctx context.Context, addressID uuid.UUID) (*domain.
 	if err := t.writable(ctx); err != nil {
 		return nil, err
 	}
-	address, err := t.store.DeleteAddress(t.id, addressID)
+	address, err := t.store.DeleteAddress(ctx, t.id, addressID)
 	return cloneAddress(address), err
 }
 
@@ -281,4 +287,17 @@ func (t *trip) CalculateMoneyShare(ctx context.Context) (MoneyShareResult, error
 
 func newMaterializedRecord(tripID uuid.UUID, value domain.Record) Record {
 	return &record{tripID: tripID, data: cloneDomainRecord(value), active: true}
+}
+
+func (t *trip) CreateAddressWithOptions(ctx context.Context, name *string, useNickname *bool, bind bool) (*domain.Address, bool, error) {
+	if err := t.writable(ctx); err != nil {
+		return nil, false, err
+	}
+	return t.store.CreateAddressWithOptions(ctx, t.id, name, useNickname, bind)
+}
+func (t *trip) PatchAddress(ctx context.Context, id uuid.UUID, name *string, useNickname *bool) (*domain.Address, bool, error) {
+	if err := t.writable(ctx); err != nil {
+		return nil, false, err
+	}
+	return t.store.PatchAddress(ctx, t.id, id, name, useNickname)
 }

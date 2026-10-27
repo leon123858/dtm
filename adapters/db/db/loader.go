@@ -26,17 +26,16 @@ var _ Reader = (*TripDataLoader)(nil)
 func NewTripDataLoader(dbWrapper DataLoaderStore) *TripDataLoader {
 	loader := &TripDataLoader{
 		store:              dbWrapper,
-		getRecord:          dataloadgen.NewMappedLoader(instrumentMappedFetch(&DataLoaderDebug.Records, dbWrapper.DataLoaderGetRecordList)),
-		getTripAddressList: dataloadgen.NewMappedLoader(instrumentMappedFetch(&DataLoaderDebug.TripAddresses, dbWrapper.DataLoaderGetTripAddressList)),
-		getTripInfoList:    dataloadgen.NewMappedLoader(instrumentMappedFetch(&DataLoaderDebug.Trips, dbWrapper.DataLoaderGetTripInfoList)),
+		getRecord:          dataloadgen.NewMappedLoader(preserveMappedFetchErrors(dbWrapper.DataLoaderGetRecordList)),
+		getTripAddressList: dataloadgen.NewMappedLoader(preserveMappedFetchErrors(dbWrapper.DataLoaderGetTripAddressList)),
+		getTripInfoList:    dataloadgen.NewMappedLoader(preserveMappedFetchErrors(dbWrapper.DataLoaderGetTripInfoList)),
 	}
 	for i := range loader.getTripRecords {
 		// get history records or not
 		options := RecordReadOptions{HaveHistory: i == 1}
-		loader.getTripRecords[i] = dataloadgen.NewMappedLoader(instrumentMappedFetch(&DataLoaderDebug.TripRecords,
-			func(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID][]RecordSnapshot, error) {
-				return dbWrapper.DataLoaderGetTripRecords(ctx, ids, options)
-			}))
+		loader.getTripRecords[i] = dataloadgen.NewMappedLoader(preserveMappedFetchErrors(func(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID][]RecordSnapshot, error) {
+			return dbWrapper.DataLoaderGetTripRecords(ctx, ids, options)
+		}))
 	}
 	return loader
 }
@@ -94,4 +93,25 @@ func TripDataLoaderFromContext(ctx context.Context) (*TripDataLoader, error) {
 		return nil, fmt.Errorf("data loader is not available")
 	}
 	return loader, nil
+}
+
+func preserveMappedFetchErrors[K comparable, V any](fetch func(context.Context, []K) (map[K]V, error)) func(context.Context, []K) (map[K]V, error) {
+	return func(ctx context.Context, keys []K) (map[K]V, error) {
+		values, err := fetch(ctx, keys)
+		// dataloadgen v0.0.8 substitutes ErrNotFound for missing map keys before
+		// examining fetch errors. Supply zero values so authorization and storage
+		// errors survive batching without exposing any denied row.
+		if err != nil {
+			if values == nil {
+				values = make(map[K]V, len(keys))
+			}
+			for _, key := range keys {
+				if _, ok := values[key]; !ok {
+					var zero V
+					values[key] = zero
+				}
+			}
+		}
+		return values, err
+	}
 }

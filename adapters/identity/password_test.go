@@ -18,7 +18,7 @@ func TestEmailPassword(t *testing.T) {
 		body   string
 		want   error
 	}{
-		{"success", 200, `{"localId":"member","idToken":"jwt","refreshToken":"refresh","expiresIn":"3600"}`, nil},
+		{"success", 200, `{"email":"member@example.com","localId":"member","idToken":"jwt","refreshToken":"refresh","expiresIn":"3600"}`, nil},
 		{"invalid login", 400, `{"error":{"message":"INVALID_LOGIN_CREDENTIALS"}}`, ErrCredential},
 		{"password", 400, `{"error":{"message":"INVALID_PASSWORD"}}`, ErrCredential},
 		{"missing account", 400, `{"error":{"message":"EMAIL_NOT_FOUND"}}`, ErrCredential},
@@ -53,7 +53,7 @@ func TestEmailPassword(t *testing.T) {
 				require.NotContains(t, err.Error(), "secret")
 			} else {
 				require.NoError(t, err)
-				require.Equal(t, Tokens{LocalID: "member", IDToken: "jwt", RefreshToken: "refresh", ExpiresIn: 3600}, tokens)
+				require.Equal(t, Tokens{Email: "member@example.com", LocalID: "member", IDToken: "jwt", RefreshToken: "refresh", ExpiresIn: 3600}, tokens)
 			}
 		})
 	}

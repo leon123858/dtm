@@ -53,14 +53,16 @@ type DirectiveRoot struct {
 
 type ComplexityRoot struct {
 	Address struct {
-		ID         func(childComplexity int) int
-		Name       func(childComplexity int) int
-		Statistics func(childComplexity int) int
+		ID          func(childComplexity int) int
+		Name        func(childComplexity int) int
+		Statistics  func(childComplexity int) int
+		UseNickname func(childComplexity int) int
 	}
 
 	AddressSnapshot struct {
-		ID   func(childComplexity int) int
-		Name func(childComplexity int) int
+		ID          func(childComplexity int) int
+		Name        func(childComplexity int) int
+		UseNickname func(childComplexity int) int
 	}
 
 	AddressStatistics struct {
@@ -70,16 +72,19 @@ type ComplexityRoot struct {
 	}
 
 	Mutation struct {
-		CreateAddress       func(childComplexity int, tripID string, input model.NewAddress) int
+		Bind                func(childComplexity int, tripID string, addressID *string) int
+		CreateAddress       func(childComplexity int, tripID string, input model.NewAddress, bindToMe bool) int
 		CreateRecord        func(childComplexity int, tripID string, input model.NewRecord) int
 		CreateTrip          func(childComplexity int, input model.NewTrip) int
 		DeleteAddress       func(childComplexity int, tripID string, addressID string) int
 		SubscribeTrip       func(childComplexity int, tripID string) int
 		TouchSubscribedTrip func(childComplexity int, tripID string) int
+		Unbind              func(childComplexity int, tripID string) int
 		UnsubscribeTrip     func(childComplexity int, tripID string) int
 		UpdateAddress       func(childComplexity int, tripID string, addressID string, input model.NewAddress) int
+		UpdateMe            func(childComplexity int, input model.UpdateMe) int
 		UpdateRecord        func(childComplexity int, recordID string, input model.EditRecord) int
-		UpdateTrip          func(childComplexity int, tripID string, input model.NewTrip) int
+		UpdateTrip          func(childComplexity int, tripID string, input model.EditTrip) int
 	}
 
 	Payment struct {
@@ -142,12 +147,19 @@ type ComplexityRoot struct {
 		IsValid    func(childComplexity int) int
 		MoneyShare func(childComplexity int) int
 		Name       func(childComplexity int) int
+		Private    func(childComplexity int) int
 		Records    func(childComplexity int) int
 	}
 
+	TripBinding struct {
+		Address func(childComplexity int) int
+		TripID  func(childComplexity int) int
+	}
+
 	TripSnapshot struct {
-		ID   func(childComplexity int) int
-		Name func(childComplexity int) int
+		ID      func(childComplexity int) int
+		Name    func(childComplexity int) int
+		Private func(childComplexity int) int
 	}
 
 	Tx struct {
@@ -156,7 +168,11 @@ type ComplexityRoot struct {
 	}
 
 	User struct {
+		Bind            func(childComplexity int, tripID string) int
+		Email           func(childComplexity int) int
 		ID              func(childComplexity int) int
+		Name            func(childComplexity int) int
+		SubMail         func(childComplexity int) int
 		SubscribedTrips func(childComplexity int) int
 	}
 }
@@ -165,20 +181,23 @@ type AddressResolver interface {
 	Statistics(ctx context.Context, obj *model.Address) (*model.AddressStatistics, error)
 }
 type MutationResolver interface {
+	UpdateMe(ctx context.Context, input model.UpdateMe) (*model.User, error)
 	CreateTrip(ctx context.Context, input model.NewTrip) (*model.TripSnapshot, error)
-	UpdateTrip(ctx context.Context, tripID string, input model.NewTrip) (*model.TripSnapshot, error)
+	UpdateTrip(ctx context.Context, tripID string, input model.EditTrip) (*model.TripSnapshot, error)
 	CreateRecord(ctx context.Context, tripID string, input model.NewRecord) (*model.RecordSnapshot, error)
 	UpdateRecord(ctx context.Context, recordID string, input model.EditRecord) (*model.RecordSnapshot, error)
-	CreateAddress(ctx context.Context, tripID string, input model.NewAddress) (*model.AddressSnapshot, error)
+	CreateAddress(ctx context.Context, tripID string, input model.NewAddress, bindToMe bool) (*model.AddressSnapshot, error)
 	UpdateAddress(ctx context.Context, tripID string, addressID string, input model.NewAddress) (*model.AddressSnapshot, error)
 	DeleteAddress(ctx context.Context, tripID string, addressID string) (*model.AddressSnapshot, error)
 	SubscribeTrip(ctx context.Context, tripID string) (*model.User, error)
 	TouchSubscribedTrip(ctx context.Context, tripID string) (*model.User, error)
 	UnsubscribeTrip(ctx context.Context, tripID string) (*model.User, error)
+	Bind(ctx context.Context, tripID string, addressID *string) (*model.User, error)
+	Unbind(ctx context.Context, tripID string) (*model.User, error)
 }
 type QueryResolver interface {
-	Trip(ctx context.Context, tripID string, haveHistory bool) (*model.Trip, error)
 	Me(ctx context.Context) (*model.User, error)
+	Trip(ctx context.Context, tripID string, haveHistory bool) (*model.Trip, error)
 }
 type SubscriptionResolver interface {
 	SubRecordCreate(ctx context.Context, tripID string) (<-chan *model.RecordSnapshot, error)
@@ -195,6 +214,7 @@ type TripResolver interface {
 }
 type UserResolver interface {
 	SubscribedTrips(ctx context.Context, obj *model.User) ([]*model.SubscribedTrip, error)
+	Bind(ctx context.Context, obj *model.User, tripID string) (*model.TripBinding, error)
 }
 
 type executableSchema struct {
@@ -237,6 +257,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Address.Statistics(childComplexity), true
 
+	case "Address.useNickname":
+		if e.complexity.Address.UseNickname == nil {
+			break
+		}
+
+		return e.complexity.Address.UseNickname(childComplexity), true
+
 	case "AddressSnapshot.id":
 		if e.complexity.AddressSnapshot.ID == nil {
 			break
@@ -250,6 +277,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.AddressSnapshot.Name(childComplexity), true
+
+	case "AddressSnapshot.useNickname":
+		if e.complexity.AddressSnapshot.UseNickname == nil {
+			break
+		}
+
+		return e.complexity.AddressSnapshot.UseNickname(childComplexity), true
 
 	case "AddressStatistics.activeRecordCount":
 		if e.complexity.AddressStatistics.ActiveRecordCount == nil {
@@ -272,6 +306,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.AddressStatistics.TotalPrepaid(childComplexity), true
 
+	case "Mutation.bind":
+		if e.complexity.Mutation.Bind == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_bind_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.Bind(childComplexity, args["tripId"].(string), args["addressId"].(*string)), true
+
 	case "Mutation.createAddress":
 		if e.complexity.Mutation.CreateAddress == nil {
 			break
@@ -282,7 +328,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.CreateAddress(childComplexity, args["tripId"].(string), args["input"].(model.NewAddress)), true
+		return e.complexity.Mutation.CreateAddress(childComplexity, args["tripId"].(string), args["input"].(model.NewAddress), args["bindToMe"].(bool)), true
 
 	case "Mutation.createRecord":
 		if e.complexity.Mutation.CreateRecord == nil {
@@ -344,6 +390,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.TouchSubscribedTrip(childComplexity, args["tripId"].(string)), true
 
+	case "Mutation.unbind":
+		if e.complexity.Mutation.Unbind == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_unbind_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.Unbind(childComplexity, args["tripId"].(string)), true
+
 	case "Mutation.unsubscribeTrip":
 		if e.complexity.Mutation.UnsubscribeTrip == nil {
 			break
@@ -368,6 +426,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.UpdateAddress(childComplexity, args["tripId"].(string), args["addressId"].(string), args["input"].(model.NewAddress)), true
 
+	case "Mutation.updateMe":
+		if e.complexity.Mutation.UpdateMe == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_updateMe_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UpdateMe(childComplexity, args["input"].(model.UpdateMe)), true
+
 	case "Mutation.updateRecord":
 		if e.complexity.Mutation.UpdateRecord == nil {
 			break
@@ -390,7 +460,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.UpdateTrip(childComplexity, args["tripId"].(string), args["input"].(model.NewTrip)), true
+		return e.complexity.Mutation.UpdateTrip(childComplexity, args["tripId"].(string), args["input"].(model.EditTrip)), true
 
 	case "Payment.address":
 		if e.complexity.Payment.Address == nil {
@@ -709,12 +779,33 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Trip.Name(childComplexity), true
 
+	case "Trip.private":
+		if e.complexity.Trip.Private == nil {
+			break
+		}
+
+		return e.complexity.Trip.Private(childComplexity), true
+
 	case "Trip.records":
 		if e.complexity.Trip.Records == nil {
 			break
 		}
 
 		return e.complexity.Trip.Records(childComplexity), true
+
+	case "TripBinding.address":
+		if e.complexity.TripBinding.Address == nil {
+			break
+		}
+
+		return e.complexity.TripBinding.Address(childComplexity), true
+
+	case "TripBinding.tripId":
+		if e.complexity.TripBinding.TripID == nil {
+			break
+		}
+
+		return e.complexity.TripBinding.TripID(childComplexity), true
 
 	case "TripSnapshot.id":
 		if e.complexity.TripSnapshot.ID == nil {
@@ -730,6 +821,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.TripSnapshot.Name(childComplexity), true
 
+	case "TripSnapshot.private":
+		if e.complexity.TripSnapshot.Private == nil {
+			break
+		}
+
+		return e.complexity.TripSnapshot.Private(childComplexity), true
+
 	case "Tx.input":
 		if e.complexity.Tx.Input == nil {
 			break
@@ -744,12 +842,45 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Tx.Output(childComplexity), true
 
+	case "User.bind":
+		if e.complexity.User.Bind == nil {
+			break
+		}
+
+		args, err := ec.field_User_bind_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.User.Bind(childComplexity, args["tripId"].(string)), true
+
+	case "User.email":
+		if e.complexity.User.Email == nil {
+			break
+		}
+
+		return e.complexity.User.Email(childComplexity), true
+
 	case "User.id":
 		if e.complexity.User.ID == nil {
 			break
 		}
 
 		return e.complexity.User.ID(childComplexity), true
+
+	case "User.name":
+		if e.complexity.User.Name == nil {
+			break
+		}
+
+		return e.complexity.User.Name(childComplexity), true
+
+	case "User.subMail":
+		if e.complexity.User.SubMail == nil {
+			break
+		}
+
+		return e.complexity.User.SubMail(childComplexity), true
 
 	case "User.subscribedTrips":
 		if e.complexity.User.SubscribedTrips == nil {
@@ -767,9 +898,11 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 	ec := executionContext{opCtx, e, 0, 0, make(chan graphql.DeferredResult)}
 	inputUnmarshalMap := graphql.BuildUnmarshalerMap(
 		ec.unmarshalInputEditRecord,
+		ec.unmarshalInputEditTrip,
 		ec.unmarshalInputNewAddress,
 		ec.unmarshalInputNewRecord,
 		ec.unmarshalInputNewTrip,
+		ec.unmarshalInputUpdateMe,
 	)
 	first := true
 
@@ -903,6 +1036,47 @@ var parsedSchema = gqlparser.MustLoadSchema(sources...)
 
 // region    ***************************** args.gotpl *****************************
 
+func (ec *executionContext) field_Mutation_bind_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := ec.field_Mutation_bind_argsTripID(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["tripId"] = arg0
+	arg1, err := ec.field_Mutation_bind_argsAddressID(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["addressId"] = arg1
+	return args, nil
+}
+func (ec *executionContext) field_Mutation_bind_argsTripID(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (string, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tripId"))
+	if tmp, ok := rawArgs["tripId"]; ok {
+		return ec.unmarshalNID2string(ctx, tmp)
+	}
+
+	var zeroVal string
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Mutation_bind_argsAddressID(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (*string, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("addressId"))
+	if tmp, ok := rawArgs["addressId"]; ok {
+		return ec.unmarshalOID2ᚖstring(ctx, tmp)
+	}
+
+	var zeroVal *string
+	return zeroVal, nil
+}
+
 func (ec *executionContext) field_Mutation_createAddress_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -916,6 +1090,11 @@ func (ec *executionContext) field_Mutation_createAddress_args(ctx context.Contex
 		return nil, err
 	}
 	args["input"] = arg1
+	arg2, err := ec.field_Mutation_createAddress_argsBindToMe(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["bindToMe"] = arg2
 	return args, nil
 }
 func (ec *executionContext) field_Mutation_createAddress_argsTripID(
@@ -941,6 +1120,19 @@ func (ec *executionContext) field_Mutation_createAddress_argsInput(
 	}
 
 	var zeroVal model.NewAddress
+	return zeroVal, nil
+}
+
+func (ec *executionContext) field_Mutation_createAddress_argsBindToMe(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (bool, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("bindToMe"))
+	if tmp, ok := rawArgs["bindToMe"]; ok {
+		return ec.unmarshalNBoolean2bool(ctx, tmp)
+	}
+
+	var zeroVal bool
 	return zeroVal, nil
 }
 
@@ -1095,6 +1287,29 @@ func (ec *executionContext) field_Mutation_touchSubscribedTrip_argsTripID(
 	return zeroVal, nil
 }
 
+func (ec *executionContext) field_Mutation_unbind_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := ec.field_Mutation_unbind_argsTripID(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["tripId"] = arg0
+	return args, nil
+}
+func (ec *executionContext) field_Mutation_unbind_argsTripID(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (string, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tripId"))
+	if tmp, ok := rawArgs["tripId"]; ok {
+		return ec.unmarshalNID2string(ctx, tmp)
+	}
+
+	var zeroVal string
+	return zeroVal, nil
+}
+
 func (ec *executionContext) field_Mutation_unsubscribeTrip_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -1177,6 +1392,29 @@ func (ec *executionContext) field_Mutation_updateAddress_argsInput(
 	return zeroVal, nil
 }
 
+func (ec *executionContext) field_Mutation_updateMe_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := ec.field_Mutation_updateMe_argsInput(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
+func (ec *executionContext) field_Mutation_updateMe_argsInput(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (model.UpdateMe, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("input"))
+	if tmp, ok := rawArgs["input"]; ok {
+		return ec.unmarshalNUpdateMe2dtmᚋgraphᚋmodelᚐUpdateMe(ctx, tmp)
+	}
+
+	var zeroVal model.UpdateMe
+	return zeroVal, nil
+}
+
 func (ec *executionContext) field_Mutation_updateRecord_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -1249,13 +1487,13 @@ func (ec *executionContext) field_Mutation_updateTrip_argsTripID(
 func (ec *executionContext) field_Mutation_updateTrip_argsInput(
 	ctx context.Context,
 	rawArgs map[string]any,
-) (model.NewTrip, error) {
+) (model.EditTrip, error) {
 	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("input"))
 	if tmp, ok := rawArgs["input"]; ok {
-		return ec.unmarshalNNewTrip2dtmᚋgraphᚋmodelᚐNewTrip(ctx, tmp)
+		return ec.unmarshalNEditTrip2dtmᚋgraphᚋmodelᚐEditTrip(ctx, tmp)
 	}
 
-	var zeroVal model.NewTrip
+	var zeroVal model.EditTrip
 	return zeroVal, nil
 }
 
@@ -1438,6 +1676,29 @@ func (ec *executionContext) field_Subscription_subRecordUpdate_argsTripID(
 	return zeroVal, nil
 }
 
+func (ec *executionContext) field_User_bind_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := ec.field_User_bind_argsTripID(ctx, rawArgs)
+	if err != nil {
+		return nil, err
+	}
+	args["tripId"] = arg0
+	return args, nil
+}
+func (ec *executionContext) field_User_bind_argsTripID(
+	ctx context.Context,
+	rawArgs map[string]any,
+) (string, error) {
+	ctx = graphql.WithPathContext(ctx, graphql.NewPathWithField("tripId"))
+	if tmp, ok := rawArgs["tripId"]; ok {
+		return ec.unmarshalNID2string(ctx, tmp)
+	}
+
+	var zeroVal string
+	return zeroVal, nil
+}
+
 func (ec *executionContext) field___Directive_args_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -1537,6 +1798,50 @@ func (ec *executionContext) field___Type_fields_argsIncludeDeprecated(
 // endregion ************************** directives.gotpl **************************
 
 // region    **************************** field.gotpl *****************************
+
+func (ec *executionContext) _Address_useNickname(ctx context.Context, field graphql.CollectedField, obj *model.Address) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Address_useNickname(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.UseNickname, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Address_useNickname(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Address",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
 
 func (ec *executionContext) _Address_id(ctx context.Context, field graphql.CollectedField, obj *model.Address) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Address_id(ctx, field)
@@ -1670,6 +1975,50 @@ func (ec *executionContext) fieldContext_Address_statistics(_ context.Context, f
 				return ec.fieldContext_AddressStatistics_activeRecordCount(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type AddressStatistics", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AddressSnapshot_useNickname(ctx context.Context, field graphql.CollectedField, obj *model.AddressSnapshot) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AddressSnapshot_useNickname(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.UseNickname, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AddressSnapshot_useNickname(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AddressSnapshot",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
 		},
 	}
 	return fc, nil
@@ -1895,6 +2244,75 @@ func (ec *executionContext) fieldContext_AddressStatistics_activeRecordCount(_ c
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_updateMe(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_updateMe(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().UpdateMe(rctx, fc.Args["input"].(model.UpdateMe))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.User)
+	fc.Result = res
+	return ec.marshalNUser2ᚖdtmᚋgraphᚋmodelᚐUser(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_updateMe(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "name":
+				return ec.fieldContext_User_name(ctx, field)
+			case "email":
+				return ec.fieldContext_User_email(ctx, field)
+			case "subMail":
+				return ec.fieldContext_User_subMail(ctx, field)
+			case "id":
+				return ec.fieldContext_User_id(ctx, field)
+			case "subscribedTrips":
+				return ec.fieldContext_User_subscribedTrips(ctx, field)
+			case "bind":
+				return ec.fieldContext_User_bind(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_updateMe_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_createTrip(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Mutation_createTrip(ctx, field)
 	if err != nil {
@@ -1938,6 +2356,8 @@ func (ec *executionContext) fieldContext_Mutation_createTrip(ctx context.Context
 				return ec.fieldContext_TripSnapshot_id(ctx, field)
 			case "name":
 				return ec.fieldContext_TripSnapshot_name(ctx, field)
+			case "private":
+				return ec.fieldContext_TripSnapshot_private(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type TripSnapshot", field.Name)
 		},
@@ -1970,7 +2390,7 @@ func (ec *executionContext) _Mutation_updateTrip(ctx context.Context, field grap
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().UpdateTrip(rctx, fc.Args["tripId"].(string), fc.Args["input"].(model.NewTrip))
+		return ec.resolvers.Mutation().UpdateTrip(rctx, fc.Args["tripId"].(string), fc.Args["input"].(model.EditTrip))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -1999,6 +2419,8 @@ func (ec *executionContext) fieldContext_Mutation_updateTrip(ctx context.Context
 				return ec.fieldContext_TripSnapshot_id(ctx, field)
 			case "name":
 				return ec.fieldContext_TripSnapshot_name(ctx, field)
+			case "private":
+				return ec.fieldContext_TripSnapshot_private(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type TripSnapshot", field.Name)
 		},
@@ -2193,7 +2615,7 @@ func (ec *executionContext) _Mutation_createAddress(ctx context.Context, field g
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().CreateAddress(rctx, fc.Args["tripId"].(string), fc.Args["input"].(model.NewAddress))
+		return ec.resolvers.Mutation().CreateAddress(rctx, fc.Args["tripId"].(string), fc.Args["input"].(model.NewAddress), fc.Args["bindToMe"].(bool))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -2218,6 +2640,8 @@ func (ec *executionContext) fieldContext_Mutation_createAddress(ctx context.Cont
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "useNickname":
+				return ec.fieldContext_AddressSnapshot_useNickname(ctx, field)
 			case "id":
 				return ec.fieldContext_AddressSnapshot_id(ctx, field)
 			case "name":
@@ -2279,6 +2703,8 @@ func (ec *executionContext) fieldContext_Mutation_updateAddress(ctx context.Cont
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "useNickname":
+				return ec.fieldContext_AddressSnapshot_useNickname(ctx, field)
 			case "id":
 				return ec.fieldContext_AddressSnapshot_id(ctx, field)
 			case "name":
@@ -2340,6 +2766,8 @@ func (ec *executionContext) fieldContext_Mutation_deleteAddress(ctx context.Cont
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "useNickname":
+				return ec.fieldContext_AddressSnapshot_useNickname(ctx, field)
 			case "id":
 				return ec.fieldContext_AddressSnapshot_id(ctx, field)
 			case "name":
@@ -2401,10 +2829,18 @@ func (ec *executionContext) fieldContext_Mutation_subscribeTrip(ctx context.Cont
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "name":
+				return ec.fieldContext_User_name(ctx, field)
+			case "email":
+				return ec.fieldContext_User_email(ctx, field)
+			case "subMail":
+				return ec.fieldContext_User_subMail(ctx, field)
 			case "id":
 				return ec.fieldContext_User_id(ctx, field)
 			case "subscribedTrips":
 				return ec.fieldContext_User_subscribedTrips(ctx, field)
+			case "bind":
+				return ec.fieldContext_User_bind(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
 		},
@@ -2462,10 +2898,18 @@ func (ec *executionContext) fieldContext_Mutation_touchSubscribedTrip(ctx contex
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "name":
+				return ec.fieldContext_User_name(ctx, field)
+			case "email":
+				return ec.fieldContext_User_email(ctx, field)
+			case "subMail":
+				return ec.fieldContext_User_subMail(ctx, field)
 			case "id":
 				return ec.fieldContext_User_id(ctx, field)
 			case "subscribedTrips":
 				return ec.fieldContext_User_subscribedTrips(ctx, field)
+			case "bind":
+				return ec.fieldContext_User_bind(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
 		},
@@ -2523,10 +2967,18 @@ func (ec *executionContext) fieldContext_Mutation_unsubscribeTrip(ctx context.Co
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "name":
+				return ec.fieldContext_User_name(ctx, field)
+			case "email":
+				return ec.fieldContext_User_email(ctx, field)
+			case "subMail":
+				return ec.fieldContext_User_subMail(ctx, field)
 			case "id":
 				return ec.fieldContext_User_id(ctx, field)
 			case "subscribedTrips":
 				return ec.fieldContext_User_subscribedTrips(ctx, field)
+			case "bind":
+				return ec.fieldContext_User_bind(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
 		},
@@ -2539,6 +2991,144 @@ func (ec *executionContext) fieldContext_Mutation_unsubscribeTrip(ctx context.Co
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_unsubscribeTrip_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_bind(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_bind(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().Bind(rctx, fc.Args["tripId"].(string), fc.Args["addressId"].(*string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.User)
+	fc.Result = res
+	return ec.marshalNUser2ᚖdtmᚋgraphᚋmodelᚐUser(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_bind(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "name":
+				return ec.fieldContext_User_name(ctx, field)
+			case "email":
+				return ec.fieldContext_User_email(ctx, field)
+			case "subMail":
+				return ec.fieldContext_User_subMail(ctx, field)
+			case "id":
+				return ec.fieldContext_User_id(ctx, field)
+			case "subscribedTrips":
+				return ec.fieldContext_User_subscribedTrips(ctx, field)
+			case "bind":
+				return ec.fieldContext_User_bind(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_bind_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_unbind(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_unbind(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().Unbind(rctx, fc.Args["tripId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.User)
+	fc.Result = res
+	return ec.marshalNUser2ᚖdtmᚋgraphᚋmodelᚐUser(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_unbind(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "name":
+				return ec.fieldContext_User_name(ctx, field)
+			case "email":
+				return ec.fieldContext_User_email(ctx, field)
+			case "subMail":
+				return ec.fieldContext_User_subMail(ctx, field)
+			case "id":
+				return ec.fieldContext_User_id(ctx, field)
+			case "subscribedTrips":
+				return ec.fieldContext_User_subscribedTrips(ctx, field)
+			case "bind":
+				return ec.fieldContext_User_bind(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_unbind_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -2628,6 +3218,8 @@ func (ec *executionContext) fieldContext_Payment_address(_ context.Context, fiel
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "useNickname":
+				return ec.fieldContext_Address_useNickname(ctx, field)
 			case "id":
 				return ec.fieldContext_Address_id(ctx, field)
 			case "name":
@@ -2636,6 +3228,61 @@ func (ec *executionContext) fieldContext_Payment_address(_ context.Context, fiel
 				return ec.fieldContext_Address_statistics(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_me(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_me(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().Me(rctx)
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.User)
+	fc.Result = res
+	return ec.marshalOUser2ᚖdtmᚋgraphᚋmodelᚐUser(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_me(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "name":
+				return ec.fieldContext_User_name(ctx, field)
+			case "email":
+				return ec.fieldContext_User_email(ctx, field)
+			case "subMail":
+				return ec.fieldContext_User_subMail(ctx, field)
+			case "id":
+				return ec.fieldContext_User_id(ctx, field)
+			case "subscribedTrips":
+				return ec.fieldContext_User_subscribedTrips(ctx, field)
+			case "bind":
+				return ec.fieldContext_User_bind(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
 		},
 	}
 	return fc, nil
@@ -2681,6 +3328,8 @@ func (ec *executionContext) fieldContext_Query_trip(ctx context.Context, field g
 				return ec.fieldContext_Trip_id(ctx, field)
 			case "name":
 				return ec.fieldContext_Trip_name(ctx, field)
+			case "private":
+				return ec.fieldContext_Trip_private(ctx, field)
 			case "records":
 				return ec.fieldContext_Trip_records(ctx, field)
 			case "moneyShare":
@@ -2703,53 +3352,6 @@ func (ec *executionContext) fieldContext_Query_trip(ctx context.Context, field g
 	if fc.Args, err = ec.field_Query_trip_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
-	}
-	return fc, nil
-}
-
-func (ec *executionContext) _Query_me(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_me(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
-		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Me(rctx)
-	})
-	if err != nil {
-		ec.Error(ctx, err)
-		return graphql.Null
-	}
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*model.User)
-	fc.Result = res
-	return ec.marshalOUser2ᚖdtmᚋgraphᚋmodelᚐUser(ctx, field.Selections, res)
-}
-
-func (ec *executionContext) fieldContext_Query_me(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	fc = &graphql.FieldContext{
-		Object:     "Query",
-		Field:      field,
-		IsMethod:   true,
-		IsResolver: true,
-		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			switch field.Name {
-			case "id":
-				return ec.fieldContext_User_id(ctx, field)
-			case "subscribedTrips":
-				return ec.fieldContext_User_subscribedTrips(ctx, field)
-			}
-			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
-		},
 	}
 	return fc, nil
 }
@@ -3047,6 +3649,8 @@ func (ec *executionContext) fieldContext_Record_prePayAddress(_ context.Context,
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "useNickname":
+				return ec.fieldContext_Address_useNickname(ctx, field)
 			case "id":
 				return ec.fieldContext_Address_id(ctx, field)
 			case "name":
@@ -3140,6 +3744,8 @@ func (ec *executionContext) fieldContext_Record_shouldPayAddress(_ context.Conte
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "useNickname":
+				return ec.fieldContext_Address_useNickname(ctx, field)
 			case "id":
 				return ec.fieldContext_Address_id(ctx, field)
 			case "name":
@@ -3573,6 +4179,8 @@ func (ec *executionContext) fieldContext_RecordSnapshot_prePayAddress(_ context.
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "useNickname":
+				return ec.fieldContext_AddressSnapshot_useNickname(ctx, field)
 			case "id":
 				return ec.fieldContext_AddressSnapshot_id(ctx, field)
 			case "name":
@@ -3664,6 +4272,8 @@ func (ec *executionContext) fieldContext_RecordSnapshot_shouldPayAddress(_ conte
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "useNickname":
+				return ec.fieldContext_AddressSnapshot_useNickname(ctx, field)
 			case "id":
 				return ec.fieldContext_AddressSnapshot_id(ctx, field)
 			case "name":
@@ -4308,6 +4918,8 @@ func (ec *executionContext) fieldContext_Subscription_subAddressCreate(ctx conte
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "useNickname":
+				return ec.fieldContext_AddressSnapshot_useNickname(ctx, field)
 			case "id":
 				return ec.fieldContext_AddressSnapshot_id(ctx, field)
 			case "name":
@@ -4383,6 +4995,8 @@ func (ec *executionContext) fieldContext_Subscription_subAddressUpdate(ctx conte
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "useNickname":
+				return ec.fieldContext_AddressSnapshot_useNickname(ctx, field)
 			case "id":
 				return ec.fieldContext_AddressSnapshot_id(ctx, field)
 			case "name":
@@ -4458,6 +5072,8 @@ func (ec *executionContext) fieldContext_Subscription_subAddressDelete(ctx conte
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "useNickname":
+				return ec.fieldContext_AddressSnapshot_useNickname(ctx, field)
 			case "id":
 				return ec.fieldContext_AddressSnapshot_id(ctx, field)
 			case "name":
@@ -4563,6 +5179,50 @@ func (ec *executionContext) fieldContext_Trip_name(_ context.Context, field grap
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Trip_private(ctx context.Context, field graphql.CollectedField, obj *model.Trip) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Trip_private(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Private, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Trip_private(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Trip",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
 		},
 	}
 	return fc, nil
@@ -4727,6 +5387,8 @@ func (ec *executionContext) fieldContext_Trip_addresses(_ context.Context, field
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "useNickname":
+				return ec.fieldContext_Address_useNickname(ctx, field)
 			case "id":
 				return ec.fieldContext_Address_id(ctx, field)
 			case "name":
@@ -4779,6 +5441,101 @@ func (ec *executionContext) fieldContext_Trip_isValid(_ context.Context, field g
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _TripBinding_tripId(ctx context.Context, field graphql.CollectedField, obj *model.TripBinding) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_TripBinding_tripId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TripID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_TripBinding_tripId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "TripBinding",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _TripBinding_address(ctx context.Context, field graphql.CollectedField, obj *model.TripBinding) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_TripBinding_address(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Address, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Address)
+	fc.Result = res
+	return ec.marshalOAddress2ᚖdtmᚋgraphᚋmodelᚐAddress(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_TripBinding_address(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "TripBinding",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "useNickname":
+				return ec.fieldContext_Address_useNickname(ctx, field)
+			case "id":
+				return ec.fieldContext_Address_id(ctx, field)
+			case "name":
+				return ec.fieldContext_Address_name(ctx, field)
+			case "statistics":
+				return ec.fieldContext_Address_statistics(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Address", field.Name)
 		},
 	}
 	return fc, nil
@@ -4867,6 +5624,50 @@ func (ec *executionContext) fieldContext_TripSnapshot_name(_ context.Context, fi
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _TripSnapshot_private(ctx context.Context, field graphql.CollectedField, obj *model.TripSnapshot) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_TripSnapshot_private(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Private, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_TripSnapshot_private(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "TripSnapshot",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
 		},
 	}
 	return fc, nil
@@ -4972,6 +5773,132 @@ func (ec *executionContext) fieldContext_Tx_output(_ context.Context, field grap
 	return fc, nil
 }
 
+func (ec *executionContext) _User_name(ctx context.Context, field graphql.CollectedField, obj *model.User) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_User_name(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Name, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_User_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "User",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _User_email(ctx context.Context, field graphql.CollectedField, obj *model.User) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_User_email(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Email, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_User_email(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "User",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _User_subMail(ctx context.Context, field graphql.CollectedField, obj *model.User) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_User_subMail(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SubMail, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_User_subMail(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "User",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _User_id(ctx context.Context, field graphql.CollectedField, obj *model.User) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_User_id(ctx, field)
 	if err != nil {
@@ -5064,6 +5991,64 @@ func (ec *executionContext) fieldContext_User_subscribedTrips(_ context.Context,
 			}
 			return nil, fmt.Errorf("no field named %q was found under type SubscribedTrip", field.Name)
 		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _User_bind(ctx context.Context, field graphql.CollectedField, obj *model.User) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_User_bind(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.User().Bind(rctx, obj, fc.Args["tripId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.TripBinding)
+	fc.Result = res
+	return ec.marshalOTripBinding2ᚖdtmᚋgraphᚋmodelᚐTripBinding(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_User_bind(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "User",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "tripId":
+				return ec.fieldContext_TripBinding_tripId(ctx, field)
+			case "address":
+				return ec.fieldContext_TripBinding_address(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type TripBinding", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_User_bind_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
 	}
 	return fc, nil
 }
@@ -7053,14 +8038,14 @@ func (ec *executionContext) unmarshalInputEditRecord(ctx context.Context, obj an
 	return it, nil
 }
 
-func (ec *executionContext) unmarshalInputNewAddress(ctx context.Context, obj any) (model.NewAddress, error) {
-	var it model.NewAddress
+func (ec *executionContext) unmarshalInputEditTrip(ctx context.Context, obj any) (model.EditTrip, error) {
+	var it model.EditTrip
 	asMap := map[string]any{}
 	for k, v := range obj.(map[string]any) {
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"name"}
+	fieldsInOrder := [...]string{"name", "private"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -7069,7 +8054,48 @@ func (ec *executionContext) unmarshalInputNewAddress(ctx context.Context, obj an
 		switch k {
 		case "name":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("name"))
-			data, err := ec.unmarshalNString2string(ctx, v)
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Name = data
+		case "private":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("private"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Private = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputNewAddress(ctx context.Context, obj any) (model.NewAddress, error) {
+	var it model.NewAddress
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"useNickname", "name"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "useNickname":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("useNickname"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.UseNickname = data
+		case "name":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("name"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
 			if err != nil {
 				return it, err
 			}
@@ -7183,6 +8209,40 @@ func (ec *executionContext) unmarshalInputNewTrip(ctx context.Context, obj any) 
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputUpdateMe(ctx context.Context, obj any) (model.UpdateMe, error) {
+	var it model.UpdateMe
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"name", "subMail"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "name":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("name"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Name = data
+		case "subMail":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("subMail"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SubMail = data
+		}
+	}
+
+	return it, nil
+}
+
 // endregion **************************** input.gotpl *****************************
 
 // region    ************************** interface.gotpl ***************************
@@ -7202,6 +8262,11 @@ func (ec *executionContext) _Address(ctx context.Context, sel ast.SelectionSet, 
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Address")
+		case "useNickname":
+			out.Values[i] = ec._Address_useNickname(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
 		case "id":
 			out.Values[i] = ec._Address_id(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -7279,6 +8344,11 @@ func (ec *executionContext) _AddressSnapshot(ctx context.Context, sel ast.Select
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("AddressSnapshot")
+		case "useNickname":
+			out.Values[i] = ec._AddressSnapshot_useNickname(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "id":
 			out.Values[i] = ec._AddressSnapshot_id(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -7380,6 +8450,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Mutation")
+		case "updateMe":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_updateMe(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "createTrip":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_createTrip(ctx, field)
@@ -7446,6 +8523,20 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "unsubscribeTrip":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_unsubscribeTrip(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "bind":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_bind(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "unbind":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_unbind(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -7536,25 +8627,6 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Query")
-		case "trip":
-			field := field
-
-			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
-				defer func() {
-					if r := recover(); r != nil {
-						ec.Error(ctx, ec.Recover(ctx, r))
-					}
-				}()
-				res = ec._Query_trip(ctx, field)
-				return res
-			}
-
-			rrm := func(ctx context.Context) graphql.Marshaler {
-				return ec.OperationContext.RootResolverMiddleware(ctx,
-					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
-			}
-
-			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "me":
 			field := field
 
@@ -7565,6 +8637,25 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_me(ctx, field)
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "trip":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_trip(ctx, field)
 				return res
 			}
 
@@ -7855,6 +8946,11 @@ func (ec *executionContext) _Trip(ctx context.Context, sel ast.SelectionSet, obj
 			if out.Values[i] == graphql.Null {
 				atomic.AddUint32(&out.Invalids, 1)
 			}
+		case "private":
+			out.Values[i] = ec._Trip_private(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
 		case "records":
 			field := field
 
@@ -8022,6 +9118,47 @@ func (ec *executionContext) _Trip(ctx context.Context, sel ast.SelectionSet, obj
 	return out
 }
 
+var tripBindingImplementors = []string{"TripBinding"}
+
+func (ec *executionContext) _TripBinding(ctx context.Context, sel ast.SelectionSet, obj *model.TripBinding) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, tripBindingImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("TripBinding")
+		case "tripId":
+			out.Values[i] = ec._TripBinding_tripId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "address":
+			out.Values[i] = ec._TripBinding_address(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var tripSnapshotImplementors = []string{"TripSnapshot"}
 
 func (ec *executionContext) _TripSnapshot(ctx context.Context, sel ast.SelectionSet, obj *model.TripSnapshot) graphql.Marshaler {
@@ -8040,6 +9177,11 @@ func (ec *executionContext) _TripSnapshot(ctx context.Context, sel ast.Selection
 			}
 		case "name":
 			out.Values[i] = ec._TripSnapshot_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "private":
+			out.Values[i] = ec._TripSnapshot_private(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -8121,6 +9263,15 @@ func (ec *executionContext) _User(ctx context.Context, sel ast.SelectionSet, obj
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("User")
+		case "name":
+			out.Values[i] = ec._User_name(ctx, field, obj)
+		case "email":
+			out.Values[i] = ec._User_email(ctx, field, obj)
+		case "subMail":
+			out.Values[i] = ec._User_subMail(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
 		case "id":
 			out.Values[i] = ec._User_id(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -8139,6 +9290,39 @@ func (ec *executionContext) _User(ctx context.Context, sel ast.SelectionSet, obj
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "bind":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._User_bind(ctx, field, obj)
 				return res
 			}
 
@@ -8609,6 +9793,11 @@ func (ec *executionContext) unmarshalNEditRecord2dtmᚋgraphᚋmodelᚐEditRecor
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) unmarshalNEditTrip2dtmᚋgraphᚋmodelᚐEditTrip(ctx context.Context, v any) (model.EditTrip, error) {
+	res, err := ec.unmarshalInputEditTrip(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) unmarshalNFloat2float64(ctx context.Context, v any) (float64, error) {
 	res, err := graphql.UnmarshalFloatContext(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -8970,6 +10159,11 @@ func (ec *executionContext) marshalNTx2ᚖdtmᚋgraphᚋmodelᚐTx(ctx context.C
 		return graphql.Null
 	}
 	return ec._Tx(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNUpdateMe2dtmᚋgraphᚋmodelᚐUpdateMe(ctx context.Context, v any) (model.UpdateMe, error) {
+	res, err := ec.unmarshalInputUpdateMe(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) marshalNUser2dtmᚋgraphᚋmodelᚐUser(ctx context.Context, sel ast.SelectionSet, v model.User) graphql.Marshaler {
@@ -9502,6 +10696,13 @@ func (ec *executionContext) marshalOTrip2ᚖdtmᚋgraphᚋmodelᚐTrip(ctx conte
 		return graphql.Null
 	}
 	return ec._Trip(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalOTripBinding2ᚖdtmᚋgraphᚋmodelᚐTripBinding(ctx context.Context, sel ast.SelectionSet, v *model.TripBinding) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._TripBinding(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalOUser2ᚖdtmᚋgraphᚋmodelᚐUser(ctx context.Context, sel ast.SelectionSet, v *model.User) graphql.Marshaler {

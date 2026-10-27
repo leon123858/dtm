@@ -19,3 +19,14 @@ func (s *service) UnsubscribeTrip(ctx context.Context, userID, tripID uuid.UUID)
 func (s *service) TouchSubscribedTrip(ctx context.Context, userID, tripID uuid.UUID) error {
 	return s.store.TouchSubscribedTrip(ctx, userID, tripID)
 }
+
+func (s *service) GetUser(ctx context.Context, id uuid.UUID) (domain.User, error) {
+	return s.store.GetUser(ctx, id)
+}
+func (s *service) UpdateMe(ctx context.Context, name *string, sub *bool) (domain.User, error) {
+	id, ok := domain.UserIDFromContext(ctx)
+	if !ok {
+		return domain.User{}, domain.ErrUnauthenticated
+	}
+	return s.store.UpdateUser(ctx, id, name, sub)
+}

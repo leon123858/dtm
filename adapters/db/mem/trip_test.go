@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"dtm/adapters/db/internal/testutil"
+	"dtm/adapters/db/testutil"
 	"dtm/domain"
 	"dtm/libs/chainlist"
 
@@ -21,9 +21,9 @@ func setupTrip(t *testing.T) (*inMemoryTripDBWrapper, uuid.UUID, domain.Address,
 	database := NewInMemoryTripDBWrapper().(*inMemoryTripDBWrapper)
 	tripID := uuid.New()
 	require.NoError(t, database.CreateTrip(&domain.TripInfo{ID: tripID, Name: "trip"}))
-	payer, err := database.CreateAddress(tripID, "payer")
+	payer, err := database.CreateAddress(context.Background(), tripID, "payer")
 	require.NoError(t, err)
-	member, err := database.CreateAddress(tripID, "member")
+	member, err := database.CreateAddress(context.Background(), tripID, "member")
 	require.NoError(t, err)
 	return database, tripID, *payer, *member
 }
@@ -149,4 +149,27 @@ func TestCompleteRecordReadContract(t *testing.T) {
 
 func TestSharePatchContract(t *testing.T) {
 	testutil.CheckSharePatchContract(t, NewInMemoryTripDBWrapper())
+}
+
+func TestDeleteAddressProtectsPayerAndRecipient(t *testing.T) {
+	database, tripID, payer, member := setupTrip(t)
+	_, err := database.AppendNew(context.Background(), tripID, paymentRecord(uuid.New(), payer, member), testutil.Materializer{})
+	require.NoError(t, err)
+	for _, id := range []uuid.UUID{payer.ID, member.ID} {
+		result, err := database.DeleteAddress(context.Background(), tripID, id)
+		require.ErrorContains(t, err, "referenced")
+		require.Nil(t, result)
+		require.Len(t, database.tripsData[tripID].AddressList, 2)
+		require.Len(t, database.tripsData[tripID].Records, 1)
+	}
+	spare, err := database.CreateAddress(context.Background(), tripID, "unused")
+	require.NoError(t, err)
+	removed, err := database.DeleteAddress(context.Background(), tripID, spare.ID)
+	require.NoError(t, err)
+	require.Equal(t, spare, removed)
+	require.Len(t, database.tripsData[tripID].AddressList, 2)
+	_, err = database.DeleteAddress(context.Background(), tripID, spare.ID)
+	require.ErrorContains(t, err, "not found")
+	_, err = database.DeleteAddress(context.Background(), uuid.New(), payer.ID)
+	require.ErrorContains(t, err, "not found")
 }

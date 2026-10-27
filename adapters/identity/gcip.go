@@ -70,6 +70,7 @@ func (g *GCIP) SignIn(ctx context.Context, credential Credential[GCIPCredential]
 		IDToken          string `json:"idToken"`
 		RefreshToken     string `json:"refreshToken"`
 		ExpiresIn        string `json:"expiresIn"`
+		Email            string `json:"email"`
 		LocalID          string `json:"localId"`
 		ProviderID       string `json:"providerId"`
 		NeedConfirmation bool   `json:"needConfirmation"`
@@ -88,6 +89,7 @@ func (g *GCIP) SignIn(ctx context.Context, credential Credential[GCIPCredential]
 		return Tokens{}, err
 	}
 	tokens.LocalID = result.LocalID
+	tokens.Email = result.Email
 	return tokens, nil
 }
 func (g *GCIP) Refresh(ctx context.Context, token string) (Tokens, error) {

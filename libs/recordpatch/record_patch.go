@@ -3,10 +3,10 @@
 package recordpatch
 
 import (
+	"dtm/libs/textvalidate"
 	"fmt"
 	"slices"
 	"strconv"
-	"time"
 
 	"dtm/domain"
 	"dtm/libs/diff"
@@ -71,11 +71,11 @@ func materialize(fields domain.RecordFields, tail domain.Record) (domain.Record,
 	result.Category = domain.RecordCategory(category)
 	// Preserve the tail's original precision and location if Time was untouched.
 	if fields.Time != strconv.FormatInt(tail.Time.UnixMilli(), 10) {
-		millis, err := strconv.ParseInt(fields.Time, 10, 64)
+		timestamp, err := textvalidate.ParseTimestamp(fields.Time)
 		if err != nil {
 			return domain.Record{}, fmt.Errorf("invalid patched time: %w", err)
 		}
-		result.Time = time.UnixMilli(millis)
+		result.Time = timestamp
 	}
 	payerID, err := uuid.Parse(fields.PrePayAddressID)
 	if err != nil {

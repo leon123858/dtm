@@ -40,6 +40,8 @@ type Trip interface {
 	Info(context.Context) (*domain.TripInfo, error)
 	UpdateInfo(context.Context, string) (*domain.TripInfo, error)
 	Addresses(context.Context) ([]domain.Address, error)
+	CreateAddressWithOptions(context.Context, *string, *bool, bool) (*domain.Address, bool, error)
+	PatchAddress(context.Context, uuid.UUID, *string, *bool) (*domain.Address, bool, error)
 	CreateAddress(context.Context, string) (*domain.Address, error)
 	UpdateAddress(context.Context, uuid.UUID, string) (*domain.Address, error)
 	DeleteAddress(context.Context, uuid.UUID) (*domain.Address, error)
@@ -53,6 +55,7 @@ type Trip interface {
 type ReadOptions struct{ HaveHistory bool }
 
 type TripFactory interface {
+	db.BindingStore
 	Create(context.Context, string) (Trip, error)
 	ForTrip(uuid.UUID, ...ReadOptions) Trip
 }
@@ -82,5 +85,5 @@ func NewRecordFactory(readers db.ReaderProvider) RecordFactory {
 }
 
 func NewTripFactory(store db.TripStore, authStore db.AuthDBWrapper, readers db.ReaderProvider) TripFactory {
-	return &tripFactory{store: store, authStore: authStore, readers: readers, policy: recordPolicy{}}
+	return &tripFactory{BindingStore: store, store: store, authStore: authStore, readers: readers, policy: recordPolicy{}}
 }

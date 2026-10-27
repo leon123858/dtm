@@ -10,8 +10,10 @@ import (
 )
 
 type AddressSnapshot struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	// Use the trip nickname instead of the bound user profile name; defaults to false.
+	UseNickname bool   `json:"useNickname"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
 }
 
 type AddressStatistics struct {
@@ -29,11 +31,19 @@ type EditRecord struct {
 	New *NewRecord `json:"new,omitempty"`
 }
 
+type EditTrip struct {
+	Name    *string `json:"name,omitempty"`
+	Private *bool   `json:"private,omitempty"`
+}
+
 type Mutation struct {
 }
 
 type NewAddress struct {
-	Name string `json:"name"`
+	// Use the trip nickname instead of the bound user profile name; defaults to false.
+	UseNickname *bool `json:"useNickname,omitempty"`
+	// Trip nickname for this participant.
+	Name *string `json:"name,omitempty"`
 }
 
 type NewRecord struct {
@@ -86,14 +96,25 @@ type SubscribedTrip struct {
 type Subscription struct {
 }
 
+type TripBinding struct {
+	TripID  string   `json:"tripId"`
+	Address *Address `json:"address,omitempty"`
+}
+
 type TripSnapshot struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Private bool   `json:"private"`
 }
 
 type Tx struct {
 	Input  []*Payment `json:"input"`
 	Output *Payment   `json:"output"`
+}
+
+type UpdateMe struct {
+	Name    *string `json:"name,omitempty"`
+	SubMail *bool   `json:"subMail,omitempty"`
 }
 
 type RecordCategory string

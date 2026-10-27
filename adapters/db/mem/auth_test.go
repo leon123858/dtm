@@ -2,7 +2,7 @@ package mem
 
 import (
 	"context"
-	"dtm/adapters/db/internal/testutil"
+	"dtm/adapters/db/testutil"
 	"dtm/domain"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"

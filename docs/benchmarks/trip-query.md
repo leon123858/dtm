@@ -53,7 +53,7 @@ Harness 使用隨機命名的獨立 schema，在每條 DB 連線設定該 schema
 - 使用正式 GraphQL handler 和 request loader middleware 的本機 HTTP server，以及真實 PG adapter。沒有經過 reverse proxy、TLS、gzip、存取日誌或 MQ；這些不影響本次驗證的去重路徑。
 - 保留目前 dataloadgen v0.0.8 的預設 16ms batch wait；低併發延遲包含這段等待。
 - PostgreSQL connection pool 為 32，HTTP client 上限為 256，request timeout 為 30 秒。每輪先做一個暖機 request，再重設 counters；暖機、fixture、migrations 與清理不計入結果。
-- `DataLoaderDebug` 計 backing fetch 次數與 key 數；獨立 GORM logger 計實際 SELECT，沒有逐筆列印 SQL。兩組計數必須吻合。
+- 測試用 `testutil.LoaderCounters` 包裝 store，依各 benchmark harness 計 backing fetch 次數與 key 數；獨立 GORM logger 計實際 SELECT，沒有逐筆列印 SQL。兩組計數必須吻合。
 - Counters 是 process-global。各輪循序執行，等所有 workers 結束才取 snapshot。原子欄位不代表多欄位 snapshot/reset 是一致的交易；量測期間不能重設。
 - 每列 `TRIP_BENCH` JSON 包含 throughput、p50/p95/p99、錯誤數、SQL、四類 counters，以及連線池等待量。PoolWaitMS 是所有等待的加總，可能大於牆鐘時間。
 - 延遲包含 HTTP 傳輸、完整 JSON decode 與回應正確性檢查；client 與 server 共用同一程序及 CPU。這是固定併發的 closed-loop 實驗，不能當成生產環境最大 QPS 或開放到達率下的 SLA。

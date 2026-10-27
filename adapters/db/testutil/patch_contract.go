@@ -22,9 +22,9 @@ func CheckPatchContract(t *testing.T, store db.TripDBWrapper) {
 	ctx := context.Background()
 	tripID := uuid.New()
 	require.NoError(t, store.CreateTrip(&domain.TripInfo{ID: tripID, Name: "patch contract"}))
-	payer, err := store.CreateAddress(tripID, "payer")
+	payer, err := store.CreateAddress(context.Background(), tripID, "payer")
 	require.NoError(t, err)
-	member, err := store.CreateAddress(tripID, "member")
+	member, err := store.CreateAddress(context.Background(), tripID, "member")
 	require.NoError(t, err)
 	base := domain.Record{
 		RecordInfo: domain.RecordInfo{ID: uuid.New(), Name: "meal", Amount: 20, Time: time.UnixMilli(1234), PrePayAddress: *payer},
@@ -123,9 +123,9 @@ func checkPatchAddressConstraints(t *testing.T, store db.TripDBWrapper) {
 	tripID, otherTripID := uuid.New(), uuid.New()
 	require.NoError(t, store.CreateTrip(&domain.TripInfo{ID: tripID, Name: "constraints"}))
 	require.NoError(t, store.CreateTrip(&domain.TripInfo{ID: otherTripID, Name: "other"}))
-	member, err := store.CreateAddress(tripID, "member")
+	member, err := store.CreateAddress(context.Background(), tripID, "member")
 	require.NoError(t, err)
-	foreign, err := store.CreateAddress(otherTripID, "foreign")
+	foreign, err := store.CreateAddress(context.Background(), otherTripID, "foreign")
 	require.NoError(t, err)
 	base := domain.Record{
 		RecordInfo: domain.RecordInfo{ID: uuid.New(), Name: "meal", Amount: 20, Time: time.UnixMilli(1234), PrePayAddress: *member},
@@ -173,11 +173,11 @@ func CheckSharePatchContract(t *testing.T, store db.TripDBWrapper) {
 			ctx := context.Background()
 			tripID := uuid.New()
 			require.NoError(t, store.CreateTrip(&domain.TripInfo{ID: tripID, Name: "share contract"}))
-			a, err := store.CreateAddress(tripID, "A")
+			a, err := store.CreateAddress(context.Background(), tripID, "A")
 			require.NoError(t, err)
-			b, err := store.CreateAddress(tripID, "B")
+			b, err := store.CreateAddress(context.Background(), tripID, "B")
 			require.NoError(t, err)
-			c, err := store.CreateAddress(tripID, "C")
+			c, err := store.CreateAddress(context.Background(), tripID, "C")
 			require.NoError(t, err)
 			base := domain.Record{RecordInfo: domain.RecordInfo{ID: uuid.New(), Name: "meal", Amount: 20, Time: time.UnixMilli(1234), PrePayAddress: *a}, RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{{Address: *a, ExtendMsg: 1}, {Address: *b, ExtendMsg: 2}}}}
 			_, err = store.AppendNew(ctx, tripID, base, Materializer{})

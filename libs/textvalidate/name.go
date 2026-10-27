@@ -1,4 +1,4 @@
-// Package textvalidate validates names without modifying their text.
+// Package textvalidate validates text and transport formats without sanitizing or rewriting input.
 package textvalidate
 
 import (

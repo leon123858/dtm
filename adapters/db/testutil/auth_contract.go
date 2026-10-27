@@ -117,7 +117,7 @@ func CheckUserContract(t *testing.T, store, other db.AuthDBWrapper, trips db.Tri
 	require.NoError(t, err)
 	require.Equal(t, list, unchanged)
 	require.ErrorIs(t, other.TouchSubscribedTrip(ctx, v.ID, a.ID), domain.ErrSubscriptionNotFound)
-	require.ErrorIs(t, store.TouchSubscribedTrip(ctx, u.ID, uuid.New()), domain.ErrSubscriptionNotFound)
+	require.ErrorIs(t, store.TouchSubscribedTrip(ctx, u.ID, uuid.New()), domain.ErrTripNotFound)
 	require.NoError(t, other.SubscribeTrip(ctx, v.ID, a.ID))
 	isolated, err := other.SubscribedTrips(ctx, v.ID)
 	require.NoError(t, err)
@@ -153,8 +153,8 @@ func CheckUserContract(t *testing.T, store, other db.AuthDBWrapper, trips db.Tri
 			require.True(t, subscription.LastViewedAt.After(initial[a.ID]))
 		}
 	}
-	require.NoError(t, trips.DeleteTrip(a.ID))
-	require.ErrorIs(t, store.TouchSubscribedTrip(ctx, u.ID, a.ID), domain.ErrSubscriptionNotFound)
+	require.NoError(t, trips.DeleteTrip(context.Background(), a.ID))
+	require.ErrorIs(t, store.TouchSubscribedTrip(ctx, u.ID, a.ID), domain.ErrTripNotFound)
 
 	list, err = store.SubscribedTrips(ctx, u.ID)
 	require.NoError(t, err)
@@ -167,7 +167,7 @@ func CheckUserContract(t *testing.T, store, other db.AuthDBWrapper, trips db.Tri
 	require.Nil(t, infos[failed.ID])
 	require.Error(t, store.CreateSubscribedTrip(ctx, u.ID, b))
 	require.NoError(t, store.SubscribeTrip(ctx, v.ID, b.ID))
-	require.NoError(t, trips.DeleteTrip(b.ID))
+	require.NoError(t, trips.DeleteTrip(context.Background(), b.ID))
 	list, err = store.SubscribedTrips(ctx, v.ID)
 	require.NoError(t, err)
 	require.Empty(t, list)

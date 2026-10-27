@@ -3,6 +3,7 @@ package identity
 import (
 	"context"
 	"crypto/rsa"
+	"dtm/libs/textvalidate"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,7 +12,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -120,7 +120,7 @@ func (v *GCIPVerifier) Verify(ctx context.Context, raw string) (string, error) {
 		return "", ErrToken
 	}
 	now := v.now()
-	if claims.IssuedAt == nil || claims.AuthTime == nil || claims.AuthTime.After(now) || claims.AuthTime.Unix() <= 0 || claims.IssuedAt.Unix() <= 0 || strings.TrimSpace(claims.Subject) == "" || !utf8.ValidString(claims.Subject) || utf8.RuneCountInString(claims.Subject) > 128 {
+	if claims.IssuedAt == nil || claims.AuthTime == nil || claims.AuthTime.After(now) || claims.AuthTime.Unix() <= 0 || claims.IssuedAt.Unix() <= 0 || textvalidate.ValidateSubject(claims.Subject) != nil {
 		return "", ErrToken
 	}
 	return claims.Subject, nil

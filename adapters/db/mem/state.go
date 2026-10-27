@@ -9,6 +9,7 @@ import (
 )
 
 type memoryState struct {
+	bindings map[uuid.UUID]map[uuid.UUID]*uuid.UUID
 	// Using maps to store domain.TripInfo and TripData by Trip ID.
 	users         map[uuid.UUID]domain.User
 	userIDsByGCID map[string]uuid.UUID
@@ -23,6 +24,7 @@ type memoryState struct {
 
 func newMemoryState() *memoryState {
 	return &memoryState{
+		bindings:      make(map[uuid.UUID]map[uuid.UUID]*uuid.UUID),
 		users:         make(map[uuid.UUID]domain.User),
 		userIDsByGCID: make(map[string]uuid.UUID),
 		subscriptions: make(map[uuid.UUID]map[uuid.UUID]time.Time),

@@ -20,7 +20,7 @@ func TestGCIPRequests(t *testing.T) {
 			require.Equal(t, "server-session", body["sessionId"])
 			require.NotContains(t, body, "postBody")
 			require.Equal(t, true, body["returnSecureToken"])
-			w.Write([]byte(`{"providerId":"google.com","localId":"member","idToken":"jwt","refreshToken":"refresh","expiresIn":"3600"}`))
+			w.Write([]byte(`{"email":"member@example.com","providerId":"google.com","localId":"member","idToken":"jwt","refreshToken":"refresh","expiresIn":"3600"}`))
 		} else {
 			require.NoError(t, r.ParseForm())
 			require.Equal(t, "refresh_token", r.Form.Get("grant_type"))
@@ -35,6 +35,7 @@ func TestGCIPRequests(t *testing.T) {
 	tokens, err := g.SignIn(context.Background(), Credential[GCIPCredential]{Data: GCIPCredential{ProviderID: "google.com", RequestURI: "https://example.com/callback?code=a%2Bb%26c&state=state", SessionID: "server-session"}})
 	require.NoError(t, err)
 	require.Equal(t, "jwt", tokens.IDToken)
+	require.Equal(t, "member@example.com", tokens.Email)
 	tokens, err = g.Refresh(context.Background(), "old+token")
 	require.NoError(t, err)
 	require.Equal(t, "rotated", tokens.RefreshToken)

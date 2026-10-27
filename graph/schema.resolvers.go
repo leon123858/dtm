@@ -21,10 +21,15 @@ import (
 )
 
 // Statistics is the resolver for the statistics field.
-func (r *addressResolver) Statistics(ctx context.Context, obj *model.Address) (*model.AddressStatistics, error) {
+func (r *addressResolver) Statistics(ctx context.Context, obj *model.Address) (resultValue *model.AddressStatistics, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
 	// Addresses can be nested under records or payments; use the enclosing trip's read options.
 	var parent *model.Trip
 	for field := graphql.GetFieldContext(ctx); field != nil; field = field.Parent {
+		if binding, ok := field.Result.(*model.TripBinding); ok {
+			parent = &model.Trip{ID: binding.TripID}
+			break
+		}
 		if trip, ok := field.Result.(*model.Trip); ok {
 			parent = trip
 			break
@@ -35,11 +40,11 @@ func (r *addressResolver) Statistics(ctx context.Context, obj *model.Address) (*
 	}
 	tripID, err := uuid.Parse(parent.ID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid trip ID: %w", err)
+		return nil, utils.UserError("BAD_USER_INPUT")
 	}
 	addressID, err := uuid.Parse(obj.ID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid address ID: %w", err)
+		return nil, utils.UserError("BAD_USER_INPUT")
 	}
 	trip, err := r.tripForID(tripID, tripservice.ReadOptions{HaveHistory: parent.HaveHistory})
 	if err != nil {
@@ -57,8 +62,22 @@ func (r *addressResolver) Statistics(ctx context.Context, obj *model.Address) (*
 	}, nil
 }
 
+// UpdateMe is the resolver for the updateMe field.
+func (r *mutationResolver) UpdateMe(ctx context.Context, input model.UpdateMe) (*model.User, error) {
+	if r.Auth == nil {
+		return nil, utils.UserError("INTERNAL_SERVER_ERROR")
+	}
+	u, err := r.Auth.UpdateMe(ctx, input.Name, input.SubMail)
+	if err != nil {
+		return nil, utils.MemberError(err)
+	}
+	utils.ResetLoader(ctx)
+	return utils.ToModelUser(u), nil
+}
+
 // CreateTrip is the resolver for the createTrip field.
-func (r *mutationResolver) CreateTrip(ctx context.Context, input model.NewTrip) (*model.TripSnapshot, error) {
+func (r *mutationResolver) CreateTrip(ctx context.Context, input model.NewTrip) (resultValue *model.TripSnapshot, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
 	if r.TripFactory == nil {
 		return nil, fmt.Errorf("trip factory is not configured")
 	}
@@ -80,41 +99,44 @@ func (r *mutationResolver) CreateTrip(ctx context.Context, input model.NewTrip) 
 }
 
 // UpdateTrip is the resolver for the updateTrip field.
-func (r *mutationResolver) UpdateTrip(ctx context.Context, tripID string, input model.NewTrip) (*model.TripSnapshot, error) {
-	if err := textvalidate.ValidateName(input.Name); err != nil {
-		return nil, fmt.Errorf("trip name %w", err)
+func (r *mutationResolver) UpdateTrip(ctx context.Context, tripID string, input model.EditTrip) (resultValue *model.TripSnapshot, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
+
+	if input.Name != nil {
+		if err := textvalidate.ValidateName(*input.Name); err != nil {
+			return nil, fmt.Errorf("trip name %w", err)
+		}
 	}
 
 	id, err := uuid.Parse(tripID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid trip ID: %w", err)
+		return nil, utils.UserError("BAD_USER_INPUT")
 	}
 
-	trip, err := r.tripForID(id)
-	if err != nil {
-		return nil, err
-	}
-	tripInfo, err := trip.UpdateInfo(ctx, input.Name)
+	tripInfo, err := r.TripFactory.PatchTripInfo(ctx, id, input.Name, input.Private)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update trip: %w", err)
 	}
 
+	utils.ResetLoader(ctx)
 	result := &model.TripSnapshot{
-		ID:   tripInfo.ID.String(),
-		Name: tripInfo.Name,
+		ID:      tripInfo.ID.String(),
+		Name:    tripInfo.Name,
+		Private: tripInfo.Private,
 	}
 	return result, nil
 }
 
 // CreateRecord is the resolver for the createRecord field.
-func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, input model.NewRecord) (*model.RecordSnapshot, error) {
+func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, input model.NewRecord) (resultValue *model.RecordSnapshot, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
 	if !utils.NormalizeRecordRequest(&input) {
 		return nil, fmt.Errorf("invalid record input")
 	}
 
 	tripUUID, err := uuid.Parse(tripID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid trip ID: %w", err)
+		return nil, utils.UserError("BAD_USER_INPUT")
 	}
 
 	record, err := utils.MapNewRecordToDomainRecord(input)
@@ -162,7 +184,8 @@ func (r *mutationResolver) CreateRecord(ctx context.Context, tripID string, inpu
 }
 
 // UpdateRecord is the resolver for the updateRecord field.
-func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, input model.EditRecord) (*model.RecordSnapshot, error) {
+func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, input model.EditRecord) (resultValue *model.RecordSnapshot, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
 	if input.Old == nil || input.New == nil {
 		return nil, fmt.Errorf("old and new record inputs are required")
 	}
@@ -173,7 +196,7 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, in
 
 	recordUUID, err := uuid.Parse(recordID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid record ID: %w", err)
+		return nil, utils.UserError("BAD_USER_INPUT")
 	}
 	factory, err := r.recordFactory(ctx)
 	if err != nil {
@@ -219,25 +242,32 @@ func (r *mutationResolver) UpdateRecord(ctx context.Context, recordID string, in
 }
 
 // CreateAddress is the resolver for the createAddress field.
-func (r *mutationResolver) CreateAddress(ctx context.Context, tripID string, input model.NewAddress) (*model.AddressSnapshot, error) {
-	if err := textvalidate.ValidateName(input.Name); err != nil {
-		return nil, fmt.Errorf("address name %w", err)
+func (r *mutationResolver) CreateAddress(ctx context.Context, tripID string, input model.NewAddress, bindToMe bool) (resultValue *model.AddressSnapshot, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
+	if !bindToMe && input.Name != nil {
+		if err := textvalidate.ValidateName(*input.Name); err != nil {
+			return nil, fmt.Errorf("address name %w", err)
+		}
 	}
 
 	tripUUID, err := uuid.Parse(tripID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid trip ID: %w", err)
+		return nil, utils.UserError("BAD_USER_INPUT")
 	}
 
 	trip, err := r.tripForID(tripUUID)
 	if err != nil {
 		return nil, err
 	}
-	address, err := trip.CreateAddress(ctx, input.Name)
+	address, changed, err := trip.CreateAddressWithOptions(ctx, input.Name, input.UseNickname, bindToMe)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create address: %w", err)
 	}
 
+	utils.ResetLoader(ctx)
+	if !changed {
+		return utils.ToAddressSnapshot(utils.ToModelAddress(*address)), nil
+	}
 	tripMQ := r.TripMessageQueueWrapper.GetTripAddressMessageQueue(mq.ActionCreate)
 	if err := tripMQ.Publish(mq.TripAddressMessage{
 		TripID:  tripUUID,
@@ -249,25 +279,32 @@ func (r *mutationResolver) CreateAddress(ctx context.Context, tripID string, inp
 }
 
 // UpdateAddress is the resolver for the updateAddress field.
-func (r *mutationResolver) UpdateAddress(ctx context.Context, tripID string, addressID string, input model.NewAddress) (*model.AddressSnapshot, error) {
-	if err := textvalidate.ValidateName(input.Name); err != nil {
-		return nil, fmt.Errorf("address name %w", err)
+func (r *mutationResolver) UpdateAddress(ctx context.Context, tripID string, addressID string, input model.NewAddress) (resultValue *model.AddressSnapshot, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
+	if input.Name != nil {
+		if err := textvalidate.ValidateName(*input.Name); err != nil {
+			return nil, fmt.Errorf("address name %w", err)
+		}
 	}
 	tripUUID, err := uuid.Parse(tripID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid trip ID: %w", err)
+		return nil, utils.UserError("BAD_USER_INPUT")
 	}
 	addressUUID, err := uuid.Parse(addressID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid address ID: %w", err)
+		return nil, utils.UserError("BAD_USER_INPUT")
 	}
 	trip, err := r.tripForID(tripUUID)
 	if err != nil {
 		return nil, err
 	}
-	address, err := trip.UpdateAddress(ctx, addressUUID, input.Name)
+	address, changed, err := trip.PatchAddress(ctx, addressUUID, input.Name, input.UseNickname)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update address: %w", err)
+	}
+	utils.ResetLoader(ctx)
+	if !changed {
+		return utils.ToAddressSnapshot(utils.ToModelAddress(*address)), nil
 	}
 	tripMQ := r.TripMessageQueueWrapper.GetTripAddressMessageQueue(mq.ActionUpdate)
 	if err := tripMQ.Publish(mq.TripAddressMessage{TripID: tripUUID, Address: *address}); err != nil {
@@ -277,14 +314,15 @@ func (r *mutationResolver) UpdateAddress(ctx context.Context, tripID string, add
 }
 
 // DeleteAddress is the resolver for the deleteAddress field.
-func (r *mutationResolver) DeleteAddress(ctx context.Context, tripID string, addressID string) (*model.AddressSnapshot, error) {
+func (r *mutationResolver) DeleteAddress(ctx context.Context, tripID string, addressID string) (resultValue *model.AddressSnapshot, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
 	tripUUID, err := uuid.Parse(tripID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid trip ID: %w", err)
+		return nil, utils.UserError("BAD_USER_INPUT")
 	}
 	addressUUID, err := uuid.Parse(addressID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid address ID: %w", err)
+		return nil, utils.UserError("BAD_USER_INPUT")
 	}
 	trip, err := r.tripForID(tripUUID)
 	if err != nil {
@@ -306,12 +344,14 @@ func (r *mutationResolver) DeleteAddress(ctx context.Context, tripID string, add
 }
 
 // SubscribeTrip is the resolver for the subscribeTrip field.
-func (r *mutationResolver) SubscribeTrip(ctx context.Context, tripID string) (*model.User, error) {
+func (r *mutationResolver) SubscribeTrip(ctx context.Context, tripID string) (resultValue *model.User, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
 	return r.changeSubscription(ctx, tripID, true)
 }
 
 // TouchSubscribedTrip is the resolver for the touchSubscribedTrip field.
-func (r *mutationResolver) TouchSubscribedTrip(ctx context.Context, tripID string) (*model.User, error) {
+func (r *mutationResolver) TouchSubscribedTrip(ctx context.Context, tripID string) (resultValue *model.User, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
 	userID, ok := domain.UserIDFromContext(ctx)
 	if !ok {
 		return nil, utils.UserError("UNAUTHENTICATED")
@@ -326,19 +366,73 @@ func (r *mutationResolver) TouchSubscribedTrip(ctx context.Context, tripID strin
 	if err := r.Auth.TouchSubscribedTrip(ctx, userID, id); err != nil {
 		return nil, utils.MemberError(err)
 	}
-	return &model.User{ID: userID.String()}, nil
+	return r.currentUser(ctx, userID)
 }
 
 // UnsubscribeTrip is the resolver for the unsubscribeTrip field.
-func (r *mutationResolver) UnsubscribeTrip(ctx context.Context, tripID string) (*model.User, error) {
+func (r *mutationResolver) UnsubscribeTrip(ctx context.Context, tripID string) (resultValue *model.User, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
 	return r.changeSubscription(ctx, tripID, false)
 }
 
-// Trip is the resolver for the trip field.
-func (r *queryResolver) Trip(ctx context.Context, tripID string, haveHistory bool) (*model.Trip, error) {
+// Bind is the resolver for the bind field.
+func (r *mutationResolver) Bind(ctx context.Context, tripID string, addressID *string) (*model.User, error) {
+	uid, ok := domain.UserIDFromContext(ctx)
+	if !ok {
+		return nil, utils.UserError("UNAUTHENTICATED")
+	}
 	id, err := uuid.Parse(tripID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid trip ID: %w", err)
+		return nil, utils.UserError("BAD_USER_INPUT")
+	}
+	var aid *uuid.UUID
+	if addressID != nil {
+		v, err := uuid.Parse(*addressID)
+		if err != nil {
+			return nil, utils.UserError("BAD_USER_INPUT")
+		}
+		aid = &v
+	}
+	if err := r.TripFactory.Bind(ctx, id, aid); err != nil {
+		return nil, utils.TripError(err)
+	}
+	utils.ResetLoader(ctx)
+	return r.currentUser(ctx, uid)
+}
+
+// Unbind is the resolver for the unbind field.
+func (r *mutationResolver) Unbind(ctx context.Context, tripID string) (*model.User, error) {
+	uid, ok := domain.UserIDFromContext(ctx)
+	if !ok {
+		return nil, utils.UserError("UNAUTHENTICATED")
+	}
+	id, err := uuid.Parse(tripID)
+	if err != nil {
+		return nil, utils.UserError("BAD_USER_INPUT")
+	}
+	if err := r.TripFactory.Unbind(ctx, id); err != nil {
+		return nil, utils.TripError(err)
+	}
+	utils.ResetLoader(ctx)
+	return r.currentUser(ctx, uid)
+}
+
+// Me is the resolver for the me field.
+func (r *queryResolver) Me(ctx context.Context) (resultValue *model.User, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
+	userID, ok := domain.UserIDFromContext(ctx)
+	if !ok {
+		return nil, nil
+	}
+	return r.currentUser(ctx, userID)
+}
+
+// Trip is the resolver for the trip field.
+func (r *queryResolver) Trip(ctx context.Context, tripID string, haveHistory bool) (resultValue *model.Trip, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
+	id, err := uuid.Parse(tripID)
+	if err != nil {
+		return nil, utils.UserError("BAD_USER_INPUT")
 	}
 
 	trip, err := r.tripForID(id)
@@ -360,29 +454,25 @@ func (r *queryResolver) Trip(ctx context.Context, tripID string, haveHistory boo
 		HaveHistory: haveHistory,
 		ID:          tripInfo.ID.String(),
 		Name:        tripInfo.Name,
+		Private:     tripInfo.Private,
 	}, nil
 }
 
-// Me is the resolver for the me field.
-func (r *queryResolver) Me(ctx context.Context) (*model.User, error) {
-	userID, ok := domain.UserIDFromContext(ctx)
-	if !ok {
-		return nil, nil
-	}
-	return &model.User{ID: userID.String()}, nil
-}
-
 // SubRecordCreate is the resolver for the subRecordCreate field.
-func (r *subscriptionResolver) SubRecordCreate(ctx context.Context, tripID string) (<-chan *model.RecordSnapshot, error) {
+func (r *subscriptionResolver) SubRecordCreate(ctx context.Context, tripID string) (resultValue <-chan *model.RecordSnapshot, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
 	tripMQ := r.TripMessageQueueWrapper.GetTripRecordMessageQueue(mq.ActionCreate)
 	if tripMQ == nil {
 		return nil, fmt.Errorf("can not get target message MQ")
 	}
 	tripUUID, err := uuid.Parse(tripID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid trip ID: %w", err)
+		return nil, utils.UserError("BAD_USER_INPUT")
 	}
 
+	if err := r.TripFactory.CheckTripAccess(ctx, tripUUID); err != nil {
+		return nil, err
+	}
 	recordStream := make(chan *model.RecordSnapshot)
 
 	mq.SubscribeProcessor(
@@ -391,21 +481,26 @@ func (r *subscriptionResolver) SubRecordCreate(ctx context.Context, tripID strin
 		tripMQ,
 		utils.TripRecordMQ2GQL,
 		recordStream,
+		func() error { return r.TripFactory.CheckTripAccess(ctx, tripUUID) },
 	)
 	return recordStream, nil
 }
 
 // SubRecordUpdate is the resolver for the subRecordUpdate field.
-func (r *subscriptionResolver) SubRecordUpdate(ctx context.Context, tripID string) (<-chan *model.RecordSnapshot, error) {
+func (r *subscriptionResolver) SubRecordUpdate(ctx context.Context, tripID string) (resultValue <-chan *model.RecordSnapshot, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
 	tripMQ := r.TripMessageQueueWrapper.GetTripRecordMessageQueue(mq.ActionUpdate)
 	if tripMQ == nil {
 		return nil, fmt.Errorf("can not get target message MQ")
 	}
 	tripUUID, err := uuid.Parse(tripID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid trip ID: %w", err)
+		return nil, utils.UserError("BAD_USER_INPUT")
 	}
 
+	if err := r.TripFactory.CheckTripAccess(ctx, tripUUID); err != nil {
+		return nil, err
+	}
 	recordStream := make(chan *model.RecordSnapshot)
 
 	mq.SubscribeProcessor(
@@ -414,21 +509,26 @@ func (r *subscriptionResolver) SubRecordUpdate(ctx context.Context, tripID strin
 		tripMQ,
 		utils.TripRecordMQ2GQL,
 		recordStream,
+		func() error { return r.TripFactory.CheckTripAccess(ctx, tripUUID) },
 	)
 	return recordStream, nil
 }
 
 // SubAddressCreate is the resolver for the subAddressCreate field.
-func (r *subscriptionResolver) SubAddressCreate(ctx context.Context, tripID string) (<-chan *model.AddressSnapshot, error) {
+func (r *subscriptionResolver) SubAddressCreate(ctx context.Context, tripID string) (resultValue <-chan *model.AddressSnapshot, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
 	tripMQ := r.TripMessageQueueWrapper.GetTripAddressMessageQueue(mq.ActionCreate)
 	if tripMQ == nil {
 		return nil, fmt.Errorf("can not get target message MQ")
 	}
 	tripUUID, err := uuid.Parse(tripID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid trip ID: %w", err)
+		return nil, utils.UserError("BAD_USER_INPUT")
 	}
 
+	if err := r.TripFactory.CheckTripAccess(ctx, tripUUID); err != nil {
+		return nil, err
+	}
 	recordStream := make(chan *model.AddressSnapshot)
 
 	mq.SubscribeProcessor(
@@ -437,36 +537,45 @@ func (r *subscriptionResolver) SubAddressCreate(ctx context.Context, tripID stri
 		tripMQ,
 		utils.TripAddressMQ2GQL,
 		recordStream,
+		func() error { return r.TripFactory.CheckTripAccess(ctx, tripUUID) },
 	)
 	return recordStream, nil
 }
 
 // SubAddressUpdate is the resolver for the subAddressUpdate field.
-func (r *subscriptionResolver) SubAddressUpdate(ctx context.Context, tripID string) (<-chan *model.AddressSnapshot, error) {
+func (r *subscriptionResolver) SubAddressUpdate(ctx context.Context, tripID string) (resultValue <-chan *model.AddressSnapshot, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
 	tripMQ := r.TripMessageQueueWrapper.GetTripAddressMessageQueue(mq.ActionUpdate)
 	if tripMQ == nil {
 		return nil, fmt.Errorf("can not get target message MQ")
 	}
 	tripUUID, err := uuid.Parse(tripID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid trip ID: %w", err)
+		return nil, utils.UserError("BAD_USER_INPUT")
+	}
+	if err := r.TripFactory.CheckTripAccess(ctx, tripUUID); err != nil {
+		return nil, err
 	}
 	recordStream := make(chan *model.AddressSnapshot)
-	mq.SubscribeProcessor(tripUUID, ctx, tripMQ, utils.TripAddressMQ2GQL, recordStream)
+	mq.SubscribeProcessor(tripUUID, ctx, tripMQ, utils.TripAddressMQ2GQL, recordStream, func() error { return r.TripFactory.CheckTripAccess(ctx, tripUUID) })
 	return recordStream, nil
 }
 
 // SubAddressDelete is the resolver for the subAddressDelete field.
-func (r *subscriptionResolver) SubAddressDelete(ctx context.Context, tripID string) (<-chan *model.AddressSnapshot, error) {
+func (r *subscriptionResolver) SubAddressDelete(ctx context.Context, tripID string) (resultValue <-chan *model.AddressSnapshot, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
 	tripMQ := r.TripMessageQueueWrapper.GetTripAddressMessageQueue(mq.ActionDelete)
 	if tripMQ == nil {
 		return nil, fmt.Errorf("can not get target message MQ")
 	}
 	tripUUID, err := uuid.Parse(tripID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid trip ID: %w", err)
+		return nil, utils.UserError("BAD_USER_INPUT")
 	}
 
+	if err := r.TripFactory.CheckTripAccess(ctx, tripUUID); err != nil {
+		return nil, err
+	}
 	recordStream := make(chan *model.AddressSnapshot)
 	mq.SubscribeProcessor(
 		tripUUID,
@@ -474,15 +583,17 @@ func (r *subscriptionResolver) SubAddressDelete(ctx context.Context, tripID stri
 		tripMQ,
 		utils.TripAddressMQ2GQL,
 		recordStream,
+		func() error { return r.TripFactory.CheckTripAccess(ctx, tripUUID) },
 	)
 	return recordStream, nil
 }
 
 // Records is the resolver for the records field.
-func (r *tripResolver) Records(ctx context.Context, obj *model.Trip) ([]*model.Record, error) {
+func (r *tripResolver) Records(ctx context.Context, obj *model.Trip) (resultValue []*model.Record, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
 	tripID, err := uuid.Parse(obj.ID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid trip ID: %w", err)
+		return nil, utils.UserError("BAD_USER_INPUT")
 	}
 
 	trip, err := r.tripForID(tripID, tripservice.ReadOptions{HaveHistory: obj.HaveHistory})
@@ -504,10 +615,11 @@ func (r *tripResolver) Records(ctx context.Context, obj *model.Trip) ([]*model.R
 }
 
 // MoneyShare is the resolver for the moneyShare field.
-func (r *tripResolver) MoneyShare(ctx context.Context, obj *model.Trip) ([]*model.Tx, error) {
+func (r *tripResolver) MoneyShare(ctx context.Context, obj *model.Trip) (resultValue []*model.Tx, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
 	tripID, err := uuid.Parse(obj.ID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid trip ID: %w", err)
+		return nil, utils.UserError("BAD_USER_INPUT")
 	}
 	trip, err := r.tripForID(tripID, tripservice.ReadOptions{HaveHistory: obj.HaveHistory})
 	if err != nil {
@@ -529,10 +641,11 @@ func (r *tripResolver) MoneyShare(ctx context.Context, obj *model.Trip) ([]*mode
 }
 
 // Addresses is the resolver for the addresses field.
-func (r *tripResolver) Addresses(ctx context.Context, obj *model.Trip) ([]*model.Address, error) {
+func (r *tripResolver) Addresses(ctx context.Context, obj *model.Trip) (resultValue []*model.Address, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
 	tripID, err := uuid.Parse(obj.ID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid trip ID: %w", err)
+		return nil, utils.UserError("BAD_USER_INPUT")
 	}
 	trip, err := r.tripForID(tripID, tripservice.ReadOptions{HaveHistory: obj.HaveHistory})
 	if err != nil {
@@ -550,10 +663,11 @@ func (r *tripResolver) Addresses(ctx context.Context, obj *model.Trip) ([]*model
 }
 
 // IsValid is the resolver for the isValid field.
-func (r *tripResolver) IsValid(ctx context.Context, obj *model.Trip) (bool, error) {
+func (r *tripResolver) IsValid(ctx context.Context, obj *model.Trip) (resultValue bool, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
 	tripID, err := uuid.Parse(obj.ID)
 	if err != nil {
-		return false, fmt.Errorf("invalid trip ID: %w", err)
+		return false, utils.UserError("BAD_USER_INPUT")
 	}
 	trip, err := r.tripForID(tripID, tripservice.ReadOptions{HaveHistory: obj.HaveHistory})
 	if err != nil {
@@ -571,7 +685,8 @@ func (r *tripResolver) IsValid(ctx context.Context, obj *model.Trip) (bool, erro
 }
 
 // SubscribedTrips is the resolver for the subscribedTrips field.
-func (r *userResolver) SubscribedTrips(ctx context.Context, obj *model.User) ([]*model.SubscribedTrip, error) {
+func (r *userResolver) SubscribedTrips(ctx context.Context, obj *model.User) (resultValue []*model.SubscribedTrip, resultErr error) {
+	defer func() { resultErr = utils.TripError(resultErr) }()
 	if r.Auth == nil {
 		return nil, utils.UserError("INTERNAL_SERVER_ERROR")
 	}
@@ -586,6 +701,30 @@ func (r *userResolver) SubscribedTrips(ctx context.Context, obj *model.User) ([]
 	out := make([]*model.SubscribedTrip, 0, len(trips))
 	for _, trip := range trips {
 		out = append(out, &model.SubscribedTrip{ID: trip.ID.String(), Name: trip.Name, LastViewedAt: strconv.FormatInt(trip.LastViewedAt.UnixMilli(), 10)})
+	}
+	return out, nil
+}
+
+// Bind is the resolver for the bind field.
+func (r *userResolver) Bind(ctx context.Context, obj *model.User, tripID string) (*model.TripBinding, error) {
+	uid, ok := domain.UserIDFromContext(ctx)
+	if !ok || uid.String() != obj.ID {
+		return nil, utils.UserError("UNAUTHENTICATED")
+	}
+	id, err := uuid.Parse(tripID)
+	if err != nil {
+		return nil, utils.UserError("BAD_USER_INPUT")
+	}
+	binding, err := r.TripFactory.Binding(ctx, id)
+	if err != nil {
+		return nil, utils.TripError(err)
+	}
+	if binding == nil {
+		return nil, nil
+	}
+	out := &model.TripBinding{TripID: binding.TripID.String()}
+	if binding.Address != nil {
+		out.Address = utils.ToModelAddress(*binding.Address)
 	}
 	return out, nil
 }

@@ -5,8 +5,6 @@ import (
 	"github.com/google/uuid"
 )
 
-type userContextKey struct{}
-
 func WithUserID(ctx context.Context, userID uuid.UUID) context.Context {
 	return context.WithValue(ctx, userContextKey{}, userID)
 }

@@ -85,6 +85,7 @@ func TestUpdateOnlyResolvesTargetIdentity(t *testing.T) {
 }
 
 type trackingTripStore struct {
+	db.BindingStore
 	created       *domain.TripInfo
 	updated       *domain.TripInfo
 	createdAt     uuid.UUID
@@ -105,22 +106,22 @@ func (s *trackingTripStore) CreateTrip(info *domain.TripInfo) error {
 	s.created = &copy
 	return s.err
 }
-func (s *trackingTripStore) UpdateTripInfo(info *domain.TripInfo) error {
+func (s *trackingTripStore) UpdateTripInfo(ctx context.Context, info *domain.TripInfo) error {
 	copy := *info
 	s.updated = &copy
 	return s.err
 }
-func (s *trackingTripStore) CreateAddress(tripID uuid.UUID, name string) (*domain.Address, error) {
+func (s *trackingTripStore) CreateAddress(ctx context.Context, tripID uuid.UUID, name string) (*domain.Address, error) {
 	s.createdAt = tripID
 	s.storedAddress = domain.Address{ID: uuid.New(), Name: name}
 	return &s.storedAddress, s.err
 }
-func (s *trackingTripStore) UpdateAddress(tripID, addressID uuid.UUID, name string) (*domain.Address, error) {
+func (s *trackingTripStore) UpdateAddress(ctx context.Context, tripID, addressID uuid.UUID, name string) (*domain.Address, error) {
 	s.updatedAt = [2]uuid.UUID{tripID, addressID}
 	s.storedAddress = domain.Address{ID: addressID, Name: name}
 	return &s.storedAddress, s.err
 }
-func (s *trackingTripStore) DeleteAddress(tripID, addressID uuid.UUID) (*domain.Address, error) {
+func (s *trackingTripStore) DeleteAddress(ctx context.Context, tripID, addressID uuid.UUID) (*domain.Address, error) {
 	s.deletedAt = [2]uuid.UUID{tripID, addressID}
 	s.storedAddress = domain.Address{ID: addressID, Name: "deleted"}
 	return &s.storedAddress, s.err
@@ -285,4 +286,78 @@ func TestCreateTripSelectsAtomicStoreFromIdentity(t *testing.T) {
 			}
 		})
 	}
+}
+
+func (s *trackingTripStore) CheckTripAccess(context.Context, uuid.UUID) error { return nil }
+
+func TestObjectBoundariesPreserveDomainErrors(t *testing.T) {
+	ctx := context.Background()
+	id := uuid.New()
+	for _, tc := range []struct {
+		name string
+		kind error
+	}{
+		{"trip", domain.ErrTripNotFound},
+		{"user", domain.ErrUserNotFound},
+		{"record", domain.ErrRecordNotFound},
+		{"chain", domain.ErrInvalidChain},
+		{"canceled", context.Canceled},
+		{"deadline", context.DeadlineExceeded},
+		{"unknown", errors.New("connection lost")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cause := fmt.Errorf("storage failure: %w", tc.kind)
+			store := &trackingTripStore{err: cause}
+			readers := staticReader(projectionReader{tripErr: cause, addressErr: cause})
+			factory := NewTripFactory(store, nil, readers)
+			trip := factory.ForTrip(id)
+			check := func(err error) {
+				t.Helper()
+				require.ErrorIs(t, err, tc.kind)
+				require.ErrorIs(t, err, cause)
+				if tc.name == "unknown" || tc.name == "canceled" || tc.name == "deadline" {
+					require.Same(t, cause, err)
+				}
+			}
+			_, err := factory.Create(ctx, "trip")
+			check(err)
+			_, err = trip.Info(ctx)
+			check(err)
+			_, err = trip.Addresses(ctx)
+			check(err)
+			_, err = trip.UpdateInfo(ctx, "name")
+			check(err)
+			_, err = trip.CreateAddress(ctx, "member")
+			check(err)
+			_, err = trip.Append(ctx, &record{tripID: id, intent: intentCreate})
+			check(err)
+			_, err = trip.Append(ctx, &record{tripID: id, intent: intentPatch})
+			check(err)
+			_, err = NewRecordFactory(staticReader(factoryReader{err: cause})).ByID(ctx, id)
+			check(err)
+		})
+	}
+}
+
+func TestAppendPassesPrivatePolicyToStore(t *testing.T) {
+	store := &validatingTripStore{}
+	factory := NewTripFactory(store, nil, nil)
+	id := uuid.New()
+	intent, err := NewRecordFactory(nil).New(context.Background(), id, domain.Record{})
+	require.NoError(t, err)
+	_, err = factory.ForTrip(id).Append(context.Background(), intent)
+	require.ErrorIs(t, err, ErrInvalidRecordSnapshot)
+}
+
+type validatingTripStore struct{ trackingTripStore }
+
+func (*validatingTripStore) AppendNew(_ context.Context, _ uuid.UUID, value domain.Record, materializer db.RecordMaterializer) (domain.Record, error) {
+	return materializer.PrepareNew(value, nil)
+}
+
+func (s *trackingTripStore) CreateAddressWithOptions(context.Context, uuid.UUID, *string, *bool, bool) (*domain.Address, bool, error) {
+	return nil, false, s.err
+}
+func (s *trackingTripStore) PatchAddress(context.Context, uuid.UUID, uuid.UUID, *string, *bool) (*domain.Address, bool, error) {
+	return nil, false, s.err
 }

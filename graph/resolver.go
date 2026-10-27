@@ -61,5 +61,16 @@ func (r *Resolver) changeSubscription(ctx context.Context, tripID string, subscr
 	if err != nil {
 		return nil, utils.MemberError(err)
 	}
-	return &model.User{ID: userID.String()}, nil
+	return r.currentUser(ctx, userID)
+}
+
+func (r *Resolver) currentUser(ctx context.Context, id uuid.UUID) (*model.User, error) {
+	if r.Auth == nil {
+		return nil, utils.UserError("INTERNAL_SERVER_ERROR")
+	}
+	u, e := r.Auth.GetUser(ctx, id)
+	if e != nil {
+		return nil, utils.MemberError(e)
+	}
+	return utils.ToModelUser(u), nil
 }

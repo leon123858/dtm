@@ -5,8 +5,10 @@ import (
 	"fmt"
 
 	dbpkg "dtm/adapters/db/db"
+	"dtm/adapters/db/utils"
 	"dtm/domain"
 	"dtm/libs/chainlist"
+	"dtm/libs/textvalidate"
 
 	"github.com/google/uuid"
 	"github.com/vikstrous/dataloadgen"
@@ -40,6 +42,7 @@ func (db *memoryState) createTripLocked(info *domain.TripInfo) error {
 	}
 	// Store a copy to prevent external modification of the original info pointer
 	infoCopy := *info
+	infoCopy.Private = false
 	db.tripsInfo[info.ID] = &infoCopy
 	db.tripsData[info.ID] = &domain.TripData{
 		Records:     []domain.Record{},
@@ -57,6 +60,9 @@ func (db *inMemoryTripDBWrapper) AppendNew(ctx context.Context, tripID uuid.UUID
 	}
 	db.mu.Lock()
 	defer db.mu.Unlock()
+	if err := db.accessLocked(ctx, tripID); err != nil {
+		return domain.Record{}, err
+	}
 	tripData, ok := db.tripsData[tripID]
 	if !ok {
 		return domain.Record{}, fmt.Errorf("%w: %s", domain.ErrTripNotFound, tripID)
@@ -74,7 +80,7 @@ func (db *inMemoryTripDBWrapper) AppendNew(ctx context.Context, tripID uuid.UUID
 		return domain.Record{}, err
 	}
 	tripData.Records = append(tripData.Records, record)
-	return cloneRecord(record), nil
+	return db.displayRecordLocked(tripID, record), nil
 }
 
 func (db *inMemoryTripDBWrapper) AppendPatch(ctx context.Context, tripID, targetID uuid.UUID, patch domain.RecordPatch, policy dbpkg.RecordMaterializer) (uuid.UUID, domain.Record, bool, error) {
@@ -86,6 +92,9 @@ func (db *inMemoryTripDBWrapper) AppendPatch(ctx context.Context, tripID, target
 	}
 	db.mu.Lock()
 	defer db.mu.Unlock()
+	if err := db.accessLocked(ctx, tripID); err != nil {
+		return uuid.Nil, domain.Record{}, false, err
+	}
 	var tripData *domain.TripData
 	if candidate := db.tripsData[tripID]; candidate != nil {
 		for _, record := range candidate.Records {
@@ -120,7 +129,7 @@ func (db *inMemoryTripDBWrapper) AppendPatch(ctx context.Context, tripID, target
 		return uuid.Nil, domain.Record{}, false, err
 	}
 	if !changed {
-		return tripID, cloneRecord(tail), false, nil
+		return tripID, db.displayRecordLocked(tripID, tail), false, nil
 	}
 	if err := canonicalizeRecordAddresses(tripData, &materialized); err != nil {
 		return uuid.Nil, domain.Record{}, false, err
@@ -136,7 +145,7 @@ func (db *inMemoryTripDBWrapper) AppendPatch(ctx context.Context, tripID, target
 	}
 	tripData.Records[tailIndex].ChildRecordID = &childID
 	tripData.Records = append(tripData.Records, cloneRecord(materialized))
-	return tripID, cloneRecord(materialized), true, nil
+	return tripID, db.displayRecordLocked(tripID, materialized), true, nil
 }
 
 func cloneRecord(record domain.Record) domain.Record {
@@ -153,77 +162,46 @@ func cloneRecord(record domain.Record) domain.Record {
 }
 
 // UpdateTripInfo updates the information of an existing trip.
-func (db *inMemoryTripDBWrapper) UpdateTripInfo(info *domain.TripInfo) error {
+func (db *inMemoryTripDBWrapper) UpdateTripInfo(ctx context.Context, info *domain.TripInfo) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
+	if err := db.accessLocked(ctx, info.ID); err != nil {
+		return err
+	}
 
 	if _, exists := db.tripsInfo[info.ID]; !exists {
 		return fmt.Errorf("trip with ID %s not found for update", info.ID)
 	}
 
+	info.Private = db.tripsInfo[info.ID].Private
 	// Update the existing info
 	infoCopy := *info
 	db.tripsInfo[info.ID] = &infoCopy
 	return nil
 }
 
-func (db *inMemoryTripDBWrapper) CreateAddress(id uuid.UUID, name string) (*domain.Address, error) {
-	db.mu.Lock()
-	defer db.mu.Unlock()
-
-	tripData, exists := db.tripsData[id]
-	if !exists {
-		return nil, fmt.Errorf("trip with ID %s not found", id)
-	}
-
-	// Check if address already exists to avoid duplicates
-	for _, addr := range tripData.AddressList {
-		if addr.Name == name {
-			return nil, fmt.Errorf("address name %q already exists in trip %s", name, id)
-		}
-	}
-
-	address := domain.Address{ID: uuid.New(), Name: name}
-	tripData.AddressList = append(tripData.AddressList, address)
-	return &address, nil
+func (db *inMemoryTripDBWrapper) CreateAddress(ctx context.Context, id uuid.UUID, name string) (*domain.Address, error) {
+	returnValue, _, err := db.CreateAddressWithOptions(ctx, id, &name, nil, false)
+	return returnValue, err
 }
 
-func (db *inMemoryTripDBWrapper) UpdateAddress(id, addressID uuid.UUID, name string) (*domain.Address, error) {
-	db.mu.Lock()
-	defer db.mu.Unlock()
-
-	tripData, exists := db.tripsData[id]
-	if !exists {
-		return nil, fmt.Errorf("trip with ID %s not found", id)
-	}
-	for _, addr := range tripData.AddressList {
-		if addr.Name == name && addr.ID != addressID {
-			return nil, fmt.Errorf("address name %q already exists in trip %s", name, id)
-		}
-	}
-	for i := range tripData.AddressList {
-		if tripData.AddressList[i].ID == addressID {
-			tripData.AddressList[i].Name = name
-			updated := tripData.AddressList[i]
-			for recordIdx := range tripData.Records {
-				if tripData.Records[recordIdx].PrePayAddress.ID == addressID {
-					tripData.Records[recordIdx].PrePayAddress = updated
-				}
-				for shouldIdx := range tripData.Records[recordIdx].ShouldPayAddress {
-					if tripData.Records[recordIdx].ShouldPayAddress[shouldIdx].Address.ID == addressID {
-						tripData.Records[recordIdx].ShouldPayAddress[shouldIdx].Address = updated
-					}
-				}
-			}
-			return &updated, nil
-		}
-	}
-	return nil, fmt.Errorf("address %s not found in trip %s", addressID, id)
+func (db *inMemoryTripDBWrapper) UpdateAddress(ctx context.Context, id, addressID uuid.UUID, name string) (*domain.Address, error) {
+	returnValue, _, err := db.PatchAddress(ctx, id, addressID, &name, nil)
+	return returnValue, err
 }
 
-func (db *inMemoryTripDBWrapper) DeleteAddress(id, addressID uuid.UUID) (*domain.Address, error) {
+func (db *inMemoryTripDBWrapper) DeleteAddress(ctx context.Context, id, addressID uuid.UUID) (*domain.Address, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
+	if err := db.accessLocked(ctx, id); err != nil {
+		return nil, err
+	}
+
+	for _, aid := range db.bindings[id] {
+		if aid != nil && *aid == addressID {
+			return nil, domain.ErrConflict
+		}
+	}
 
 	tripData, exists := db.tripsData[id]
 	if !exists {
@@ -245,15 +223,18 @@ func (db *inMemoryTripDBWrapper) DeleteAddress(id, addressID uuid.UUID) (*domain
 			return &address, nil
 		}
 	}
-	return nil, fmt.Errorf("address %s not found in trip %s", addressID, id)
+	return nil, fmt.Errorf("%w: %s", domain.ErrAddressNotFound, addressID)
 }
 
 // --- Delete Operations ---
 
 // DeleteTrip deletes a trip and all its associated data (info, records, address list).
-func (db *inMemoryTripDBWrapper) DeleteTrip(id uuid.UUID) error {
+func (db *inMemoryTripDBWrapper) DeleteTrip(ctx context.Context, id uuid.UUID) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
+	if err := db.accessLocked(ctx, id); err != nil {
+		return err
+	}
 
 	// check if the trip exists
 	if _, exists := db.tripsInfo[id]; !exists {
@@ -264,6 +245,7 @@ func (db *inMemoryTripDBWrapper) DeleteTrip(id uuid.UUID) error {
 		return fmt.Errorf("trip data with ID %s not found for deletion", id)
 	}
 
+	delete(db.bindings, id)
 	delete(db.tripsInfo, id)
 	for _, trips := range db.subscriptions {
 		delete(trips, id)
@@ -308,6 +290,10 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetTripRecords(ctx context.Context, t
 	result := make(map[uuid.UUID][]dbpkg.RecordSnapshot, len(tripIds))
 	errors := make(map[uuid.UUID]error)
 	for _, id := range tripIds {
+		if err := db.accessLocked(ctx, id); err != nil {
+			errors[id] = err
+			continue
+		}
 		result[id] = []dbpkg.RecordSnapshot{}
 		data, exists := db.tripsData[id]
 		if !exists {
@@ -318,7 +304,7 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetTripRecords(ctx context.Context, t
 			if !options.HaveHistory && (record.ChildRecordID != nil || record.IsDeleted) {
 				continue
 			}
-			result[id] = append(result[id], dbpkg.RecordSnapshot{TripID: id, Record: cloneRecord(record)})
+			result[id] = append(result[id], dbpkg.RecordSnapshot{TripID: id, Record: db.displayRecordLocked(id, record)})
 		}
 	}
 	return result, mappedFetchError(errors)
@@ -337,7 +323,11 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetRecordList(ctx context.Context, re
 		for tripID, tripData := range db.tripsData {
 			for _, record := range tripData.Records {
 				if record.ID == id {
-					result[id] = dbpkg.RecordSnapshot{TripID: tripID, Record: cloneRecord(record)}
+					if err := db.accessLocked(ctx, tripID); err != nil {
+						errorsByID[id] = err
+					} else {
+						result[id] = dbpkg.RecordSnapshot{TripID: tripID, Record: db.displayRecordLocked(tripID, record)}
+					}
 					found = true
 					break
 				}
@@ -354,7 +344,7 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetRecordList(ctx context.Context, re
 }
 
 // DataLoaderGetTripAddressList retrieves a map of Address lists for given trip IDs.
-func (db *inMemoryTripDBWrapper) DataLoaderGetTripAddressList(_ context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]domain.Address, error) {
+func (db *inMemoryTripDBWrapper) DataLoaderGetTripAddressList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]domain.Address, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
@@ -362,10 +352,16 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetTripAddressList(_ context.Context,
 	errors := make(map[uuid.UUID]error)
 
 	for _, tripID := range tripIds {
+		if err := db.accessLocked(ctx, tripID); err != nil {
+			errors[tripID] = err
+			continue
+		}
 		if tripData, exists := db.tripsData[tripID]; exists {
 			// Return a copy of the slice to prevent external modification
 			addressListCopy := make([]domain.Address, len(tripData.AddressList))
-			copy(addressListCopy, tripData.AddressList)
+			for i, a := range tripData.AddressList {
+				addressListCopy[i] = db.displayLocked(tripID, a)
+			}
 			result[tripID] = addressListCopy
 		} else {
 			result[tripID] = []domain.Address{}
@@ -376,7 +372,7 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetTripAddressList(_ context.Context,
 }
 
 // DataLoaderGetTripInfoList retrieves a map of TripInfo pointers for given trip IDs.
-func (db *inMemoryTripDBWrapper) DataLoaderGetTripInfoList(_ context.Context, tripIds []uuid.UUID) (map[uuid.UUID]*domain.TripInfo, error) {
+func (db *inMemoryTripDBWrapper) DataLoaderGetTripInfoList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID]*domain.TripInfo, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
@@ -384,6 +380,10 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetTripInfoList(_ context.Context, tr
 	errors := make(map[uuid.UUID]error)
 
 	for _, tripID := range tripIds {
+		if err := db.accessLocked(ctx, tripID); err != nil {
+			errors[tripID] = err
+			continue
+		}
 		if tripInfo, exists := db.tripsInfo[tripID]; exists {
 			// Return a copy to prevent external modification
 			infoCopy := *tripInfo
@@ -403,4 +403,118 @@ func mappedFetchError(errorsByID map[uuid.UUID]error) error {
 		return nil
 	}
 	return dataloadgen.MappedFetchError[uuid.UUID](errorsByID)
+}
+
+func (s *memoryState) displayLocked(tid uuid.UUID, a domain.Address) domain.Address {
+	for uid, aid := range s.bindings[tid] {
+		if aid != nil && *aid == a.ID {
+			return a.Display(s.users[uid].Name)
+		}
+	}
+	return a
+}
+func (s *memoryState) displayRecordLocked(tid uuid.UUID, r domain.Record) domain.Record {
+	r = cloneRecord(r)
+	for _, a := range s.tripsData[tid].AddressList {
+		if r.PrePayAddress.ID == a.ID {
+			r.PrePayAddress = s.displayLocked(tid, a)
+		}
+		for i := range r.ShouldPayAddress {
+			if r.ShouldPayAddress[i].Address.ID == a.ID {
+				r.ShouldPayAddress[i].Address = s.displayLocked(tid, a)
+			}
+		}
+	}
+	return r
+}
+func (s *inMemoryTripDBWrapper) CreateAddressWithOptions(ctx context.Context, tid uuid.UUID, name *string, useNickname *bool, bind bool) (*domain.Address, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var uid uuid.UUID
+	var user domain.User
+	if bind {
+		var err error
+		uid, err = s.memberUser(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+		user = s.users[uid]
+	}
+	if err := s.accessLocked(ctx, tid); err != nil {
+		return nil, false, err
+	}
+	data := s.tripsData[tid]
+	if bind {
+		if aid := s.bindings[tid][uid]; aid != nil {
+			for _, a := range data.AddressList {
+				if a.ID == *aid {
+					a = s.displayLocked(tid, a)
+					return &a, false, nil
+				}
+			}
+		}
+	}
+	exists := func(n string) bool {
+		for _, a := range data.AddressList {
+			if a.Name == n {
+				return true
+			}
+		}
+		return false
+	}
+	n, err := utils.AddressName(name, user.Name, bind, exists)
+	if err != nil {
+		return nil, false, err
+	}
+	if exists(n) {
+		return nil, false, domain.ErrConflict
+	}
+	a := domain.Address{ID: uuid.New(), Name: n}
+	if useNickname != nil {
+		a.UseNickname = *useNickname
+	}
+	data.AddressList = append(data.AddressList, a)
+	if bind {
+		if s.bindings[tid] == nil {
+			s.bindings[tid] = map[uuid.UUID]*uuid.UUID{}
+		}
+		id := a.ID
+		s.bindings[tid][uid] = &id
+	}
+	a = s.displayLocked(tid, a)
+	return &a, true, nil
+}
+func (s *inMemoryTripDBWrapper) PatchAddress(ctx context.Context, tid, aid uuid.UUID, name *string, useNickname *bool) (*domain.Address, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.accessLocked(ctx, tid); err != nil {
+		return nil, false, err
+	}
+	if name != nil {
+		if err := textvalidate.ValidateName(*name); err != nil {
+			return nil, false, fmt.Errorf("%w: %v", domain.ErrBadUserInput, err)
+		}
+	}
+	data := s.tripsData[tid]
+	for _, a := range data.AddressList {
+		if name != nil && a.ID != aid && a.Name == *name {
+			return nil, false, domain.ErrConflict
+		}
+	}
+	for i, a := range data.AddressList {
+		if a.ID == aid {
+			old := a
+			if name != nil {
+				a.Name = *name
+			}
+			if useNickname != nil {
+				a.UseNickname = *useNickname
+			}
+			data.AddressList[i] = a
+			changed := old != a
+			a = s.displayLocked(tid, a)
+			return &a, changed, nil
+		}
+	}
+	return nil, false, domain.ErrAddressNotFound
 }
