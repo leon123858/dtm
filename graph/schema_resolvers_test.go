@@ -87,7 +87,7 @@ func TestTripResolversShareRequestScopedLoaderCache(t *testing.T) {
 	database := mem.NewInMemoryTripDBWrapper()
 	tripID := uuid.New()
 	require.NoError(t, database.CreateTrip(&domain.TripInfo{ID: tripID, Name: "trip"}))
-	address, err := database.CreateAddress(context.Background(), tripID, "member")
+	address, err := database.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("member")}})
 	require.NoError(t, err)
 	base := resolverWithChain(database)
 	ctx := resolverContext(database, counts)
@@ -200,13 +200,15 @@ func (t *resolverTrip) UpdateInfo(_ context.Context, name string) (*domain.TripI
 	return &domain.TripInfo{ID: t.id, Name: name}, nil
 }
 func (t *resolverTrip) Addresses(context.Context) ([]domain.Address, error) { return nil, nil }
-func (t *resolverTrip) CreateAddress(_ context.Context, name string) (*domain.Address, error) {
+func (t *resolverTrip) CreateAddress(_ context.Context, option domain.CreateAddressOption) (*domain.Address, error) {
+	name := *option.Name
 	t.createdName = name
 	return &domain.Address{ID: uuid.New(), Name: name}, nil
 }
-func (t *resolverTrip) UpdateAddress(_ context.Context, id uuid.UUID, name string) (*domain.Address, error) {
+func (t *resolverTrip) UpdateAddress(_ context.Context, id uuid.UUID, option domain.AddressOption) (*domain.Address, bool, error) {
+	name := *option.Name
 	t.updatedAddressID = id
-	return &domain.Address{ID: id, Name: name}, nil
+	return &domain.Address{ID: id, Name: name}, true, nil
 }
 func (t *resolverTrip) DeleteAddress(_ context.Context, id uuid.UUID) (*domain.Address, error) {
 	t.deletedAddressID = id
@@ -268,9 +270,9 @@ func TestRecordMutationsKeepMQIdentityAndSkipNoOpPublish(t *testing.T) {
 	database := mem.NewInMemoryTripDBWrapper()
 	tripID := uuid.New()
 	require.NoError(t, database.CreateTrip(&domain.TripInfo{ID: tripID, Name: "trip"}))
-	payer, err := database.CreateAddress(context.Background(), tripID, "payer")
+	payer, err := database.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("payer")}})
 	require.NoError(t, err)
-	member, err := database.CreateAddress(context.Background(), tripID, "member")
+	member, err := database.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("member")}})
 	require.NoError(t, err)
 	queues := &trackingMQ{}
 	base := resolverWithChain(database)
@@ -323,9 +325,9 @@ func TestUpdateRecordAllowsInvalidOldInputToRepairActiveRecord(t *testing.T) {
 	database := mem.NewInMemoryTripDBWrapper()
 	tripID := uuid.New()
 	require.NoError(t, database.CreateTrip(&domain.TripInfo{ID: tripID, Name: "trip"}))
-	payer, err := database.CreateAddress(context.Background(), tripID, "payer")
+	payer, err := database.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("payer")}})
 	require.NoError(t, err)
-	member, err := database.CreateAddress(context.Background(), tripID, "member")
+	member, err := database.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("member")}})
 	require.NoError(t, err)
 	recordID := uuid.New()
 	_, err = database.AppendNew(context.Background(), tripID, domain.Record{
@@ -358,9 +360,9 @@ func TestStaleBaselineCanAppendRepairableMaterializedTail(t *testing.T) {
 	database := mem.NewInMemoryTripDBWrapper()
 	tripID := uuid.New()
 	require.NoError(t, database.CreateTrip(&domain.TripInfo{ID: tripID, Name: "trip"}))
-	payer, err := database.CreateAddress(context.Background(), tripID, "payer")
+	payer, err := database.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("payer")}})
 	require.NoError(t, err)
-	member, err := database.CreateAddress(context.Background(), tripID, "member")
+	member, err := database.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("member")}})
 	require.NoError(t, err)
 	recordID := uuid.New()
 	_, err = database.AppendNew(context.Background(), tripID, domain.Record{
@@ -396,9 +398,9 @@ func TestEquivalentStaleInputPreservesTailAndSkipsPublish(t *testing.T) {
 	database := mem.NewInMemoryTripDBWrapper()
 	tripID := uuid.New()
 	require.NoError(t, database.CreateTrip(&domain.TripInfo{ID: tripID, Name: "trip"}))
-	payer, err := database.CreateAddress(context.Background(), tripID, "payer")
+	payer, err := database.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("payer")}})
 	require.NoError(t, err)
-	member, err := database.CreateAddress(context.Background(), tripID, "member")
+	member, err := database.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("member")}})
 	require.NoError(t, err)
 	queues := &trackingMQ{}
 	base := resolverWithChain(database)
@@ -475,7 +477,7 @@ func TestTripAddressStatisticsSelectionAndHistory(t *testing.T) {
 	require.NoError(t, store.CreateTrip(&domain.TripInfo{ID: tripID, Name: "statistics"}))
 	members := make([]domain.Address, 4)
 	for i, name := range []string{"A", "B", "C", "Unused"} {
-		address, err := store.CreateAddress(context.Background(), tripID, name)
+		address, err := store.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr(name)}})
 		require.NoError(t, err)
 		members[i] = *address
 	}
@@ -589,7 +591,7 @@ func TestAddressStatisticsReadFailurePreservesAddress(t *testing.T) {
 	store := mem.NewInMemoryTripDBWrapper()
 	id := uuid.New()
 	require.NoError(t, store.CreateTrip(&domain.TripInfo{ID: id, Name: "errors"}))
-	address, err := store.CreateAddress(context.Background(), id, "member")
+	address, err := store.CreateAddress(context.Background(), id, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("member")}})
 	require.NoError(t, err)
 	failing := statisticsReadFailure{TripDBWrapper: store}
 	srv := handler.NewDefaultServer(NewExecutableSchema(Config{Resolvers: resolverWithChain(failing)}))
@@ -659,7 +661,7 @@ func TestMutationSnapshotsDoNotCalculateStatistics(t *testing.T) {
 	require.NoError(t, c.Post(fmt.Sprintf(`mutation { createRecord(tripId:%q,input:%s) { id typename:__typename prePayAddress { typename:__typename } } }`, id, input), &record))
 	require.Equal(t, "RecordSnapshot", record.CreateRecord.Typename)
 	require.Equal(t, "AddressSnapshot", record.CreateRecord.PrePayAddress.Typename)
-	unused, err := store.CreateAddress(context.Background(), uuid.MustParse(id), "Unused")
+	unused, err := store.CreateAddress(context.Background(), uuid.MustParse(id), domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("Unused")}})
 	require.NoError(t, err)
 	for _, operation := range []string{
 		fmt.Sprintf(`mutation { updateTrip(tripId:%q,input:{name:"Renamed"}) { id name } }`, id),
@@ -756,14 +758,6 @@ func (s *recordQueryDB) CheckTripAccess(context.Context, uuid.UUID) error { retu
 func (s *statisticsCountingFactory) CheckTripAccess(context.Context, uuid.UUID) error { return nil }
 
 func profileNamePtr(s string) *string { return &s }
-func (t *resolverTrip) CreateAddressWithOptions(ctx context.Context, name *string, useNickname *bool, bind bool) (*domain.Address, error) {
-	a, e := t.CreateAddress(ctx, *name)
-	return a, e
-}
-func (t *resolverTrip) PatchAddress(ctx context.Context, id uuid.UUID, name *string, useNickname *bool) (*domain.Address, bool, error) {
-	a, e := t.UpdateAddress(ctx, id, *name)
-	return a, true, e
-}
 
 func (f *resolverTripFactory) PatchTripInfo(ctx context.Context, id uuid.UUID, name *string, private *bool) (*domain.TripInfo, error) {
 	f.selectedID = id
@@ -891,9 +885,9 @@ func TestGraphQLHistoryAliasesAndCompletePayloads(t *testing.T) {
 	store := mem.NewInMemoryTripDBWrapper()
 	id := uuid.New()
 	require.NoError(t, store.CreateTrip(&domain.TripInfo{ID: id, Name: "history"}))
-	payer, err := store.CreateAddress(context.Background(), id, "payer")
+	payer, err := store.CreateAddress(context.Background(), id, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("payer")}})
 	require.NoError(t, err)
-	member, err := store.CreateAddress(context.Background(), id, "member")
+	member, err := store.CreateAddress(context.Background(), id, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("member")}})
 	require.NoError(t, err)
 	ctx := resolverContext(store, counts)
 	base := resolverWithChain(store)
@@ -979,7 +973,7 @@ func TestNameValidationOnEveryMutation(t *testing.T) {
 	database := mem.NewInMemoryTripDBWrapper()
 	tripID := uuid.New()
 	require.NoError(t, database.CreateTrip(&domain.TripInfo{ID: tripID, Name: "旅行 ✈️"}))
-	payer, err := database.CreateAddress(context.Background(), tripID, "成員 👩🏽‍💻")
+	payer, err := database.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("成員 👩🏽‍💻")}})
 	require.NoError(t, err)
 	recordID := uuid.New()
 	_, err = database.AppendNew(context.Background(), tripID, domain.Record{
@@ -1127,9 +1121,9 @@ func TestSharePatchInvalidMergeCanBeQueriedAndRepaired(t *testing.T) {
 			store := mem.NewInMemoryTripDBWrapper()
 			tripID := uuid.New()
 			require.NoError(t, store.CreateTrip(&domain.TripInfo{ID: tripID, Name: "repair"}))
-			a, err := store.CreateAddress(context.Background(), tripID, "A")
+			a, err := store.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("A")}})
 			require.NoError(t, err)
-			b, err := store.CreateAddress(context.Background(), tripID, "B")
+			b, err := store.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("B")}})
 			require.NoError(t, err)
 			resolver := resolverWithChain(store)
 			resolver.TripMessageQueueWrapper = &trackingMQ{}
@@ -1413,7 +1407,7 @@ func TestBoundUsersShareLoaderAndKeepRawNames(t *testing.T) {
 	require.NoError(t, err)
 	tid := uuid.New()
 	require.NoError(t, store.CreateTrip(&domain.TripInfo{ID: tid, Name: "T"}))
-	a, err := store.CreateAddress(base, tid, "Nickname")
+	a, err := store.CreateAddress(base, tid, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("Nickname")}})
 	require.NoError(t, err)
 	require.NoError(t, store.Bind(domain.WithUserID(base, u.ID), tid, &a.ID))
 	require.NoError(t, store.Bind(domain.WithUserID(base, other.ID), tid, nil))
@@ -1448,3 +1442,5 @@ func TestBoundUsersShareLoaderAndKeepRawNames(t *testing.T) {
 	require.Equal(t, "Profile", *out.Trip.Addresses[0].Bind.UserName)
 	require.Equal(t, 1, counter.calls)
 }
+
+func addressNamePtr(name string) *string { return &name }

@@ -117,3 +117,15 @@ type RecordPatch struct {
 }
 
 type userContextKey struct{}
+
+// AddressOption contains optional address changes; nil fields are omitted.
+type AddressOption struct {
+	Name        *string
+	UseNickname *bool
+}
+
+// CreateAddressOption includes the binding requested during creation.
+type CreateAddressOption struct {
+	AddressOption
+	BindToMe bool
+}

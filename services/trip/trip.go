@@ -137,20 +137,23 @@ func (t *trip) Addresses(ctx context.Context) ([]domain.Address, error) {
 	return slices.Clone(addresses), nil
 }
 
-func (t *trip) CreateAddress(ctx context.Context, name string) (*domain.Address, error) {
+func (t *trip) CreateAddress(ctx context.Context, option domain.CreateAddressOption) (*domain.Address, error) {
 	if err := t.writable(ctx); err != nil {
 		return nil, err
 	}
-	address, err := t.store.CreateAddress(ctx, t.id, name)
+	address, err := t.store.CreateAddress(ctx, t.id, option)
 	return cloneAddress(address), err
 }
 
-func (t *trip) UpdateAddress(ctx context.Context, addressID uuid.UUID, name string) (*domain.Address, error) {
+func (t *trip) UpdateAddress(ctx context.Context, addressID uuid.UUID, option domain.AddressOption) (*domain.Address, bool, error) {
 	if err := t.writable(ctx); err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	address, err := t.store.UpdateAddress(ctx, t.id, addressID, name)
-	return cloneAddress(address), err
+	address, changed, err := t.store.UpdateAddress(ctx, t.id, addressID, option)
+	if err != nil {
+		return cloneAddress(address), false, err
+	}
+	return cloneAddress(address), changed, nil
 }
 
 func (t *trip) DeleteAddress(ctx context.Context, addressID uuid.UUID) (*domain.Address, error) {
@@ -287,17 +290,4 @@ func (t *trip) CalculateMoneyShare(ctx context.Context) (MoneyShareResult, error
 
 func newMaterializedRecord(tripID uuid.UUID, value domain.Record) Record {
 	return &record{tripID: tripID, data: cloneDomainRecord(value), active: true}
-}
-
-func (t *trip) CreateAddressWithOptions(ctx context.Context, name *string, useNickname *bool, bind bool) (*domain.Address, error) {
-	if err := t.writable(ctx); err != nil {
-		return nil, err
-	}
-	return t.store.CreateAddressWithOptions(ctx, t.id, name, useNickname, bind)
-}
-func (t *trip) PatchAddress(ctx context.Context, id uuid.UUID, name *string, useNickname *bool) (*domain.Address, bool, error) {
-	if err := t.writable(ctx); err != nil {
-		return nil, false, err
-	}
-	return t.store.PatchAddress(ctx, t.id, id, name, useNickname)
 }

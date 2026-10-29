@@ -180,16 +180,6 @@ func (db *inMemoryTripDBWrapper) UpdateTripInfo(ctx context.Context, info *domai
 	return nil
 }
 
-func (db *inMemoryTripDBWrapper) CreateAddress(ctx context.Context, id uuid.UUID, name string) (*domain.Address, error) {
-	returnValue, err := db.CreateAddressWithOptions(ctx, id, &name, nil, false)
-	return returnValue, err
-}
-
-func (db *inMemoryTripDBWrapper) UpdateAddress(ctx context.Context, id, addressID uuid.UUID, name string) (*domain.Address, error) {
-	returnValue, _, err := db.PatchAddress(ctx, id, addressID, &name, nil)
-	return returnValue, err
-}
-
 func (db *inMemoryTripDBWrapper) DeleteAddress(ctx context.Context, id, addressID uuid.UUID) (*domain.Address, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
@@ -419,7 +409,8 @@ func (s *memoryState) materializedRecordLocked(tid uuid.UUID, r domain.Record) d
 	}
 	return r
 }
-func (s *inMemoryTripDBWrapper) CreateAddressWithOptions(ctx context.Context, tid uuid.UUID, name *string, useNickname *bool, bind bool) (*domain.Address, error) {
+func (s *inMemoryTripDBWrapper) CreateAddress(ctx context.Context, tid uuid.UUID, option domain.CreateAddressOption) (*domain.Address, error) {
+	name, useNickname, bind := option.Name, option.UseNickname, option.BindToMe
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var uid uuid.UUID
@@ -469,7 +460,8 @@ func (s *inMemoryTripDBWrapper) CreateAddressWithOptions(ctx context.Context, ti
 	}
 	return &a, nil
 }
-func (s *inMemoryTripDBWrapper) PatchAddress(ctx context.Context, tid, aid uuid.UUID, name *string, useNickname *bool) (*domain.Address, bool, error) {
+func (s *inMemoryTripDBWrapper) UpdateAddress(ctx context.Context, tid, aid uuid.UUID, option domain.AddressOption) (*domain.Address, bool, error) {
+	name, useNickname := option.Name, option.UseNickname
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.accessLocked(ctx, tid); err != nil {

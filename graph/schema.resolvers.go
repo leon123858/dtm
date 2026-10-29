@@ -272,7 +272,7 @@ func (r *mutationResolver) CreateAddress(ctx context.Context, tripID string, inp
 	if err != nil {
 		return nil, err
 	}
-	address, err := trip.CreateAddressWithOptions(ctx, input.Name, input.UseNickname, bindToMe)
+	address, err := trip.CreateAddress(ctx, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: input.Name, UseNickname: input.UseNickname}, BindToMe: bindToMe})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create address: %w", err)
 	}
@@ -308,7 +308,7 @@ func (r *mutationResolver) UpdateAddress(ctx context.Context, tripID string, add
 	if err != nil {
 		return nil, err
 	}
-	address, changed, err := trip.PatchAddress(ctx, addressUUID, input.Name, input.UseNickname)
+	address, changed, err := trip.UpdateAddress(ctx, addressUUID, domain.AddressOption{Name: input.Name, UseNickname: input.UseNickname})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update address: %w", err)
 	}

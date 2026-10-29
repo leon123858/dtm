@@ -17,6 +17,7 @@ type Address struct {
 
 type Trip struct {
 	Private     bool   `json:"private"`
+	// argument in query, so use hidden field in gql
 	HaveHistory bool   `json:"-"`
 	ID          string `json:"id"`
 	Name        string `json:"name"`

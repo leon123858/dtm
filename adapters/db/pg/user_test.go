@@ -53,7 +53,7 @@ func TestWriteWaitsForPrivateChange(t *testing.T) {
 	defer p.db.Callback().Query().Remove("test:binding_wait")
 	done := make(chan error, 1)
 	go func() {
-		_, err := store.CreateAddress(context.WithValue(ctx, waitingWriterKey{}, true), id, "denied")
+		_, err := store.CreateAddress(context.WithValue(ctx, waitingWriterKey{}, true), id, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("denied")}})
 		done <- err
 	}()
 	var pid int
@@ -83,7 +83,7 @@ func TestDeleteAddressPreservesMetadata(t *testing.T) {
 			require.NoError(t, s.CreateTrip(&domain.TripInfo{ID: tripID, Name: "deletion snapshot"}))
 			t.Cleanup(func() { require.NoError(t, s.DeleteTrip(ctx, tripID)) })
 			name := "participant"
-			address, err := s.CreateAddressWithOptions(ctx, tripID, &name, &useNickname, false)
+			address, err := s.CreateAddress(ctx, tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: &name, UseNickname: &useNickname}, BindToMe: false})
 			require.NoError(t, err)
 			deleted, err := s.DeleteAddress(ctx, tripID, address.ID)
 			require.NoError(t, err)

@@ -204,14 +204,6 @@ func (p *pgTripDBWrapper) UpdateTripInfo(ctx context.Context, info *domain.TripI
 		return tx.Model(current).Update("name", info.Name).Error
 	})
 }
-func (p *pgTripDBWrapper) CreateAddress(ctx context.Context, tripID uuid.UUID, name string) (out *domain.Address, err error) {
-	returnValue, err := p.CreateAddressWithOptions(ctx, tripID, &name, nil, false)
-	return returnValue, err
-}
-func (p *pgTripDBWrapper) UpdateAddress(ctx context.Context, tripID, addressID uuid.UUID, name string) (out *domain.Address, err error) {
-	returnValue, _, err := p.PatchAddress(ctx, tripID, addressID, &name, nil)
-	return returnValue, err
-}
 func (p *pgTripDBWrapper) DeleteAddress(ctx context.Context, tripID, addressID uuid.UUID) (out *domain.Address, err error) {
 	err = p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockAccess(tx, ctx, tripID, tripShared); err != nil {
@@ -440,7 +432,8 @@ func addressDomain(a AddressModel) domain.Address {
 	return domain.Address{ID: a.ID, Name: a.Name, UseNickname: a.UseNickname}
 }
 
-func (p *pgTripDBWrapper) CreateAddressWithOptions(ctx context.Context, tid uuid.UUID, name *string, useNickname *bool, bind bool) (out *domain.Address, err error) {
+func (p *pgTripDBWrapper) CreateAddress(ctx context.Context, tid uuid.UUID, option domain.CreateAddressOption) (out *domain.Address, err error) {
+	name, useNickname, bind := option.Name, option.UseNickname, option.BindToMe
 	var uid uuid.UUID
 	if bind {
 		uid, err = bindingUser(ctx)
@@ -510,7 +503,8 @@ func (p *pgTripDBWrapper) CreateAddressWithOptions(ctx context.Context, tid uuid
 	})
 	return
 }
-func (p *pgTripDBWrapper) PatchAddress(ctx context.Context, tid, aid uuid.UUID, name *string, useNickname *bool) (out *domain.Address, changed bool, err error) {
+func (p *pgTripDBWrapper) UpdateAddress(ctx context.Context, tid, aid uuid.UUID, option domain.AddressOption) (out *domain.Address, changed bool, err error) {
+	name, useNickname := option.Name, option.UseNickname
 	err = p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if e := lockAccess(tx, ctx, tid, tripShared); e != nil {
 			return e

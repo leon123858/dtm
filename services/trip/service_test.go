@@ -92,6 +92,8 @@ type trackingTripStore struct {
 	updatedAt     [2]uuid.UUID
 	deletedAt     [2]uuid.UUID
 	storedAddress domain.Address
+	createOption  domain.CreateAddressOption
+	updateOption  domain.AddressOption
 	err           error
 }
 
@@ -111,15 +113,19 @@ func (s *trackingTripStore) UpdateTripInfo(ctx context.Context, info *domain.Tri
 	s.updated = &copy
 	return s.err
 }
-func (s *trackingTripStore) CreateAddress(ctx context.Context, tripID uuid.UUID, name string) (*domain.Address, error) {
+func (s *trackingTripStore) CreateAddress(ctx context.Context, tripID uuid.UUID, option domain.CreateAddressOption) (*domain.Address, error) {
+	s.createOption = option
+	name := *option.Name
 	s.createdAt = tripID
 	s.storedAddress = domain.Address{ID: uuid.New(), Name: name}
 	return &s.storedAddress, s.err
 }
-func (s *trackingTripStore) UpdateAddress(ctx context.Context, tripID, addressID uuid.UUID, name string) (*domain.Address, error) {
+func (s *trackingTripStore) UpdateAddress(ctx context.Context, tripID, addressID uuid.UUID, option domain.AddressOption) (*domain.Address, bool, error) {
+	s.updateOption = option
+	name := *option.Name
 	s.updatedAt = [2]uuid.UUID{tripID, addressID}
 	s.storedAddress = domain.Address{ID: addressID, Name: name}
-	return &s.storedAddress, s.err
+	return &s.storedAddress, s.err == nil, s.err
 }
 func (s *trackingTripStore) DeleteAddress(ctx context.Context, tripID, addressID uuid.UUID) (*domain.Address, error) {
 	s.deletedAt = [2]uuid.UUID{tripID, addressID}
@@ -140,22 +146,33 @@ func TestTripFactoryAndTripOwnTripMutations(t *testing.T) {
 	assert.Equal(t, &domain.TripInfo{ID: trip.ID(), Name: "updated"}, info)
 	assert.Equal(t, info, store.updated)
 
-	created, err := trip.CreateAddress(context.Background(), "member")
+	useNickname := true
+	option := domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("member"), UseNickname: &useNickname}, BindToMe: true}
+	created, err := trip.CreateAddress(context.Background(), option)
+	assert.Equal(t, option, store.createOption)
 	require.NoError(t, err)
 	assert.Equal(t, trip.ID(), store.createdAt)
 	created.Name = "caller mutation"
 	assert.Equal(t, "member", store.storedAddress.Name)
 
 	addressID := created.ID
-	updated, err := trip.UpdateAddress(context.Background(), addressID, "renamed")
+	useNickname = false
+	update := domain.AddressOption{Name: addressNamePtr("renamed"), UseNickname: &useNickname}
+	updated, changed, err := trip.UpdateAddress(context.Background(), addressID, update)
+	assert.True(t, changed)
+	assert.Equal(t, update, store.updateOption)
 	require.NoError(t, err)
 	assert.Equal(t, [2]uuid.UUID{trip.ID(), addressID}, store.updatedAt)
 	assert.Equal(t, "renamed", updated.Name)
+	updated.Name = "caller mutation"
+	assert.Equal(t, "renamed", store.storedAddress.Name)
 
 	deleted, err := trip.DeleteAddress(context.Background(), addressID)
 	require.NoError(t, err)
 	assert.Equal(t, [2]uuid.UUID{trip.ID(), addressID}, store.deletedAt)
 	assert.Equal(t, "deleted", deleted.Name)
+	deleted.Name = "caller mutation"
+	assert.Equal(t, "deleted", store.storedAddress.Name)
 }
 
 func TestTripMutationsRejectUnavailableStoreAndCanceledContext(t *testing.T) {
@@ -167,7 +184,7 @@ func TestTripMutationsRejectUnavailableStoreAndCanceledContext(t *testing.T) {
 	store := &trackingTripStore{}
 	_, err = NewTripFactory(store, nil, nil).Create(ctx, "trip")
 	assert.ErrorIs(t, err, context.Canceled)
-	_, err = NewTripFactory(store, nil, nil).ForTrip(uuid.New()).CreateAddress(ctx, "member")
+	_, err = NewTripFactory(store, nil, nil).ForTrip(uuid.New()).CreateAddress(ctx, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("member")}})
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
@@ -327,7 +344,7 @@ func TestObjectBoundariesPreserveDomainErrors(t *testing.T) {
 			check(err)
 			_, err = trip.UpdateInfo(ctx, "name")
 			check(err)
-			_, err = trip.CreateAddress(ctx, "member")
+			_, err = trip.CreateAddress(ctx, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("member")}})
 			check(err)
 			_, err = trip.Append(ctx, &record{tripID: id, intent: intentCreate})
 			check(err)
@@ -355,9 +372,31 @@ func (*validatingTripStore) AppendNew(_ context.Context, _ uuid.UUID, value doma
 	return materializer.PrepareNew(value, nil)
 }
 
-func (s *trackingTripStore) CreateAddressWithOptions(context.Context, uuid.UUID, *string, *bool, bool) (*domain.Address, error) {
-	return nil, s.err
-}
-func (s *trackingTripStore) PatchAddress(context.Context, uuid.UUID, uuid.UUID, *string, *bool) (*domain.Address, bool, error) {
-	return nil, false, s.err
+func addressNamePtr(name string) *string { return &name }
+
+func TestAddressMutationsRequireWritableTrip(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		store    db.TripStore
+		canceled bool
+	}{
+		{"read only", nil, false},
+		{"canceled", &trackingTripStore{}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if tc.canceled {
+				cancel()
+			}
+			trip := NewTripFactory(tc.store, nil, nil).ForTrip(uuid.New())
+			_, err := trip.CreateAddress(ctx, domain.CreateAddressOption{})
+			require.Error(t, err)
+			_, changed, err := trip.UpdateAddress(ctx, uuid.New(), domain.AddressOption{})
+			require.Error(t, err)
+			require.False(t, changed)
+			_, err = trip.DeleteAddress(ctx, uuid.New())
+			require.Error(t, err)
+		})
+	}
 }

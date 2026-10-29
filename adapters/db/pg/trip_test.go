@@ -53,9 +53,9 @@ func setupTrip(t *testing.T) (db.TripDBWrapper, func(), uuid.UUID, domain.Addres
 	wrapper, cleanup := setupTestDB(t)
 	tripID := uuid.New()
 	require.NoError(t, wrapper.CreateTrip(&domain.TripInfo{ID: tripID, Name: "trip"}))
-	payer, err := wrapper.CreateAddress(context.Background(), tripID, "payer")
+	payer, err := wrapper.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("payer")}})
 	require.NoError(t, err)
-	member, err := wrapper.CreateAddress(context.Background(), tripID, "member")
+	member, err := wrapper.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("member")}})
 	require.NoError(t, err)
 	return wrapper, cleanup, tripID, *payer, *member
 }
@@ -421,7 +421,7 @@ func TestSpecialNamesPostgresRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	for _, name := range []string{"O'Brien", `'); DROP TABLE records; --`, ` <script>👩🏽‍💻 é `} {
 		require.NoError(t, wrapper.UpdateTripInfo(context.Background(), &domain.TripInfo{ID: tripID, Name: name}))
-		_, err := wrapper.UpdateAddress(context.Background(), tripID, payer.ID, name)
+		_, _, err := wrapper.UpdateAddress(context.Background(), tripID, payer.ID, domain.AddressOption{Name: addressNamePtr(name)})
 		require.NoError(t, err)
 		record := pgPayment(uuid.New(), payer, member)
 		record.Name = name
@@ -577,7 +577,10 @@ func TestWaitingWriterRechecksRemovedMembership(t *testing.T) {
 	require.NoError(t, tx.Where("trip_id = ? AND user_id = ?", id, uid).Delete(&TripBindingModel{}).Error)
 	waiting, blocked := observeWaiter(t, p, member)
 	done := make(chan error, 1)
-	go func() { _, err := s.CreateAddress(waiting, id, "denied"); done <- err }()
+	go func() {
+		_, err := s.CreateAddress(waiting, id, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("denied")}})
+		done <- err
+	}()
 	blocked()
 	require.NoError(t, tx.Commit().Error)
 	require.ErrorIs(t, <-done, domain.ErrForbidden)
@@ -637,7 +640,7 @@ func TestAddressClaimConflictRollsBackOriginalBinding(t *testing.T) {
 	for i := range owners {
 		require.NoError(t, s.Bind(owners[i], id, &old[i]))
 	}
-	target, err := s.CreateAddress(ctx, id, "target")
+	target, err := s.CreateAddress(ctx, id, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("target")}})
 	require.NoError(t, err)
 	// Both transactions finish the occupancy precheck before either upsert.
 	arrived := make(chan struct{}, 2)
@@ -748,12 +751,15 @@ func TestCanceledLockWaitAndRollbackReleaseLocks(t *testing.T) {
 	defer cancel()
 	waiting, blocked := observeWaiter(t, p, canceled)
 	done := make(chan error, 1)
-	go func() { _, err := s.CreateAddress(waiting, id, "canceled"); done <- err }()
+	go func() {
+		_, err := s.CreateAddress(waiting, id, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("canceled")}})
+		done <- err
+	}()
 	blocked()
 	cancel()
 	require.Error(t, <-done)
 	require.NoError(t, tx.Rollback().Error)
-	_, err = s.CreateAddress(ctx, id, "after rollback")
+	_, err = s.CreateAddress(ctx, id, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("after rollback")}})
 	require.NoError(t, err)
 }
 
@@ -811,8 +817,14 @@ func TestMutationTripLockModes(t *testing.T) {
 		{"clear address", "SHARE", func() error { return measured.Bind(owner, id, nil) }},
 		{"subscribe", "SHARE", func() error { return auth.SubscribeTrip(owner, uid, id) }},
 		{"touch", "SHARE", func() error { return auth.TouchSubscribedTrip(owner, uid, id) }},
-		{"create address", "SHARE", func() error { _, err := measured.CreateAddress(owner, id, "new"); return err }},
-		{"update address", "SHARE", func() error { _, err := measured.UpdateAddress(owner, id, a.ID, "renamed"); return err }},
+		{"create address", "SHARE", func() error {
+			_, err := measured.CreateAddress(owner, id, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("new")}})
+			return err
+		}},
+		{"update address", "SHARE", func() error {
+			_, _, err := measured.UpdateAddress(owner, id, a.ID, domain.AddressOption{Name: addressNamePtr("renamed")})
+			return err
+		}},
 		{"delete address", "SHARE", func() error { _, err := measured.DeleteAddress(owner, id, a.ID); return err }},
 		{"private on", "UPDATE", func() error { _, err := measured.SetTripPrivate(owner, id, true); return err }},
 		{"private off", "UPDATE", func() error { _, err := measured.SetTripPrivate(owner, id, false); return err }},

@@ -54,14 +54,12 @@ type BindingStore interface {
 	SetTripPrivate(context.Context, uuid.UUID, bool) (*domain.TripInfo, error)
 }
 type TripStore interface {
-	CreateAddressWithOptions(context.Context, uuid.UUID, *string, *bool, bool) (*domain.Address, error)
-	PatchAddress(context.Context, uuid.UUID, uuid.UUID, *string, *bool) (*domain.Address, bool, error)
 	BindingStore
 	RecordStore
 	CreateTrip(*domain.TripInfo) error
 	UpdateTripInfo(context.Context, *domain.TripInfo) error
-	CreateAddress(context.Context, uuid.UUID, string) (*domain.Address, error)
-	UpdateAddress(context.Context, uuid.UUID, uuid.UUID, string) (*domain.Address, error)
+	CreateAddress(context.Context, uuid.UUID, domain.CreateAddressOption) (*domain.Address, error)
+	UpdateAddress(context.Context, uuid.UUID, uuid.UUID, domain.AddressOption) (*domain.Address, bool, error)
 	DeleteAddress(context.Context, uuid.UUID, uuid.UUID) (*domain.Address, error)
 }
 

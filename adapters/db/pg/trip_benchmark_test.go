@@ -44,7 +44,7 @@ func TestTripLockLoad(t *testing.T) {
 					if workload == "different-trips" {
 						tid = trips[i]
 					}
-					a, err := store.CreateAddress(ctx, tid, fmt.Sprintf("a%d", i))
+					a, err := store.CreateAddress(ctx, tid, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr(fmt.Sprintf("a%d", i))}})
 					require.NoError(t, err)
 					roots[i] = uuid.New()
 					_, err = store.AppendNew(ctx, tid, pgPayment(roots[i], *a, *a), testutil.Materializer{})
@@ -103,3 +103,5 @@ func TestTripLockLoad(t *testing.T) {
 		}
 	}
 }
+
+func addressNamePtr(name string) *string { return &name }

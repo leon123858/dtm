@@ -21,9 +21,9 @@ func setupTrip(t *testing.T) (*inMemoryTripDBWrapper, uuid.UUID, domain.Address,
 	database := NewInMemoryTripDBWrapper().(*inMemoryTripDBWrapper)
 	tripID := uuid.New()
 	require.NoError(t, database.CreateTrip(&domain.TripInfo{ID: tripID, Name: "trip"}))
-	payer, err := database.CreateAddress(context.Background(), tripID, "payer")
+	payer, err := database.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("payer")}})
 	require.NoError(t, err)
-	member, err := database.CreateAddress(context.Background(), tripID, "member")
+	member, err := database.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("member")}})
 	require.NoError(t, err)
 	return database, tripID, *payer, *member
 }
@@ -162,7 +162,7 @@ func TestDeleteAddressProtectsPayerAndRecipient(t *testing.T) {
 		require.Len(t, database.tripsData[tripID].AddressList, 2)
 		require.Len(t, database.tripsData[tripID].Records, 1)
 	}
-	spare, err := database.CreateAddress(context.Background(), tripID, "unused")
+	spare, err := database.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("unused")}})
 	require.NoError(t, err)
 	removed, err := database.DeleteAddress(context.Background(), tripID, spare.ID)
 	require.NoError(t, err)
@@ -173,3 +173,5 @@ func TestDeleteAddressProtectsPayerAndRecipient(t *testing.T) {
 	_, err = database.DeleteAddress(context.Background(), uuid.New(), payer.ID)
 	require.ErrorContains(t, err, "not found")
 }
+
+func addressNamePtr(name string) *string { return &name }

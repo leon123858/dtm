@@ -20,9 +20,9 @@ func CheckReadContract(t *testing.T, store db.TripDBWrapper) {
 	for _, id := range []uuid.UUID{tripID, emptyID} {
 		require.NoError(t, store.CreateTrip(&domain.TripInfo{ID: id, Name: "read contract"}))
 	}
-	payer, err := store.CreateAddress(context.Background(), tripID, "payer")
+	payer, err := store.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("payer")}})
 	require.NoError(t, err)
-	member, err := store.CreateAddress(context.Background(), tripID, "member")
+	member, err := store.CreateAddress(context.Background(), tripID, domain.CreateAddressOption{AddressOption: domain.AddressOption{Name: addressNamePtr("member")}})
 	require.NoError(t, err)
 	root := domain.Record{RecordInfo: domain.RecordInfo{ID: uuid.New(), Name: "root", Amount: 30, Time: time.Unix(1, 0), PrePayAddress: *payer}, RecordData: domain.RecordData{ShouldPayAddress: []domain.ExtendAddress{{Address: *payer, ExtendMsg: 10}, {Address: *member, ExtendMsg: 20}}}}
 	root, err = store.AppendNew(ctx, tripID, root, Materializer{})
@@ -78,3 +78,5 @@ func CheckReadContract(t *testing.T, store db.TripDBWrapper) {
 	_, err = store.DataLoaderGetRecordList(canceled, []uuid.UUID{tail.ID})
 	require.ErrorIs(t, err, context.Canceled)
 }
+
+func addressNamePtr(name string) *string { return &name }
