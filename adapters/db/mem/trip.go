@@ -80,7 +80,7 @@ func (db *inMemoryTripDBWrapper) AppendNew(ctx context.Context, tripID uuid.UUID
 		return domain.Record{}, err
 	}
 	tripData.Records = append(tripData.Records, record)
-	return db.displayRecordLocked(tripID, record), nil
+	return db.materializedRecordLocked(tripID, record), nil
 }
 
 func (db *inMemoryTripDBWrapper) AppendPatch(ctx context.Context, tripID, targetID uuid.UUID, patch domain.RecordPatch, policy dbpkg.RecordMaterializer) (uuid.UUID, domain.Record, bool, error) {
@@ -129,7 +129,7 @@ func (db *inMemoryTripDBWrapper) AppendPatch(ctx context.Context, tripID, target
 		return uuid.Nil, domain.Record{}, false, err
 	}
 	if !changed {
-		return tripID, db.displayRecordLocked(tripID, tail), false, nil
+		return tripID, db.materializedRecordLocked(tripID, tail), false, nil
 	}
 	if err := canonicalizeRecordAddresses(tripData, &materialized); err != nil {
 		return uuid.Nil, domain.Record{}, false, err
@@ -145,7 +145,7 @@ func (db *inMemoryTripDBWrapper) AppendPatch(ctx context.Context, tripID, target
 	}
 	tripData.Records[tailIndex].ChildRecordID = &childID
 	tripData.Records = append(tripData.Records, cloneRecord(materialized))
-	return tripID, db.displayRecordLocked(tripID, materialized), true, nil
+	return tripID, db.materializedRecordLocked(tripID, materialized), true, nil
 }
 
 func cloneRecord(record domain.Record) domain.Record {
@@ -181,7 +181,7 @@ func (db *inMemoryTripDBWrapper) UpdateTripInfo(ctx context.Context, info *domai
 }
 
 func (db *inMemoryTripDBWrapper) CreateAddress(ctx context.Context, id uuid.UUID, name string) (*domain.Address, error) {
-	returnValue, _, err := db.CreateAddressWithOptions(ctx, id, &name, nil, false)
+	returnValue, err := db.CreateAddressWithOptions(ctx, id, &name, nil, false)
 	return returnValue, err
 }
 
@@ -304,7 +304,7 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetTripRecords(ctx context.Context, t
 			if !options.HaveHistory && (record.ChildRecordID != nil || record.IsDeleted) {
 				continue
 			}
-			result[id] = append(result[id], dbpkg.RecordSnapshot{TripID: id, Record: db.displayRecordLocked(id, record)})
+			result[id] = append(result[id], dbpkg.RecordSnapshot{TripID: id, Record: db.materializedRecordLocked(id, record)})
 		}
 	}
 	return result, mappedFetchError(errors)
@@ -326,7 +326,7 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetRecordList(ctx context.Context, re
 					if err := db.accessLocked(ctx, tripID); err != nil {
 						errorsByID[id] = err
 					} else {
-						result[id] = dbpkg.RecordSnapshot{TripID: tripID, Record: db.displayRecordLocked(tripID, record)}
+						result[id] = dbpkg.RecordSnapshot{TripID: tripID, Record: db.materializedRecordLocked(tripID, record)}
 					}
 					found = true
 					break
@@ -360,7 +360,7 @@ func (db *inMemoryTripDBWrapper) DataLoaderGetTripAddressList(ctx context.Contex
 			// Return a copy of the slice to prevent external modification
 			addressListCopy := make([]domain.Address, len(tripData.AddressList))
 			for i, a := range tripData.AddressList {
-				addressListCopy[i] = db.displayLocked(tripID, a)
+				addressListCopy[i] = a
 			}
 			result[tripID] = addressListCopy
 		} else {
@@ -405,29 +405,21 @@ func mappedFetchError(errorsByID map[uuid.UUID]error) error {
 	return dataloadgen.MappedFetchError[uuid.UUID](errorsByID)
 }
 
-func (s *memoryState) displayLocked(tid uuid.UUID, a domain.Address) domain.Address {
-	for uid, aid := range s.bindings[tid] {
-		if aid != nil && *aid == a.ID {
-			return a.Display(s.users[uid].Name)
-		}
-	}
-	return a
-}
-func (s *memoryState) displayRecordLocked(tid uuid.UUID, r domain.Record) domain.Record {
+func (s *memoryState) materializedRecordLocked(tid uuid.UUID, r domain.Record) domain.Record {
 	r = cloneRecord(r)
 	for _, a := range s.tripsData[tid].AddressList {
 		if r.PrePayAddress.ID == a.ID {
-			r.PrePayAddress = s.displayLocked(tid, a)
+			r.PrePayAddress = a
 		}
 		for i := range r.ShouldPayAddress {
 			if r.ShouldPayAddress[i].Address.ID == a.ID {
-				r.ShouldPayAddress[i].Address = s.displayLocked(tid, a)
+				r.ShouldPayAddress[i].Address = a
 			}
 		}
 	}
 	return r
 }
-func (s *inMemoryTripDBWrapper) CreateAddressWithOptions(ctx context.Context, tid uuid.UUID, name *string, useNickname *bool, bind bool) (*domain.Address, bool, error) {
+func (s *inMemoryTripDBWrapper) CreateAddressWithOptions(ctx context.Context, tid uuid.UUID, name *string, useNickname *bool, bind bool) (*domain.Address, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var uid uuid.UUID
@@ -436,24 +428,18 @@ func (s *inMemoryTripDBWrapper) CreateAddressWithOptions(ctx context.Context, ti
 		var err error
 		uid, err = s.memberUser(ctx)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		user = s.users[uid]
 	}
 	if err := s.accessLocked(ctx, tid); err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	data := s.tripsData[tid]
-	if bind {
-		if aid := s.bindings[tid][uid]; aid != nil {
-			for _, a := range data.AddressList {
-				if a.ID == *aid {
-					a = s.displayLocked(tid, a)
-					return &a, false, nil
-				}
-			}
-		}
+	if bind && s.bindings[tid][uid] != nil {
+		return nil, domain.ErrConflict
 	}
+
 	exists := func(n string) bool {
 		for _, a := range data.AddressList {
 			if a.Name == n {
@@ -464,10 +450,10 @@ func (s *inMemoryTripDBWrapper) CreateAddressWithOptions(ctx context.Context, ti
 	}
 	n, err := utils.AddressName(name, user.Name, bind, exists)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	if exists(n) {
-		return nil, false, domain.ErrConflict
+		return nil, domain.ErrConflict
 	}
 	a := domain.Address{ID: uuid.New(), Name: n}
 	if useNickname != nil {
@@ -481,8 +467,7 @@ func (s *inMemoryTripDBWrapper) CreateAddressWithOptions(ctx context.Context, ti
 		id := a.ID
 		s.bindings[tid][uid] = &id
 	}
-	a = s.displayLocked(tid, a)
-	return &a, true, nil
+	return &a, nil
 }
 func (s *inMemoryTripDBWrapper) PatchAddress(ctx context.Context, tid, aid uuid.UUID, name *string, useNickname *bool) (*domain.Address, bool, error) {
 	s.mu.Lock()
@@ -512,7 +497,6 @@ func (s *inMemoryTripDBWrapper) PatchAddress(ctx context.Context, tid, aid uuid.
 			}
 			data.AddressList[i] = a
 			changed := old != a
-			a = s.displayLocked(tid, a)
 			return &a, changed, nil
 		}
 	}

@@ -289,9 +289,9 @@ func newMaterializedRecord(tripID uuid.UUID, value domain.Record) Record {
 	return &record{tripID: tripID, data: cloneDomainRecord(value), active: true}
 }
 
-func (t *trip) CreateAddressWithOptions(ctx context.Context, name *string, useNickname *bool, bind bool) (*domain.Address, bool, error) {
+func (t *trip) CreateAddressWithOptions(ctx context.Context, name *string, useNickname *bool, bind bool) (*domain.Address, error) {
 	if err := t.writable(ctx); err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	return t.store.CreateAddressWithOptions(ctx, t.id, name, useNickname, bind)
 }

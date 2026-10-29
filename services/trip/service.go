@@ -40,7 +40,7 @@ type Trip interface {
 	Info(context.Context) (*domain.TripInfo, error)
 	UpdateInfo(context.Context, string) (*domain.TripInfo, error)
 	Addresses(context.Context) ([]domain.Address, error)
-	CreateAddressWithOptions(context.Context, *string, *bool, bool) (*domain.Address, bool, error)
+	CreateAddressWithOptions(context.Context, *string, *bool, bool) (*domain.Address, error)
 	PatchAddress(context.Context, uuid.UUID, *string, *bool) (*domain.Address, bool, error)
 	CreateAddress(context.Context, string) (*domain.Address, error)
 	UpdateAddress(context.Context, uuid.UUID, string) (*domain.Address, error)

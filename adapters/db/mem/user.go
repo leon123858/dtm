@@ -237,7 +237,7 @@ func (s *inMemoryTripDBWrapper) Binding(ctx context.Context, id uuid.UUID) (*dom
 	if aid != nil {
 		for _, a := range s.tripsData[id].AddressList {
 			if a.ID == *aid {
-				a := s.displayLocked(id, a)
+				a := a
 				out.Address = &a
 				break
 			}
@@ -326,4 +326,21 @@ func (s *inMemoryTripDBWrapper) PatchTripInfo(ctx context.Context, id uuid.UUID,
 	}
 	out := *s.tripsInfo[id]
 	return &out, nil
+}
+
+func (s *inMemoryTripDBWrapper) DataLoaderGetTripUsers(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]db.TripUsers, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make(map[uuid.UUID]db.TripUsers, len(ids))
+	for _, id := range ids {
+		if err := s.accessLocked(ctx, id); err != nil {
+			return nil, err
+		}
+		users := make([]db.BoundUser, 0, len(s.bindings[id]))
+		for uid, aid := range s.bindings[id] {
+			users = append(users, db.BoundUser{TripID: id, AddressID: aid, UserID: uid, UserName: s.users[uid].Name})
+		}
+		out[id] = db.NewTripUsers(users)
+	}
+	return out, nil
 }

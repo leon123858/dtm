@@ -21,9 +21,12 @@ import (
 
 	"dtm/adapters/db/db"
 	"dtm/adapters/db/pg"
+	"dtm/adapters/mq/goch"
+	"dtm/config"
 	"dtm/domain"
 	"dtm/graph"
 	_ "dtm/migration"
+	"dtm/services/auth"
 	tripservice "dtm/services/trip"
 
 	"github.com/gin-gonic/gin"
@@ -423,5 +426,155 @@ func BenchmarkTripQueryPostgres(b *testing.B) {
 			b.ReportMetric(float64(report.SQL)/float64(b.N), "SELECT/request")
 			b.ReportMetric(report.P95ms, "p95-ms")
 		})
+	}
+}
+
+func TestBindingPerformance(t *testing.T) {
+	if os.Getenv("DTM_BIND_BENCH") != "1" {
+		t.Skip("set DTM_BIND_BENCH=1")
+	}
+	gin.SetMode(gin.ReleaseMode)
+	h := newTripBenchHarness(t)
+	orm, err := gorm.Open(postgres.New(postgres.Config{Conn: h.sqlDB}), &gorm.Config{Logger: h.counter})
+	require.NoError(t, err)
+	authStore := pg.NewPgAuthDBWrapper(orm)
+	authService, err := auth.NewService(context.Background(), config.Auth{}, authStore)
+	require.NoError(t, err)
+	defer authService.Close()
+	user, err := authStore.UpsertUser(context.Background(), "bench-user")
+	require.NoError(t, err)
+	name := "payer"
+	_, err = authStore.UpdateUser(context.Background(), user.ID, &name, nil)
+	require.NoError(t, err)
+	provider := func(ctx context.Context) (db.Reader, error) { return db.TripDataLoaderFromContext(ctx) }
+	resolver := &graph.Resolver{Auth: authService, TripFactory: tripservice.NewTripFactory(h.store, authStore, provider), RecordFactory: tripservice.NewRecordFactory(provider), TripMessageQueueWrapper: goch.NewGoChanTripMessageQueueWrapper()}
+	router := gin.New()
+	router.POST("/query", func(c *gin.Context) {
+		c.Request = c.Request.WithContext(domain.WithUserID(c.Request.Context(), user.ID))
+		c.Next()
+	}, TripDataLoaderInjectionMiddleware(h.store), GraphQLHandler(graph.NewExecutableSchema(graph.Config{Resolvers: resolver})))
+	server := httptest.NewServer(router)
+	defer server.Close()
+	call := func(q string) map[string]json.RawMessage {
+		body, _ := json.Marshal(map[string]string{"query": q})
+		resp, err := http.Post(server.URL+"/query", "application/json", bytes.NewReader(body))
+		require.NoError(t, err)
+		data, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		require.NoError(t, err)
+		var out struct {
+			Data   map[string]json.RawMessage
+			Errors json.RawMessage
+		}
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.Empty(t, out.Errors, string(data))
+		return out.Data
+	}
+	for _, size := range []int{10, 1000} {
+		f := h.seed(t, size)
+		require.NoError(t, h.store.Bind(domain.WithUserID(context.Background(), user.ID), f.id, &f.payer))
+		input := fmt.Sprintf(`{name:"bench",amount:20,prePayAddressId:%q,shouldPayAddressIds:[%q],time:"1767225600000",category:NORMAL}`, f.payer, f.member)
+		created := call(fmt.Sprintf("mutation{createRecord(tripId:%q,input:%s){id}}", f.id, input))
+		var record struct{ ID string }
+		require.NoError(t, json.Unmarshal(created["createRecord"], &record))
+		cases := []struct{ name, q string }{
+			{"metadata", fmt.Sprintf("{trip(tripId:%q){id name}}", f.id)},
+			{"addresses", fmt.Sprintf("{trip(tripId:%q){addresses{id name useNickname}}}", f.id)},
+			{"records", fmt.Sprintf("{trip(tripId:%q){records{id prePayAddress{id name} shouldPayAddress{id name}}}}", f.id)},
+			{"full", fmt.Sprintf("{trip(tripId:%q){%s}}", f.id, tripBenchFields)},
+			{"history", fmt.Sprintf("{trip(tripId:%q,haveHistory:true){%s}}", f.id, tripBenchFields)},
+			{"statistics", fmt.Sprintf("{trip(tripId:%q){addresses{id statistics{totalExpense totalPrepaid activeRecordCount}}}}", f.id)},
+			{"updateTrip", fmt.Sprintf("mutation{updateTrip(tripId:%q,input:{name:\"benchmark\"}){id name private}}", f.id)},
+			{"updateAddress", fmt.Sprintf("mutation{updateAddress(tripId:%q,addressId:%q,input:{name:\"payer\"}){id name useNickname}}", f.id, f.payer)},
+			{"createRecord", fmt.Sprintf("mutation{createRecord(tripId:%q,input:%s){id prePayAddress{id name} shouldPayAddress{id name}}}", f.id, input)},
+			{"updateRecordNoop", fmt.Sprintf("mutation{updateRecord(recordId:%q,input:{old:%s,new:%s}){id prePayAddress{id name}}}", record.ID, input, input)},
+			{"bind", fmt.Sprintf("mutation{bind(tripId:%q,addressId:%q){id}}", f.id, f.payer)},
+			{"updateMe", "mutation{updateMe(input:{name:\"payer\"}){id name}}"},
+		}
+		if os.Getenv("DTM_BIND_NEW_FIELDS") == "1" {
+			cases = append(cases, struct{ name, q string }{"boundUsers", fmt.Sprintf("{trip(tripId:%q){users{userId userName} addresses{id bind{userId userName}} records{id prePayAddress{id bind{userId userName}} shouldPayAddress{id bind{userId userName}}}}}", f.id)})
+		}
+		for _, c := range cases {
+			t.Run(fmt.Sprintf("records%d/%s", size, c.name), func(t *testing.T) {
+				for i := 0; i < 5; i++ {
+					call(c.q)
+				}
+				h.counter.selects.Store(0)
+				runtime.GC()
+				var before, after runtime.MemStats
+				runtime.ReadMemStats(&before)
+				const n = 60
+				lat := make([]float64, n)
+				start := time.Now()
+				for i := range lat {
+					begin := time.Now()
+					call(c.q)
+					lat[i] = float64(time.Since(begin).Microseconds()) / 1000
+				}
+				elapsed := time.Since(start)
+				runtime.ReadMemStats(&after)
+				sort.Float64s(lat)
+				t.Logf("BIND_PERF size=%d case=%s requests=%d mean_ms=%.3f p50_ms=%.3f p95_ms=%.3f selects=%.2f bytes=%.0f allocs=%.0f", size, c.name, n, float64(elapsed.Microseconds())/1000/n, lat[n/2], lat[56], float64(h.counter.selects.Load())/n, float64(after.TotalAlloc-before.TotalAlloc)/n, float64(after.Mallocs-before.Mallocs)/n)
+			})
+		}
+	}
+}
+
+// EXPLAIN isolates PostgreSQL work from HTTP, GraphQL and loader scheduling.
+// Both projections execute on the same fixture with identical returned values.
+func TestBindingSQLPerformance(t *testing.T) {
+	if os.Getenv("DTM_BIND_BENCH") != "1" {
+		t.Skip("set DTM_BIND_BENCH=1")
+	}
+	h := newTripBenchHarness(t)
+	for _, n := range []int{10, 1000} {
+		f := h.seed(t, n)
+		uid := uuid.New()
+		_, err := h.sqlDB.Exec("INSERT INTO users(id,gcid,name) VALUES($1,$2,'payer')", uid, uid.String())
+		require.NoError(t, err)
+		_, err = h.sqlDB.Exec("INSERT INTO trip_bindings(user_id,trip_id,address_id) VALUES($1,$2,$3)", uid, f.id, f.payer)
+		require.NoError(t, err)
+		base := ` FROM records r
+ LEFT JOIN addresses payer ON payer.id=r.pre_pay_address_id AND payer.trip_id=r.trip_id
+ LEFT JOIN record_should_pay_address_lists share ON share.record_id=r.id AND share.trip_id=r.trip_id
+ LEFT JOIN addresses recipient ON recipient.id=share.address_id AND recipient.trip_id=share.trip_id`
+		old := `SELECT r.*,CASE WHEN NOT payer.use_nickname THEN COALESCE(NULLIF(pu.name,''),payer.name) ELSE payer.name END AS payer_name,payer.use_nickname AS payer_use_nickname,share.address_id AS share_address_id,CASE WHEN NOT recipient.use_nickname THEN COALESCE(NULLIF(ru.name,''),recipient.name) ELSE recipient.name END AS share_name,recipient.use_nickname AS share_use_nickname,share.extended_msg` + base + `
+ LEFT JOIN trip_bindings pb ON pb.trip_id=payer.trip_id AND pb.address_id=payer.id
+ LEFT JOIN users pu ON pu.id=pb.user_id
+ LEFT JOIN trip_bindings rb ON rb.trip_id=recipient.trip_id AND rb.address_id=recipient.id
+ LEFT JOIN users ru ON ru.id=rb.user_id`
+		current := `SELECT r.*,payer.name AS payer_name,payer.use_nickname AS payer_use_nickname,share.address_id AS share_address_id,recipient.name AS share_name,recipient.use_nickname AS share_use_nickname,share.extended_msg` + base
+		suffix := ` WHERE r.trip_id=$1 AND r.child_record_id IS NULL AND r.is_deleted=false ORDER BY r.created_at,r.id,share.address_id`
+		// Refresh planner statistics after bulk fixture inserts.
+		_, err = h.sqlDB.Exec("ANALYZE records, addresses, record_should_pay_address_lists, trip_bindings, users")
+		require.NoError(t, err)
+		times := map[string][]float64{"before": {}, "current": {}}
+		for i := 0; i < 65; i++ {
+			order := []string{"before", "current"}
+			if i%2 == 1 {
+				order = []string{"current", "before"}
+			}
+			for _, label := range order {
+				q := old
+				if label == "current" {
+					q = current
+				}
+				var raw []byte
+				require.NoError(t, h.sqlDB.QueryRow("EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) "+q+suffix, f.id).Scan(&raw))
+				var plans []struct {
+					Execution float64 `json:"Execution Time"`
+					Planning  float64 `json:"Planning Time"`
+				}
+				require.NoError(t, json.Unmarshal(raw, &plans))
+				if i >= 5 {
+					times[label] = append(times[label], plans[0].Execution)
+				}
+			}
+		}
+		for _, label := range []string{"before", "current"} {
+			v := times[label]
+			sort.Float64s(v)
+			t.Logf("BIND_SQL size=%d version=%s p50_ms=%.3f p95_ms=%.3f", n, label, v[30], v[56])
+		}
 	}
 }

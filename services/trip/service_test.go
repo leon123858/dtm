@@ -355,8 +355,8 @@ func (*validatingTripStore) AppendNew(_ context.Context, _ uuid.UUID, value doma
 	return materializer.PrepareNew(value, nil)
 }
 
-func (s *trackingTripStore) CreateAddressWithOptions(context.Context, uuid.UUID, *string, *bool, bool) (*domain.Address, bool, error) {
-	return nil, false, s.err
+func (s *trackingTripStore) CreateAddressWithOptions(context.Context, uuid.UUID, *string, *bool, bool) (*domain.Address, error) {
+	return nil, s.err
 }
 func (s *trackingTripStore) PatchAddress(context.Context, uuid.UUID, uuid.UUID, *string, *bool) (*domain.Address, bool, error) {
 	return nil, false, s.err

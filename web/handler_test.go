@@ -114,23 +114,23 @@ func TestPrivateTripGraphQL(t *testing.T) {
 	created := success(u.ID, `mutation { createTrip(input:{name:"private test"}){id private} }`)["createTrip"].(map[string]any)
 	id := created["id"].(string)
 	require.Equal(t, false, created["private"])
-	me := success(u.ID, fmt.Sprintf(`{me{bind(tripId:%q){tripId}}}`, id))["me"].(map[string]any)
-	require.Nil(t, me["bind"])
+	trip := success(u.ID, fmt.Sprintf(`{trip(tripId:%q){users{userId}}}`, id))["trip"].(map[string]any)
+	require.Empty(t, trip["users"])
 	address := success(uuid.Nil, fmt.Sprintf(`mutation {createAddress(tripId:%q,input:{name:"payer"}){id}}`, id))["createAddress"].(map[string]any)["id"].(string)
 	code(u.ID, fmt.Sprintf(`mutation {updateTrip(tripId:%q,input:{private:true}){id}}`, id), "FORBIDDEN")
 	success(v.ID, fmt.Sprintf(`mutation {subscribeTrip(tripId:%q){id}}`, id))
 	record := success(uuid.Nil, fmt.Sprintf(`mutation {createRecord(tripId:%q,input:{name:"secret",amount:50,time:"1700000000000",prePayAddressId:%q,shouldPayAddressIds:[%q],category:NORMAL,extendPayMsg:[]}){id}}`, id, address, address))["createRecord"].(map[string]any)["id"].(string)
 	// Sequential mutations use fresh authorization and binding reads, including nested statistics.
 	data := success(u.ID, fmt.Sprintf(`mutation {
- join:bind(tripId:%q,addressId:%q){bind(tripId:%q){address{id statistics{totalExpense}}}}
+ join:bind(tripId:%q,addressId:%q){id}
  lock:updateTrip(tripId:%q,input:{name:"renamed private",private:true}){name private}
- clear:bind(tripId:%q){bind(tripId:%q){tripId address{id}}}
- }`, id, address, id, id, id, id))
+ clear:bind(tripId:%q){id}
+ }`, id, address, id, id))
 	require.Equal(t, true, data["lock"].(map[string]any)["private"])
 	require.Equal(t, "renamed private", data["lock"].(map[string]any)["name"])
-	require.Nil(t, data["clear"].(map[string]any)["bind"].(map[string]any)["address"])
+	require.Equal(t, u.ID.String(), data["clear"].(map[string]any)["id"])
 	success(u.ID, fmt.Sprintf(`mutation {bind(tripId:%q,addressId:%q){id}}`, id, address))
-	success(u.ID, fmt.Sprintf(`mutation {bind(tripId:%q,addressId:null){bind(tripId:%q){address{id}}}}`, id, id))
+	success(u.ID, fmt.Sprintf(`mutation {bind(tripId:%q,addressId:null){id}}`, id))
 	code(u.ID, fmt.Sprintf(`mutation {unbind(tripId:%q){id}}`, id), "CONFLICT")
 	for _, uid := range []uuid.UUID{uuid.Nil, v.ID} {
 		want := "FORBIDDEN"
@@ -147,14 +147,13 @@ func TestPrivateTripGraphQL(t *testing.T) {
 		code(uid, fmt.Sprintf(`mutation {bind(tripId:%q){id}}`, id), want)
 	}
 	success(u.ID, fmt.Sprintf(`{trip(tripId:%q){private name addresses{id statistics{totalExpense}} records{id}}}`, id))
-	outsider := success(v.ID, fmt.Sprintf(`{me{bind(tripId:%q){tripId} subscribedTrips{id name}}}`, id))["me"].(map[string]any)
-	require.Nil(t, outsider["bind"])
+	outsider := success(v.ID, `{me{subscribedTrips{id name}}}`)["me"].(map[string]any)
 	require.Len(t, outsider["subscribedTrips"], 1)
 	code(v.ID, fmt.Sprintf(`mutation {subscribeTrip(tripId:%q){id}}`, id), "FORBIDDEN")
 	code(v.ID, fmt.Sprintf(`mutation {touchSubscribedTrip(tripId:%q){id}}`, id), "FORBIDDEN")
 	success(v.ID, fmt.Sprintf(`mutation {unsubscribeTrip(tripId:%q){id}}`, id))
 	success(v.ID, fmt.Sprintf(`mutation {unbind(tripId:%q){id}}`, id))
 	code(u.ID, `mutation {bind(tripId:"invalid"){id}}`, "BAD_USER_INPUT")
-	success(u.ID, fmt.Sprintf(`mutation {updateTrip(tripId:%q,input:{private:false}){private} unbind(tripId:%q){bind(tripId:%q){tripId}}}`, id, id, id))
+	success(u.ID, fmt.Sprintf(`mutation {updateTrip(tripId:%q,input:{private:false}){private} unbind(tripId:%q){id}}`, id, id))
 	success(uuid.Nil, fmt.Sprintf(`{trip(tripId:%q){name private}}`, id))
 }

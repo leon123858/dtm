@@ -22,7 +22,7 @@ func constraintError(err error) (code, name string) {
 
 func bindingError(err error) error {
 	code, name := constraintError(err)
-	if code == "23505" && name == "trip_bindings_address" {
+	if code == "23505" && (name == "trip_bindings_address" || name == "trip_bindings_pkey" || name == "uq_addresses_trip_name" || name == "idx_addresses_trip_name") {
 		return domain.ErrConflict
 	}
 	if code == "23503" {

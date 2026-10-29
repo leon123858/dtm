@@ -14,29 +14,42 @@ import (
 	tripservice "dtm/services/trip"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 
-	"github.com/99designs/gqlgen/graphql"
 	"github.com/google/uuid"
 )
+
+// Bind is the resolver for the bind field.
+func (r *addressResolver) Bind(ctx context.Context, obj *model.Address) (*model.BoundUser, error) {
+	loader, err := utils.TripDataLoaderFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	parent, err := utils.EnclosingTrip(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(parent.ID)
+	if err != nil {
+		return nil, err
+	}
+	row, err := loader.LoadAddressUser(ctx, id, obj.ID)
+	if err != nil {
+		return nil, utils.TripError(err)
+	}
+	if row == nil {
+		return nil, nil
+	}
+	return &model.BoundUser{UserID: row.UserID.String(), UserName: row.UserName}, nil
+}
 
 // Statistics is the resolver for the statistics field.
 func (r *addressResolver) Statistics(ctx context.Context, obj *model.Address) (resultValue *model.AddressStatistics, resultErr error) {
 	defer func() { resultErr = utils.TripError(resultErr) }()
-	// Addresses can be nested under records or payments; use the enclosing trip's read options.
-	var parent *model.Trip
-	for field := graphql.GetFieldContext(ctx); field != nil; field = field.Parent {
-		if binding, ok := field.Result.(*model.TripBinding); ok {
-			parent = &model.Trip{ID: binding.TripID}
-			break
-		}
-		if trip, ok := field.Result.(*model.Trip); ok {
-			parent = trip
-			break
-		}
-	}
-	if parent == nil {
-		return nil, fmt.Errorf("address statistics requires a trip")
+	parent, err := utils.EnclosingTrip(ctx)
+	if err != nil {
+		return nil, err
 	}
 	tripID, err := uuid.Parse(parent.ID)
 	if err != nil {
@@ -259,15 +272,12 @@ func (r *mutationResolver) CreateAddress(ctx context.Context, tripID string, inp
 	if err != nil {
 		return nil, err
 	}
-	address, changed, err := trip.CreateAddressWithOptions(ctx, input.Name, input.UseNickname, bindToMe)
+	address, err := trip.CreateAddressWithOptions(ctx, input.Name, input.UseNickname, bindToMe)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create address: %w", err)
 	}
 
 	utils.ResetLoader(ctx)
-	if !changed {
-		return utils.ToAddressSnapshot(utils.ToModelAddress(*address)), nil
-	}
 	tripMQ := r.TripMessageQueueWrapper.GetTripAddressMessageQueue(mq.ActionCreate)
 	if err := tripMQ.Publish(mq.TripAddressMessage{
 		TripID:  tripUUID,
@@ -588,6 +598,28 @@ func (r *subscriptionResolver) SubAddressDelete(ctx context.Context, tripID stri
 	return recordStream, nil
 }
 
+// Users is the resolver for the users field.
+func (r *tripResolver) Users(ctx context.Context, obj *model.Trip) ([]*model.BoundUser, error) {
+	loader, err := utils.TripDataLoaderFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(obj.ID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := loader.LoadTripUsers(ctx, id)
+	if err != nil {
+		return nil, utils.TripError(err)
+	}
+	out := make([]*model.BoundUser, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, &model.BoundUser{UserID: row.UserID.String(), UserName: row.UserName})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].UserID < out[j].UserID })
+	return out, nil
+}
+
 // Records is the resolver for the records field.
 func (r *tripResolver) Records(ctx context.Context, obj *model.Trip) (resultValue []*model.Record, resultErr error) {
 	defer func() { resultErr = utils.TripError(resultErr) }()
@@ -637,7 +669,8 @@ func (r *tripResolver) MoneyShare(ctx context.Context, obj *model.Trip) (resultV
 		return []*model.Tx{}, nil
 	}
 
-	return utils.ToModelTxList(result.Package.TxList), nil
+	out := utils.ToModelTxList(result.Package.TxList)
+	return out, nil
 }
 
 // Addresses is the resolver for the addresses field.
@@ -701,30 +734,6 @@ func (r *userResolver) SubscribedTrips(ctx context.Context, obj *model.User) (re
 	out := make([]*model.SubscribedTrip, 0, len(trips))
 	for _, trip := range trips {
 		out = append(out, &model.SubscribedTrip{ID: trip.ID.String(), Name: trip.Name, LastViewedAt: strconv.FormatInt(trip.LastViewedAt.UnixMilli(), 10)})
-	}
-	return out, nil
-}
-
-// Bind is the resolver for the bind field.
-func (r *userResolver) Bind(ctx context.Context, obj *model.User, tripID string) (*model.TripBinding, error) {
-	uid, ok := domain.UserIDFromContext(ctx)
-	if !ok || uid.String() != obj.ID {
-		return nil, utils.UserError("UNAUTHENTICATED")
-	}
-	id, err := uuid.Parse(tripID)
-	if err != nil {
-		return nil, utils.UserError("BAD_USER_INPUT")
-	}
-	binding, err := r.TripFactory.Binding(ctx, id)
-	if err != nil {
-		return nil, utils.TripError(err)
-	}
-	if binding == nil {
-		return nil, nil
-	}
-	out := &model.TripBinding{TripID: binding.TripID.String()}
-	if binding.Address != nil {
-		out.Address = utils.ToModelAddress(*binding.Address)
 	}
 	return out, nil
 }

@@ -10,3 +10,7 @@ func ResetLoader(ctx context.Context) {
 		loader.Reset()
 	}
 }
+
+func TripDataLoaderFromContext(ctx context.Context) (*db.TripDataLoader, error) {
+	return db.TripDataLoaderFromContext(ctx)
+}

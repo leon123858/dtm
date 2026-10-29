@@ -224,10 +224,8 @@ func (p *pgTripDBWrapper) Binding(ctx context.Context, id uuid.UUID) (*domain.Tr
 		if err := tx.Where("trip_id = ? AND id = ?", id, *row.AddressID).Take(&a).Error; err != nil {
 			return nil, err
 		}
-		out.Address, err = displayAddress(tx, id, a.ID)
-		if err != nil {
-			return nil, err
-		}
+		address := addressDomain(a)
+		out.Address = &address
 	}
 	return out, nil
 }
@@ -364,4 +362,25 @@ func (p *pgTripDBWrapper) batchAccess(ctx context.Context, ids []uuid.UUID) erro
 		return domain.ErrForbidden
 	}
 	return nil
+}
+
+func (p *pgTripDBWrapper) DataLoaderGetTripUsers(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]db.TripUsers, error) {
+	if err := p.batchAccess(ctx, ids); err != nil {
+		return nil, err
+	}
+	var rows []db.BoundUser
+	err := p.db.WithContext(ctx).Table("trip_bindings b").Select("b.trip_id, b.address_id, b.user_id, u.name AS user_name").Joins("JOIN users u ON u.id = b.user_id").Where("b.trip_id IN ?", ids).Order("b.user_id").Scan(&rows).Error
+	out := make(map[uuid.UUID]db.TripUsers, len(ids))
+	for _, id := range ids {
+		out[id] = db.NewTripUsers(nil)
+	}
+	for _, row := range rows {
+		value := out[row.TripID]
+		value.Users = append(value.Users, row)
+		if row.AddressID != nil {
+			value.Addresses[row.AddressID.String()] = row
+		}
+		out[row.TripID] = value
+	}
+	return out, err
 }

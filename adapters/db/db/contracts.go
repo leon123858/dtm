@@ -54,7 +54,7 @@ type BindingStore interface {
 	SetTripPrivate(context.Context, uuid.UUID, bool) (*domain.TripInfo, error)
 }
 type TripStore interface {
-	CreateAddressWithOptions(context.Context, uuid.UUID, *string, *bool, bool) (*domain.Address, bool, error)
+	CreateAddressWithOptions(context.Context, uuid.UUID, *string, *bool, bool) (*domain.Address, error)
 	PatchAddress(context.Context, uuid.UUID, uuid.UUID, *string, *bool) (*domain.Address, bool, error)
 	BindingStore
 	RecordStore
@@ -67,7 +67,36 @@ type TripStore interface {
 
 // DataLoaderStore is the read-only batching contract used by request-scoped
 // GraphQL loaders and the chain Reader adapter.
+type BoundUser struct {
+	TripID    uuid.UUID
+	AddressID *uuid.UUID
+	UserID    uuid.UUID
+	UserName  *string
+}
+
+// TripUsers contains the member list and an index of claimed addresses.
+// Adapters assemble both projections before the loader caches them.
+type TripUsers struct {
+	Users     []BoundUser
+	Addresses map[string]BoundUser
+}
+
+// NewTripUsers indexes members without excluding members lacking an address.
+func NewTripUsers(users []BoundUser) TripUsers {
+	if users == nil {
+		users = []BoundUser{}
+	}
+	result := TripUsers{Users: users, Addresses: make(map[string]BoundUser)}
+	for _, user := range users {
+		if user.AddressID != nil {
+			result.Addresses[user.AddressID.String()] = user
+		}
+	}
+	return result
+}
+
 type DataLoaderStore interface {
+	DataLoaderGetTripUsers(context.Context, []uuid.UUID) (map[uuid.UUID]TripUsers, error)
 	DataLoaderGetTripRecords(ctx context.Context, tripIds []uuid.UUID, options RecordReadOptions) (map[uuid.UUID][]RecordSnapshot, error)
 	DataLoaderGetRecordList(ctx context.Context, recordIds []uuid.UUID) (map[uuid.UUID]RecordSnapshot, error)
 	DataLoaderGetTripAddressList(ctx context.Context, tripIds []uuid.UUID) (map[uuid.UUID][]domain.Address, error)

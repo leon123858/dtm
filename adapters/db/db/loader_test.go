@@ -303,3 +303,11 @@ func TestRecordLoaderBatchesTripKeysAndReusesPartialCache(t *testing.T) {
 	require.Len(t, store.lists, previousBatches+1)
 	assert.Equal(t, []uuid.UUID{third}, store.lists[previousBatches].ids)
 }
+
+func (*loaderStore) DataLoaderGetTripUsers(context.Context, []uuid.UUID) (map[uuid.UUID]db.TripUsers, error) {
+	return map[uuid.UUID]db.TripUsers{}, nil
+}
+
+func (*errorLoaderStore) DataLoaderGetTripUsers(context.Context, []uuid.UUID) (map[uuid.UUID]db.TripUsers, error) {
+	return map[uuid.UUID]db.TripUsers{}, nil
+}

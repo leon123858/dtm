@@ -160,9 +160,8 @@ func insertRecord(tx *gorm.DB, tripID uuid.UUID, record domain.Record) error {
 func loadTripAddresses(tx *gorm.DB, tripID uuid.UUID) ([]domain.Address, map[uuid.UUID]domain.Address, error) {
 	var rows []struct {
 		AddressModel
-		BoundName *string
 	}
-	err := tx.Table("addresses AS a").Select("a.*, u.name AS bound_name").Joins("LEFT JOIN trip_bindings b ON b.trip_id = a.trip_id AND b.address_id = a.id").Joins("LEFT JOIN users u ON u.id = b.user_id").Where("a.trip_id = ?", tripID).Scan(&rows).Error
+	err := tx.Table("addresses AS a").Select("a.*").Where("a.trip_id = ?", tripID).Scan(&rows).Error
 	if err != nil {
 		return nil, nil, err
 	}
@@ -171,7 +170,7 @@ func loadTripAddresses(tx *gorm.DB, tripID uuid.UUID) ([]domain.Address, map[uui
 	for i, row := range rows {
 		a := addressDomain(row.AddressModel)
 		raw[i] = a
-		display[a.ID] = a.Display(row.BoundName)
+		display[a.ID] = a
 	}
 	return raw, display, nil
 }
@@ -206,7 +205,7 @@ func (p *pgTripDBWrapper) UpdateTripInfo(ctx context.Context, info *domain.TripI
 	})
 }
 func (p *pgTripDBWrapper) CreateAddress(ctx context.Context, tripID uuid.UUID, name string) (out *domain.Address, err error) {
-	returnValue, _, err := p.CreateAddressWithOptions(ctx, tripID, &name, nil, false)
+	returnValue, err := p.CreateAddressWithOptions(ctx, tripID, &name, nil, false)
 	return returnValue, err
 }
 func (p *pgTripDBWrapper) UpdateAddress(ctx context.Context, tripID, addressID uuid.UUID, name string) (out *domain.Address, err error) {
@@ -284,11 +283,11 @@ func (p *pgTripDBWrapper) joinedRecords(ctx context.Context, column clause.Colum
 		values[i] = id
 	}
 	query := p.db.WithContext(ctx).Table("records AS r").
-		Select("r.*, CASE WHEN NOT payer.use_nickname THEN COALESCE(NULLIF(pu.name, ''),payer.name) ELSE payer.name END AS payer_name, payer.use_nickname AS payer_use_nickname, share.address_id AS share_address_id, CASE WHEN NOT recipient.use_nickname THEN COALESCE(NULLIF(ru.name, ''),recipient.name) ELSE recipient.name END AS share_name, recipient.use_nickname AS share_use_nickname, share.extended_msg").
+		Select("r.*, payer.name AS payer_name, payer.use_nickname AS payer_use_nickname, share.address_id AS share_address_id, recipient.name AS share_name, recipient.use_nickname AS share_use_nickname, share.extended_msg").
 		Joins("LEFT JOIN addresses AS payer ON payer.id = r.pre_pay_address_id AND payer.trip_id = r.trip_id").
 		Joins("LEFT JOIN record_should_pay_address_lists AS share ON share.record_id = r.id AND share.trip_id = r.trip_id").
 		Joins("LEFT JOIN addresses AS recipient ON recipient.id = share.address_id AND recipient.trip_id = share.trip_id").
-		Joins("LEFT JOIN trip_bindings pb ON pb.trip_id = payer.trip_id AND pb.address_id = payer.id").Joins("LEFT JOIN users pu ON pu.id = pb.user_id").Joins("LEFT JOIN trip_bindings rb ON rb.trip_id = recipient.trip_id AND rb.address_id = recipient.id").Joins("LEFT JOIN users ru ON ru.id = rb.user_id").Where(clause.IN{Column: column, Values: values})
+		Where(clause.IN{Column: column, Values: values})
 	if !options.HaveHistory {
 		query = query.Where("r.child_record_id IS NULL AND r.is_deleted = false")
 	}
@@ -364,7 +363,7 @@ func (p *pgTripDBWrapper) DataLoaderGetTripAddressList(ctx context.Context, trip
 		return nil, err
 	}
 	var addresses []AddressModel
-	if err := addressQuery(p.db.WithContext(ctx)).Where("a.trip_id IN ?", tripIds).Find(&addresses).Error; err != nil {
+	if err := p.db.WithContext(ctx).Where("trip_id IN ?", tripIds).Find(&addresses).Error; err != nil {
 		return nil, err
 	}
 
@@ -441,17 +440,7 @@ func addressDomain(a AddressModel) domain.Address {
 	return domain.Address{ID: a.ID, Name: a.Name, UseNickname: a.UseNickname}
 }
 
-// Projection joins at most one binding per address; display names never affect identity.
-func addressQuery(tx *gorm.DB) *gorm.DB {
-	return tx.Table("addresses AS a").Select("a.*, CASE WHEN NOT a.use_nickname THEN COALESCE(NULLIF(u.name, ''), a.name) ELSE a.name END AS name").Joins("LEFT JOIN trip_bindings b ON b.trip_id = a.trip_id AND b.address_id = a.id").Joins("LEFT JOIN users u ON u.id = b.user_id")
-}
-func displayAddress(tx *gorm.DB, tid, aid uuid.UUID) (*domain.Address, error) {
-	var a AddressModel
-	err := addressQuery(tx).Where("a.trip_id = ? AND a.id = ?", tid, aid).Take(&a).Error
-	out := addressDomain(a)
-	return &out, err
-}
-func (p *pgTripDBWrapper) CreateAddressWithOptions(ctx context.Context, tid uuid.UUID, name *string, useNickname *bool, bind bool) (out *domain.Address, created bool, err error) {
+func (p *pgTripDBWrapper) CreateAddressWithOptions(ctx context.Context, tid uuid.UUID, name *string, useNickname *bool, bind bool) (out *domain.Address, err error) {
 	var uid uuid.UUID
 	if bind {
 		uid, err = bindingUser(ctx)
@@ -470,25 +459,21 @@ func (p *pgTripDBWrapper) CreateAddressWithOptions(ctx context.Context, tid uuid
 		}
 		var u UserModel
 		if bind {
-			if e := tx.Where("id = ?", uid).Take(&u).Error; e != nil {
-				if errors.Is(e, gorm.ErrRecordNotFound) {
-					return domain.ErrUserNotFound
+			// An explicit nickname needs no profile lookup; the binding FK checks user existence.
+			if name == nil {
+				if e := tx.Select("name").Where("id = ?", uid).Take(&u).Error; e != nil {
+					if errors.Is(e, gorm.ErrRecordNotFound) {
+						return domain.ErrUserNotFound
+					}
+					return e
 				}
-				return e
-			}
-			var b TripBindingModel
-			e := tx.Where("trip_id = ? AND user_id = ?", tid, uid).Take(&b).Error
-			if e != nil && !errors.Is(e, gorm.ErrRecordNotFound) {
-				return e
-			}
-			if b.AddressID != nil {
-				out, e = displayAddress(tx, tid, *b.AddressID)
-				return e
 			}
 		}
 		var addresses []AddressModel
-		if e := tx.Where("trip_id = ?", tid).Find(&addresses).Error; e != nil {
-			return e
+		if name == nil {
+			if e := tx.Select("name").Where("trip_id = ?", tid).Find(&addresses).Error; e != nil {
+				return e
+			}
 		}
 		exists := func(n string) bool {
 			for _, a := range addresses {
@@ -502,28 +487,27 @@ func (p *pgTripDBWrapper) CreateAddressWithOptions(ctx context.Context, tid uuid
 		if e != nil {
 			return e
 		}
-		if exists(n) {
-			return domain.ErrConflict
-		}
 		a := AddressModel{ID: uuid.New(), TripID: tid, Name: n}
 		if useNickname != nil {
 			a.UseNickname = *useNickname
 		}
 		if e := tx.Create(&a).Error; e != nil {
-			return e
+			return bindingError(e)
 		}
 		if bind {
-			if e := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "user_id"}, {Name: "trip_id"}}, DoUpdates: clause.AssignmentColumns([]string{"address_id"})}).Create(&TripBindingModel{UserID: uid, TripID: tid, AddressID: &a.ID}).Error; e != nil {
+			// Replace only an unclaimed membership. An existing claim remains and
+			// makes INSERT fail on the binding primary key, rolling back the address.
+			if e := tx.Where("trip_id = ? AND user_id = ? AND address_id IS NULL", tid, uid).Delete(&TripBindingModel{}).Error; e != nil {
+				return e
+			}
+			if e := tx.Create(&TripBindingModel{UserID: uid, TripID: tid, AddressID: &a.ID}).Error; e != nil {
 				return bindingError(e)
 			}
 		}
-		created = true
-		out, e = displayAddress(tx, tid, a.ID)
-		return e
+		address := addressDomain(a)
+		out = &address
+		return nil
 	})
-	if err != nil {
-		created = false
-	}
 	return
 }
 func (p *pgTripDBWrapper) PatchAddress(ctx context.Context, tid, aid uuid.UUID, name *string, useNickname *bool) (out *domain.Address, changed bool, err error) {
@@ -556,9 +540,15 @@ func (p *pgTripDBWrapper) PatchAddress(ctx context.Context, tid, aid uuid.UUID, 
 				return bindingError(e)
 			}
 		}
-		var e error
-		out, e = displayAddress(tx, tid, aid)
-		return e
+		if name != nil {
+			a.Name = *name
+		}
+		if useNickname != nil {
+			a.UseNickname = *useNickname
+		}
+		address := addressDomain(a)
+		out = &address
+		return nil
 	})
 	if err != nil {
 		changed = false

@@ -18,6 +18,7 @@ type TripDataLoader struct {
 	getTripRecords     [2]*dataloadgen.Loader[uuid.UUID, []RecordSnapshot]
 	getTripAddressList *dataloadgen.Loader[uuid.UUID, []domain.Address]
 	getTripInfoList    *dataloadgen.Loader[uuid.UUID, *domain.TripInfo]
+	getTripUsers       *dataloadgen.Loader[uuid.UUID, TripUsers]
 }
 
 var _ Reader = (*TripDataLoader)(nil)
@@ -26,6 +27,7 @@ var _ Reader = (*TripDataLoader)(nil)
 func NewTripDataLoader(dbWrapper DataLoaderStore) *TripDataLoader {
 	loader := &TripDataLoader{
 		store:              dbWrapper,
+		getTripUsers:       dataloadgen.NewMappedLoader(preserveMappedFetchErrors(dbWrapper.DataLoaderGetTripUsers)),
 		getRecord:          dataloadgen.NewMappedLoader(preserveMappedFetchErrors(dbWrapper.DataLoaderGetRecordList)),
 		getTripAddressList: dataloadgen.NewMappedLoader(preserveMappedFetchErrors(dbWrapper.DataLoaderGetTripAddressList)),
 		getTripInfoList:    dataloadgen.NewMappedLoader(preserveMappedFetchErrors(dbWrapper.DataLoaderGetTripInfoList)),
@@ -114,4 +116,23 @@ func preserveMappedFetchErrors[K comparable, V any](fetch func(context.Context, 
 		}
 		return values, err
 	}
+}
+
+func (l *TripDataLoader) LoadTripUsers(ctx context.Context, id uuid.UUID) ([]BoundUser, error) {
+	v, err := l.getTripUsers.Load(ctx, id)
+	return v.Users, err
+}
+
+// LoadAddressUser indexes the same trip binding cache used by LoadTripUsers.
+// Sharing the loader also deduplicates concurrent list and address requests.
+func (l *TripDataLoader) LoadAddressUser(ctx context.Context, id uuid.UUID, addressID string) (*BoundUser, error) {
+	v, err := l.getTripUsers.Load(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	u, ok := v.Addresses[addressID]
+	if !ok {
+		return nil, nil
+	}
+	return &u, nil
 }

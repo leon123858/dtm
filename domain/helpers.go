@@ -7,13 +7,6 @@ import (
 	odiff "github.com/r3labs/diff/v3"
 )
 
-func (a Address) Display(userName *string) Address {
-	if !a.UseNickname && userName != nil && *userName != "" {
-		a.Name = *userName
-	}
-	return a
-}
-
 func (r Record) EditableFields() RecordFields {
 	fields := RecordFields{
 		Name: r.Name, Amount: r.Amount, Time: strconv.FormatInt(r.Time.UnixMilli(), 10),

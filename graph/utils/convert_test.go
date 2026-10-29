@@ -175,6 +175,7 @@ func TestToModelRecordCheckedMaterializesShares(t *testing.T) {
 	}
 	record, err := ToModelRecordChecked(value, true)
 	require.NoError(t, err)
+	assert.Equal(t, ToModelAddress(payer), record.PrePayAddress)
 	assert.True(t, record.IsValid)
 	assert.Equal(t, []*model.Address{ToModelAddress(first), ToModelAddress(second)}, record.ShouldPayAddress)
 	assert.Equal(t, []float64{3, 7}, record.ExtendPayMsg)

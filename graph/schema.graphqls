@@ -79,12 +79,30 @@ type Payment {
 	address: Address!
 }
 
+"""
+Trip-visible member details, limited to user ID and profile name.
+Access: follows trip access rules; does not grant access to the member's private User data.
+"""
+type BoundUser {
+	userId: ID!
+	userName: String
+}
+
+"""
+A trip participant. Access: follows the containing trip's access rules.
+"""
 type Address {
+	"""
+	The user claiming this Address, or null when unclaimed.
+	Access: follows trip access rules; public trips expose user IDs and names to anonymous callers.
+	"""
+	bind: BoundUser
 	"Use the trip nickname instead of the bound user profile name; defaults to false."
 	useNickname: Boolean!
 	id: ID!
 	name: String!
 	"""
+	Access: follows the containing trip's access rules.
 	Current trip totals, available on all Address fields in queries.
 	Only valid, latest, non-deleted records are included, regardless of haveHistory.
 	Invalid records are skipped entirely, so totals may cover only part of the trip.
@@ -94,9 +112,13 @@ type Address {
 }
 
 type AddressStatistics {
-	"""Total assigned shares before settlement, including TRANSFER records."""
+	"""
+	Total assigned shares before settlement, including TRANSFER records.
+	"""
 	totalExpense: Float!
-	"""Total prepaid amounts, including own shares and TRANSFER records."""
+	"""
+	Total prepaid amounts, including own shares and TRANSFER records.
+	"""
 	totalPrepaid: Float!
 	"""
 	Number of qualifying records paid or shared by this member, counted once per record.
@@ -110,7 +132,16 @@ type Tx {
 	output: Payment!
 }
 
+"""
+Trip data. Access: public trips allow anonymous callers; private trips require an authenticated member.
+Member, record, participant, and settlement fields follow the same trip access rules.
+"""
 type Trip {
+	"""
+	All trip members, including members without a claimed Address.
+	Access: follows trip access rules; public trips expose user IDs and names to anonymous callers.
+	"""
+	users: [BoundUser!]!
 	id: ID!
 	name: String!
 	private: Boolean!
@@ -120,16 +151,50 @@ type Trip {
 	isValid: Boolean!
 }
 
+"""
+Event subscriptions follow trip access rules: public trips allow anonymous callers; private trips require authenticated members.
+Access is checked when subscribing and before delivering events; later events are withheld after access is lost.
+These event subscriptions are separate from the bookmarks managed by subscribeTrip.
+"""
 type Subscription {
+	"""
+	Access: public trips allow anonymous callers; private trips require authenticated members.
+	"""
 	subRecordCreate(tripId: ID!): RecordSnapshot!
+	"""
+	Access: public trips allow anonymous callers; private trips require authenticated members.
+	"""
 	subRecordUpdate(tripId: ID!): RecordSnapshot!
+	"""
+	Access: public trips allow anonymous callers; private trips require authenticated members.
+	"""
 	subAddressCreate(tripId: ID!): AddressSnapshot!
+	"""
+	Access: public trips allow anonymous callers; private trips require authenticated members.
+	"""
 	subAddressUpdate(tripId: ID!): AddressSnapshot!
+	"""
+	Access: public trips allow anonymous callers; private trips require authenticated members.
+	"""
 	subAddressDelete(tripId: ID!): AddressSnapshot!
 }
 
+"""
+Access descriptions document server rules; they do not indicate that the current caller is authorized.
+Trip access: public trips allow anonymous callers; private trips require authentication and membership.
+A member has a trip_bindings entry, even without a claimed Address. A bookmark does not grant membership.
+Access failures use errors[].extensions.code: UNAUTHENTICATED or FORBIDDEN.
+Anonymous means no credentials were supplied; invalid credentials do not fall back to anonymous access.
+"""
 type Query {
+	"""
+	Returns the current user. Access: anonymous callers are allowed and receive null.
+	"""
 	me: User
+	"""
+	Returns a trip. Access: public trips allow anonymous callers; private trips require authenticated members.
+	haveHistory does not change access requirements.
+	"""
 	trip(tripId: ID!, haveHistory: Boolean! = false): Trip
 }
 
@@ -158,6 +223,9 @@ input NewTrip {
 
 input EditTrip {
 	name: String
+	"""
+	Access: a non-null value requires an authenticated trip member, even when unchanged.
+	"""
 	private: Boolean
 }
 
@@ -168,19 +236,94 @@ input NewAddress {
 	name: String
 }
 
+"""
+The server authorizes operations using the current caller and target trip.
+Members have no separate owner/admin roles; ordinary trip writes do not require claiming the affected Address.
+Public trips allow anonymous ordinary writes; private trips require authentication and membership.
+See individual fields for additional operation and argument requirements.
+Errors use errors[].extensions.code: UNAUTHENTICATED (not authenticated),
+FORBIDDEN (access denied), CONFLICT (state or uniqueness conflict), or BAD_USER_INPUT (invalid input).
+"""
 type Mutation {
+	"""
+	Updates the current user's profile. Access: authentication required; affects only the caller.
+	"""
 	updateMe(input: UpdateMe!): User!
+	"""
+	Creates a public trip. Access: anonymous callers are allowed.
+	Authenticated creators automatically bookmark the trip. Creation and bookmarking do not grant membership.
+	"""
 	createTrip(input: NewTrip!): TripSnapshot!
+	"""
+	Updates a trip. Access: public trip names may be changed anonymously; private trips require authenticated members.
+	Additional requirement: a non-null input.private requires an authenticated member, whether true or false.
+	"""
 	updateTrip(tripId: ID!, input: EditTrip!): TripSnapshot!
+	"""
+	Creates a record. Access: public trips allow anonymous callers; private trips require authenticated members.
+	The caller does not need to claim the payer or any sharing Address.
+	"""
 	createRecord(tripId: ID!, input: NewRecord!): RecordSnapshot!
+	"""
+	Updates a record. Access follows the trip containing recordId: anonymous for public trips, authenticated members for private trips.
+	The caller does not need to be the original record creator or claim the payer Address.
+	"""
 	updateRecord(recordId: ID!, input: EditRecord!): RecordSnapshot!
-	createAddress(tripId: ID!, input: NewAddress!, bindToMe: Boolean! = false): AddressSnapshot!
-	updateAddress(tripId: ID!, addressId: ID!, input: NewAddress!): AddressSnapshot!
+	"""
+	Creates a participant. Access: public trips allow anonymous callers; private trips require authenticated members.
+	Additional requirement: bindToMe=true requires authentication and creates the caller's membership and address claim.
+	A duplicate trip nickname or an existing address claim returns CONFLICT; the existing Address is not returned.
+	Members without an address claim may create and claim a new Address.
+	"""
+	createAddress(
+		tripId: ID!
+		input: NewAddress!
+		"""
+	Access: true requires authentication; private trips still require existing membership.
+	"""
+	bindToMe: Boolean! = false
+	): AddressSnapshot!
+	"""
+	Updates a participant. Access: public trips allow anonymous callers; private trips require authenticated members.
+	The caller does not need to claim this Address.
+	"""
+	updateAddress(
+		tripId: ID!
+		addressId: ID!
+		input: NewAddress!
+	): AddressSnapshot!
+	"""
+	Deletes a participant. Access: public trips allow anonymous callers; private trips require authenticated members.
+	Returns CONFLICT if the Address is claimed or still referenced by records.
+	"""
 	deleteAddress(tripId: ID!, addressId: ID!): AddressSnapshot!
+	"""
+	Bookmarks a trip. Access: authentication and trip access are required (public trip or membership in a private trip).
+	Changes only the caller's bookmarks; does not grant membership or claim an Address.
+	"""
 	subscribeTrip(tripId: ID!): User!
+	"""
+	Updates the last-viewed time of the caller's existing bookmark. Access: authentication and trip access required.
+	Returns NOT_FOUND when the bookmark does not exist; does not create one.
+	"""
 	touchSubscribedTrip(tripId: ID!): User!
+	"""
+	Removes the caller's bookmark. Access: authentication required, even if trip access has been lost.
+	An absent bookmark is a no-op; membership and address claims are unaffected.
+	"""
 	unsubscribeTrip(tripId: ID!): User!
+	"""
+	Joins a trip or changes the caller's address claim. Access: authentication and trip access required.
+	Callers may join public trips; non-members cannot use this operation to join private trips.
+	Omitting addressId or passing null creates or retains membership and clears the address claim; it does not leave the trip.
+	A supplied addressId must belong to this trip and must not be claimed by another user.
+	"""
 	bind(tripId: ID!, addressId: ID): User!
+	"""
+	Leaves a trip and releases the caller's address claim. Access: authentication required; removes only the caller's membership.
+	Absent membership or a missing trip is a no-op. The last member of a private trip cannot leave and receives CONFLICT.
+	Does not delete the Address or remove bookmarks.
+	"""
 	unbind(tripId: ID!): User!
 }
 
@@ -189,13 +332,21 @@ input UpdateMe {
 	subMail: Boolean
 }
 
+"""
+The authenticated user's data, returned by me or operations on the caller's own account.
+This type provides no entry point for reading other members' email, bookmarks, or profile settings.
+"""
 type User {
 	name: String
 	email: String
 	subMail: Boolean!
 	id: ID!
+	"""
+	The caller's bookmarks. Existing bookmarks retain the trip ID, name, and last-viewed time after private trip access is lost.
+	Visibility of a bookmark does not grant access to the trip's contents.
+	"""
 	subscribedTrips: [SubscribedTrip!]!
-	bind(tripId: ID!): TripBinding
+
 }
 
 type SubscribedTrip {
@@ -203,9 +354,4 @@ type SubscribedTrip {
 	name: String!
 	"Unix milliseconds as a decimal string."
 	lastViewedAt: String!
-}
-
-type TripBinding {
-	tripId: ID!
-	address: Address
 }

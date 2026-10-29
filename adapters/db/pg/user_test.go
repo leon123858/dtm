@@ -83,9 +83,8 @@ func TestDeleteAddressPreservesMetadata(t *testing.T) {
 			require.NoError(t, s.CreateTrip(&domain.TripInfo{ID: tripID, Name: "deletion snapshot"}))
 			t.Cleanup(func() { require.NoError(t, s.DeleteTrip(ctx, tripID)) })
 			name := "participant"
-			address, created, err := s.CreateAddressWithOptions(ctx, tripID, &name, &useNickname, false)
+			address, err := s.CreateAddressWithOptions(ctx, tripID, &name, &useNickname, false)
 			require.NoError(t, err)
-			require.True(t, created)
 			deleted, err := s.DeleteAddress(ctx, tripID, address.ID)
 			require.NoError(t, err)
 			require.Equal(t, address, deleted)

@@ -144,3 +144,7 @@ func TestTripDataLoaderConcurrentRecordMiss(t *testing.T) {
 	}
 	require.Equal(t, testutil.LoaderSnapshot{Records: testutil.DataLoadCount{Batches: 1, Keys: 1}}, counts.Snapshot())
 }
+
+func (concurrentLoaderStore) DataLoaderGetTripUsers(context.Context, []uuid.UUID) (map[uuid.UUID]db.TripUsers, error) {
+	return map[uuid.UUID]db.TripUsers{}, nil
+}

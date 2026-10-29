@@ -756,9 +756,9 @@ func (s *recordQueryDB) CheckTripAccess(context.Context, uuid.UUID) error { retu
 func (s *statisticsCountingFactory) CheckTripAccess(context.Context, uuid.UUID) error { return nil }
 
 func profileNamePtr(s string) *string { return &s }
-func (t *resolverTrip) CreateAddressWithOptions(ctx context.Context, name *string, useNickname *bool, bind bool) (*domain.Address, bool, error) {
+func (t *resolverTrip) CreateAddressWithOptions(ctx context.Context, name *string, useNickname *bool, bind bool) (*domain.Address, error) {
 	a, e := t.CreateAddress(ctx, *name)
-	return a, true, e
+	return a, e
 }
 func (t *resolverTrip) PatchAddress(ctx context.Context, id uuid.UUID, name *string, useNickname *bool) (*domain.Address, bool, error) {
 	a, e := t.UpdateAddress(ctx, id, *name)
@@ -1075,15 +1075,15 @@ func TestProfileMutationEventsAndCache(t *testing.T) {
 	require.NoError(t, err)
 	a, err := m.CreateAddress(ctx, tid.String(), model.NewAddress{Name: profileNamePtr("原名")}, true)
 	require.NoError(t, err)
-	require.Equal(t, "小明", a.Name)
+	require.Equal(t, "原名", a.Name)
 	require.False(t, a.UseNickname)
 	require.Len(t, queue.addressQueues[mq.ActionCreate].messages, 1)
 	event, skip, err := utils.TripAddressMQ2GQL(queue.addressQueues[mq.ActionCreate].messages[0])
 	require.NoError(t, err)
 	require.False(t, skip)
 	require.Equal(t, a, event)
-	_, err = m.CreateAddress(ctx, tid.String(), model.NewAddress{Name: profileNamePtr("\n")}, true)
-	require.NoError(t, err)
+	_, err = m.CreateAddress(ctx, tid.String(), model.NewAddress{Name: profileNamePtr("another")}, true)
+	require.Error(t, err)
 	require.Len(t, queue.addressQueues[mq.ActionCreate].messages, 1)
 	list, err := loader.LoadTripAddresses(ctx, tid)
 	require.NoError(t, err)
@@ -1105,7 +1105,7 @@ func TestProfileMutationEventsAndCache(t *testing.T) {
 	category := model.RecordCategoryNormal
 	rec, err := m.CreateRecord(ctx, tid.String(), model.NewRecord{Name: "meal", Amount: 20, PrePayAddressID: a.ID, ShouldPayAddressIds: []string{a.ID}, Category: &category})
 	require.NoError(t, err)
-	require.Equal(t, "小明", rec.PrePayAddress.Name)
+	require.Equal(t, "原名", rec.PrePayAddress.Name)
 	revent, _, err := utils.TripRecordMQ2GQL(queue.queues[mq.ActionCreate].messages[0])
 	require.NoError(t, err)
 	require.Equal(t, rec.PrePayAddress, revent.PrePayAddress)
@@ -1115,8 +1115,8 @@ func TestProfileMutationEventsAndCache(t *testing.T) {
 	require.NoError(t, err)
 	records, err := loader.LoadTripRecords(ctx, tid, db.RecordReadOptions{HaveHistory: true})
 	require.NoError(t, err)
-	require.Equal(t, "新名", records[0].PrePayAddress.Name)
-	require.Equal(t, "新名", records[0].ShouldPayAddress[0].Address.Name)
+	require.Equal(t, "原名", records[0].PrePayAddress.Name)
+	require.Equal(t, "原名", records[0].ShouldPayAddress[0].Address.Name)
 	require.Equal(t, 20., records[0].Amount)
 	require.Len(t, queue.addressQueues[mq.ActionUpdate].messages, 2)
 }
@@ -1390,4 +1390,61 @@ func TestUserFieldReadFailureAndAuthentication(t *testing.T) {
 
 func (s *userFieldAuth) GetUser(_ context.Context, id uuid.UUID) (domain.User, error) {
 	return domain.User{ID: id}, nil
+}
+
+type bindingReadCounter struct {
+	db.TripDBWrapper
+	calls int
+}
+
+func (s *bindingReadCounter) DataLoaderGetTripUsers(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]db.TripUsers, error) {
+	s.calls++
+	return s.TripDBWrapper.DataLoaderGetTripUsers(ctx, ids)
+}
+func TestBoundUsersShareLoaderAndKeepRawNames(t *testing.T) {
+	base := context.Background()
+	store, users := mem.NewInMemoryDB()
+	u, err := users.UpsertUser(base, "bound-user")
+	require.NoError(t, err)
+	name := "Profile"
+	_, err = users.UpdateUser(base, u.ID, &name, nil)
+	require.NoError(t, err)
+	other, err := users.UpsertUser(base, "unclaimed-user")
+	require.NoError(t, err)
+	tid := uuid.New()
+	require.NoError(t, store.CreateTrip(&domain.TripInfo{ID: tid, Name: "T"}))
+	a, err := store.CreateAddress(base, tid, "Nickname")
+	require.NoError(t, err)
+	require.NoError(t, store.Bind(domain.WithUserID(base, u.ID), tid, &a.ID))
+	require.NoError(t, store.Bind(domain.WithUserID(base, other.ID), tid, nil))
+	counter := &bindingReadCounter{TripDBWrapper: store}
+	resolver := resolverWithChain(counter)
+	srv := handler.NewDefaultServer(NewExecutableSchema(Config{Resolvers: resolver}))
+	c := client.New(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv.ServeHTTP(w, r.WithContext(db.WithTripDataLoader(r.Context(), db.NewTripDataLoader(counter))))
+	}))
+	var minimal struct{ Trip struct{ ID string } }
+	require.NoError(t, c.Post(fmt.Sprintf(`{ trip(tripId:%q) { id } }`, tid.String()), &minimal))
+	require.Zero(t, counter.calls)
+	var out struct {
+		Trip struct {
+			Users []struct {
+				UserID   string
+				UserName *string
+			}
+			Addresses []struct {
+				Name string
+				Bind *struct {
+					UserID   string
+					UserName *string
+				}
+			}
+		}
+	}
+	require.NoError(t, c.Post(fmt.Sprintf(`{ trip(tripId:%q) { users { userId userName } addresses { name bind { userId userName } } } }`, tid.String()), &out))
+	require.Len(t, out.Trip.Users, 2)
+	require.Equal(t, "Nickname", out.Trip.Addresses[0].Name)
+	require.Equal(t, u.ID.String(), out.Trip.Addresses[0].Bind.UserID)
+	require.Equal(t, "Profile", *out.Trip.Addresses[0].Bind.UserName)
+	require.Equal(t, 1, counter.calls)
 }

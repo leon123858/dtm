@@ -26,16 +26,30 @@ type AddressStatistics struct {
 	ActiveRecordCount int32 `json:"activeRecordCount"`
 }
 
+// Trip-visible member details, limited to user ID and profile name.
+// Access: follows trip access rules; does not grant access to the member's private User data.
+type BoundUser struct {
+	UserID   string  `json:"userId"`
+	UserName *string `json:"userName,omitempty"`
+}
+
 type EditRecord struct {
 	Old *NewRecord `json:"old,omitempty"`
 	New *NewRecord `json:"new,omitempty"`
 }
 
 type EditTrip struct {
-	Name    *string `json:"name,omitempty"`
-	Private *bool   `json:"private,omitempty"`
+	Name *string `json:"name,omitempty"`
+	// Access: a non-null value requires an authenticated trip member, even when unchanged.
+	Private *bool `json:"private,omitempty"`
 }
 
+// The server authorizes operations using the current caller and target trip.
+// Members have no separate owner/admin roles; ordinary trip writes do not require claiming the affected Address.
+// Public trips allow anonymous ordinary writes; private trips require authentication and membership.
+// See individual fields for additional operation and argument requirements.
+// Errors use errors[].extensions.code: UNAUTHENTICATED (not authenticated),
+// FORBIDDEN (access denied), CONFLICT (state or uniqueness conflict), or BAD_USER_INPUT (invalid input).
 type Mutation struct {
 }
 
@@ -67,6 +81,11 @@ type Payment struct {
 	Address *Address `json:"address"`
 }
 
+// Access descriptions document server rules; they do not indicate that the current caller is authorized.
+// Trip access: public trips allow anonymous callers; private trips require authentication and membership.
+// A member has a trip_bindings entry, even without a claimed Address. A bookmark does not grant membership.
+// Access failures use errors[].extensions.code: UNAUTHENTICATED or FORBIDDEN.
+// Anonymous means no credentials were supplied; invalid credentials do not fall back to anonymous access.
 type Query struct {
 }
 
@@ -93,12 +112,10 @@ type SubscribedTrip struct {
 	LastViewedAt string `json:"lastViewedAt"`
 }
 
+// Event subscriptions follow trip access rules: public trips allow anonymous callers; private trips require authenticated members.
+// Access is checked when subscribing and before delivering events; later events are withheld after access is lost.
+// These event subscriptions are separate from the bookmarks managed by subscribeTrip.
 type Subscription struct {
-}
-
-type TripBinding struct {
-	TripID  string   `json:"tripId"`
-	Address *Address `json:"address,omitempty"`
 }
 
 type TripSnapshot struct {

@@ -38,3 +38,24 @@ this run does not certify PostgreSQL or external message-queue deployment behavi
 The former `simple` CRUD and `password` smoke suites are covered by the journeys
 and existing history regression. Subscription checks use positive event assertions;
 a transport error is never treated as proof that an event was absent.
+
+### Address names and bindings
+
+Address names, including mutation/subscription snapshots, always contain the trip nickname.
+Clients select the display name: use the nickname when `useNickname` is true;
+otherwise use nonempty `bind.userName`, falling back to `name`.
+Snapshots retain their existing shape; refresh bindings when membership changes.
+
+```graphql
+query TripMembers($tripId: ID!) {
+  trip(tripId: $tripId) {
+    users { userId userName }
+    addresses { id name useNickname bind { userId userName } }
+  }
+}
+```
+
+`users` includes members without an address. Public trips expose these fields
+to anonymous readers; private trips require membership.
+
+Create-and-bind is a strict create operation: an existing address claim returns CONFLICT. Failed attempts roll back the new address. A member without an address can still create and claim one.
